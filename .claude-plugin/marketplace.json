@@ -1,10 +1,10 @@
 {
-  "name": "mattpocock",
+  "name": "mattpocock-fork",
   "owner": {
-    "name": "Matt Pocock",
-    "url": "https://www.aihero.dev"
+    "name": "harneet2512",
+    "url": "https://github.com/harneet2512/skills"
   },
-  "description": "Matt Pocock's skills for real engineering, as an installable Claude Code plugin.",
+  "description": "A fork of Matt Pocock's skills (github.com/mattpocock/skills) that adds deep-engineering and wp-loop, as an installable Claude Code plugin.",
   "plugins": [
     {
       "name": "mattpocock-skills",

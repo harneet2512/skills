@@ -29,3 +29,13 @@ No em-dashes anywhere in this repo's prose (`SKILL.md` files, docs, `README.md`,
 ### Triage labels
 
 Canonical names, unchanged. See `docs/agents/triage-labels.md`. Issues are judged against [`SCOPE.md`](./SCOPE.md).
+
+## Fork
+
+This repo is a fork of `mattpocock/skills`. [FORK.md](./FORK.md) is the source of truth for every way it differs from upstream. Two rules keep upstream merges clean:
+
+- Fork-only skills live in `skills/fork/`. That bucket is shipped in the plugin (an exception to the promoted-set rule above), lists its skills in `skills/fork/README.md`, and gets no `docs/` page.
+- Never edit an upstream skill in place. Wrap it in a fork skill that calls it through the Skill tool. If an in-place edit is unavoidable, record the original text and the change in FORK.md.
+- That includes `ask-matt`: the rule above about keeping it in sync covers upstream skills only. Fork skills are mapped in `skills/fork/README.md` and FORK.md instead.
+
+When you change anything that differs from upstream, update FORK.md in the same commit.

@@ -1,0 +1,5 @@
+interface:
+  display_name: "WP Loop"
+  short_description: "Ship one work package from issue to gated merge"
+policy:
+  allow_implicit_invocation: false
