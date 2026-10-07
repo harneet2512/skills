@@ -9,11 +9,13 @@ Run these steps in order. Any push to the branch sends you back to step 2: CI on
 3. **Check the exact head:**
 
    ```bash
-   head=$(gh pr view <pr> --json headRefOid --jq .headRefOid)
+   gh pr view <pr> --json headRefOid --jq .headRefOid
    gh pr checks <pr>; echo "exit $?"
    ```
 
-   Only exit `0` passes: nothing failed and nothing is pending. Exit `8` means pending, so go back to step 2. Exit `1` means a check failed, or no checks were reported. If the repo has no CI at all, say so and get the user's explicit approval before merging without it.
+   Write down the head SHA the first command prints. Step 5 needs it as a literal value: shell variables do not survive between separate tool calls, and an empty value would silently drop the head check.
+
+   Only exit `0` passes: nothing failed and nothing is pending. Exit `8` means pending, so go back to step 2. Exit `1` means a check failed, or no checks were reported yet (right after a push, wait one interval and check again). If the repo has no CI at all, say so and get the user's explicit approval before merging without it.
 
    Checking only that the branch merges cleanly is not enough. A scripted loop that checks mergeability alone will merge a red build.
 
@@ -22,7 +24,7 @@ Run these steps in order. Any push to the branch sends you back to step 2: CI on
 5. **Merge exactly the commit you checked:**
 
    ```bash
-   gh pr merge <pr> --merge --match-head-commit "$head"
+   gh pr merge <pr> --merge --match-head-commit <head SHA from step 3>
    ```
 
    If anyone pushed after step 3, the merge refuses. Go back to step 2.

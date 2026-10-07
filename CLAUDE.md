@@ -32,7 +32,7 @@ Canonical names, unchanged. See `docs/agents/triage-labels.md`. Issues are judge
 
 ## Fork
 
-This repo is a fork of `mattpocock/skills`. [FORK.md](./FORK.md) is the source of truth for every way it differs from upstream. Two rules keep upstream merges clean:
+This repo is a fork of `mattpocock/skills`. [FORK.md](./FORK.md) is the source of truth for every way it differs from upstream. These rules keep upstream merges clean:
 
 - Fork-only skills live in `skills/fork/`. That bucket is shipped in the plugin (an exception to the promoted-set rule above), lists its skills in `skills/fork/README.md`, and gets no `docs/` page.
 - Never edit an upstream skill in place. Wrap it in a fork skill that calls it through the Skill tool. If an in-place edit is unavoidable, record the original text and the change in FORK.md.

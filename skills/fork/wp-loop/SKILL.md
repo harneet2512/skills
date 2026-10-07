@@ -36,7 +36,7 @@ Set the model explicitly on every subagent call. The lead, not a subagent, calls
 
 8. **Open the PR.** Call the Skill tool with `pr` for the body. Put the issue number in the title and `Refs #<issue>` in the body (`Closes #<issue>` if the tracker closes work through PRs).
 
-9. **Wait for CI.** `gh pr checks <pr>` exits 0 when everything passed, 1 when something failed (or no checks have been reported yet), and 8 while checks are pending. Poll no more often than every 5 minutes. A watch outlasts most tool timeouts, so in Claude Code run `gh pr checks <pr> --watch --interval 300` in the background. A red check stops the loop: if the cause is not obvious, call the Skill tool with `diagnosing-bugs`.
+9. **Wait for CI.** `gh pr checks <pr>` exits 0 when everything passed, 1 when something failed, and 8 while checks are pending. Right after a push it can also exit 1 with "no checks reported": wait one interval and check again before treating it as red. Poll no more often than every 5 minutes. A watch outlasts most tool timeouts, so in Claude Code run `gh pr checks <pr> --watch --interval 300` in the background. A red check stops the loop: if the cause is not obvious, call the Skill tool with `diagnosing-bugs`.
 
 10. **Review.** Call the Skill tool with `code-review`, with the default branch as the fixed point and the issue checklist plus the contract as the spec. Put the strongest model and [review-checks.md](review-checks.md) in both axis briefs. Then, **inside each axis** (never across them), tag every finding CRITICAL, HIGH, MEDIUM or LOW, each with `file:line` and a concrete fix.
 
