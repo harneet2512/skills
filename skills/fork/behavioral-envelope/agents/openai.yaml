@@ -1,0 +1,3 @@
+interface:
+  display_name: "Behavioral Envelope"
+  short_description: "Every concern a change must satisfy, selected and answered the same way each run"

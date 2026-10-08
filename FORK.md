@@ -1,9 +1,9 @@
 # About this fork
 
-This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds two skills on top. This file records every difference from upstream: what the original was, what was added, and why.
+This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds three skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.1`
+- **Fork version:** `1.3.1-fork.2`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -13,9 +13,10 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 |---|---|---|
 | `skills/fork/wp-loop/` | does not exist | new user-invoked skill |
 | `skills/fork/deep-engineering/` | does not exist | new model-invoked skill |
-| `skills/fork/README.md` | does not exist | bucket README for the two skills |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.1`; `repository` this fork; the two fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.1` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `skills/fork/behavioral-envelope/` | does not exist | new model-invoked skill |
+| `skills/fork/README.md` | does not exist | bucket README for the three skills |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.2`; `repository` this fork; the three fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.2` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -105,6 +106,45 @@ It was written on 2026-10-03 as a personal skill (`~/.claude/skills/deep-enginee
 
 `concerns.md` is byte-identical to the original. The original's private evaluation file (an A/B run on a private codebase) was left out because it is project-specific.
 
+## 3. `behavioral-envelope` (new, model-invoked)
+
+Finds every concern a change must satisfy to really work, and finds them the same way on every run. `deep-engineering` calls it for every tier, Tiny included, and `wp-loop` calls it again on the diff before review.
+
+### Why it exists
+
+Asking a model "what could go wrong?" returns a different list on each run, and an item missing from that list ships as a bug. `deep-engineering`'s `concerns.md` is a set of discovery prompts, deliberately not a checklist, so it still depends on recall. This skill adds a floor that does not:
+
+| Piece | What it does |
+|---|---|
+| `scripts/detect-packs.sh` | Picks concern packs from the code (file paths and added lines, comment-only lines skipped, `.scratch/` ignored) with fixed patterns. Same input, same packs |
+| `packs/*.md` | 17 packs, one per kind of change (core, UI visual, UI behavior, API, data, outbound messages, inbound events, jobs and time, integrations and auth, LLM, retrieval, identity and access, files, personal data, infra and config, dependencies, money). Every item in a selected pack gets an answer: Live, Later or N/A |
+| `packs/SOURCES.md` | Primary sources the items cite (WCAG, Stripe idempotency and webhooks, Google sender guidelines, Google SRE book, OWASP, ISO/IEC 25010, Kleppmann, Nygard, RFC 8058, Twelve-Factor, IANA tz). Provider rules carry the date they were checked |
+| Purpose step | Concerns are judged against what the change is for; the model may add items beyond the packs, never drop a selected pack |
+| Second pass | For risky packs (outbound, inbound events, money, identity, personal data, data), a fresh subagent answers independently and the Live items are unioned |
+| `scripts/test-detect.sh` and `bench/` | Fixtures that pin pack selection, and a recall and agreement bench for the model's answers |
+
+The envelope file goes to `.scratch/envelope/`; the PR carries only the handled Live items and their evidence.
+
+### Edits to the other fork skills
+
+| Where | Before | After |
+|---|---|---|
+| `deep-engineering/SKILL.md`, tier table, Tiny output | `intended behavior, invariant touched (if any), verification` | adds the envelope's Live items in one line; the full envelope stays in `.scratch/` |
+| `deep-engineering/SKILL.md`, section 3 | `concerns.md` prompts only | calls `behavioral-envelope` for every tier first; `concerns.md` prompts on top for Normal and Major |
+| `deep-engineering/SKILL.md`, "How it composes" | Behavioral Envelope listed as an optional sibling | listed as a called skill; Adversarial Engineering stays optional |
+| `wp-loop/SKILL.md`, step 10 | `code-review` with the issue checklist and the contract as the spec | first runs `behavioral-envelope` section 7 to re-check the diff; the envelope's Live items join the spec |
+
+`concerns.md` is unchanged.
+
+### Files
+
+- `skills/fork/behavioral-envelope/SKILL.md`: the method
+- `skills/fork/behavioral-envelope/envelope-template.md`: the envelope file format
+- `skills/fork/behavioral-envelope/packs/`: the packs, their index and sources
+- `skills/fork/behavioral-envelope/scripts/detect-packs.sh`: pack selection; `test-detect.sh` and `fixtures/` test it
+- `skills/fork/behavioral-envelope/bench/README.md`: how to measure recall and agreement
+- `skills/fork/behavioral-envelope/agents/openai.yaml`: Codex metadata, model-invoked
+
 ## Install
 
 The plugin name is the same as upstream's, so uninstall Anthropic's listing first, or both copies will fight over the same name.
@@ -138,7 +178,7 @@ git merge upstream/main
 Expect a conflict on the `version` line of `package.json` and `.claude-plugin/plugin.json` whenever Matt releases. Resolve it as `<upstream version>-fork.1`. Then:
 
 1. Check that every path in `plugin.json`'s `skills` still exists (upstream sometimes removes or moves skills).
-2. Check that `wp-loop` and `deep-engineering` still name skills upstream ships. If upstream renamed or removed one, update the fork skill and record it here.
+2. Check that `wp-loop`, `deep-engineering` and `behavioral-envelope` still name skills upstream ships. If upstream renamed or removed one, update the fork skill and record it here.
 3. Run `claude plugin validate .` (upstream's own `CLAUDE.md` makes `--strict` fail on upstream too) and `node scripts/sync-plugin-version.mjs --check`.
 4. Update the **Upstream base** line at the top of this file.
 5. Commit and push. Leave Actions disabled.

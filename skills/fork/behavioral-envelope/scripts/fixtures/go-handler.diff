@@ -1,0 +1,8 @@
+diff --git a/internal/server/leads.go b/internal/server/leads.go
+--- /dev/null
++++ b/internal/server/leads.go
+@@ -0,0 +1,4 @@
++func (s *Server) listLeads(w http.ResponseWriter, r *http.Request) {
++	leads, err := s.store.Leads(r.Context(), r.URL.Query().Get("cursor"))
++	writeJSON(w, leads, err)
++}

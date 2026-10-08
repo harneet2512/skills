@@ -15,7 +15,7 @@ Pick a tier in one sentence, with the reason, and state it at the top of the con
 
 | Tier | When | Output |
 |---|---|---|
-| **Tiny** | Local, one component, no state/IO/contract change, one sensible implementation | 3-8 lines: intended behavior, invariant touched (if any), verification. Stop. |
+| **Tiny** | Local, one component, no state/IO/contract change, one sensible implementation | 3-8 lines: intended behavior, invariant touched (if any), the envelope's Live items in one line (the full envelope stays in `.scratch/`, section 3), verification. Stop. |
 | **Normal** | One subsystem, some state, an external call or a boundary | Full contract, each section 1-5 bullets. |
 | **Major** | New subsystem, cross-component contract, migration, concurrency, money/permissions | Full contract plus alternatives table and a design-challenge pass (Adversarial Engineering, if installed) before the spec. |
 
@@ -35,7 +35,9 @@ State what must remain true, from this domain and this code, not from a template
 
 ## 3. Discover the relevant concerns
 
-Use [concerns.md](concerns.md) as a source of discovery prompts, **not a checklist to emit**. For each prompt the system model makes live, write one line: the concern, the specific way it bites here, and how it is handled. List irrelevant dimensions as one line: `Irrelevant: <name> - <one-clause reason>`. This makes silence explicit and auditable. Add concerns the list lacks; it is incomplete on purpose.
+Call the Skill tool with `behavioral-envelope`, for every tier, Tiny included: a color change has concerns too, just different ones. Pass it the purpose and the files from section 1. Its packs are the floor, chosen by a script and answered item by item, so a concern is never skipped because a run forgot it. Its Live items become this contract's Risks, and their proofs go into *Verification required*.
+
+For Normal and Major, then use [concerns.md](concerns.md) as a source of discovery prompts on top of the envelope, **not a checklist to emit**. For each prompt the system model makes live, write one line: the concern, the specific way it bites here, and how it is handled. List irrelevant dimensions as one line: `Irrelevant: <name> - <one-clause reason>`. This makes silence explicit and auditable. Add concerns the list lacks; it is incomplete on purpose.
 
 ## 4. Research uncertain semantics
 
@@ -60,7 +62,8 @@ Use [contract-template.md](contract-template.md). Required sections, in this ord
 - **`tdd` / `implement`:** *Verification required* names the **seams** (public boundaries) and, per invariant, the behavior to assert and the form of evidence (example, table, state-transition, property, concurrency, integration). Expected values come from the invariant, never from re-deriving the algorithm. Seams are proposed here but still confirmed with the user, as `tdd` requires.
 - **`code-review`:** the contract is the "originating spec" for the Spec axis; reviewers check invariants and constraints.
 - **Feedback:** if implementation or review invalidates the model, update the contract (cause and model, not the symptom), then the spec and tests. Do not patch around it.
-- **Optional siblings:** Behavioral Envelope (expands each behavior into its material cases) and Adversarial Engineering (challenges design and slices) consume this contract if installed; this skill stands alone without them.
+- **`behavioral-envelope`:** called in section 3. It selects concern packs from the code with a script and answers every item, and its Live items feed Risks and *Verification required*.
+- **Optional sibling:** Adversarial Engineering (challenges design and slices) consumes this contract if installed; this skill stands alone without it.
 
 ## Rules
 

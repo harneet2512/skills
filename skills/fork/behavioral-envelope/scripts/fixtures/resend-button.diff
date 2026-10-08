@@ -1,0 +1,23 @@
+diff --git a/app/components/ResendButton.tsx b/app/components/ResendButton.tsx
+--- /dev/null
++++ b/app/components/ResendButton.tsx
+@@ -0,0 +1,8 @@
++export function ResendButton({ messageId }: { messageId: string }) {
++  const [pending, setPending] = useState(false);
++  return (
++    <button disabled={pending} onClick={async () => {
++      setPending(true);
++      await fetch(`/api/messages/${messageId}/resend`, { method: "POST" });
++    }}>Resend</button>
++  );
++}
+diff --git a/app/api/messages/[id]/resend/route.ts b/app/api/messages/[id]/resend/route.ts
+--- /dev/null
++++ b/app/api/messages/[id]/resend/route.ts
+@@ -0,0 +1,6 @@
++export async function POST(req: Request, { params }: { params: { id: string } }) {
++  const msg = await db.message.findUnique({ where: { id: params.id } });
++  await mailer.sendEmail({ to: msg.recipientEmail, subject: msg.subject, html: msg.body });
++  await db.message.update({ where: { id: msg.id }, data: { status: "sent" } });
++  return NextResponse.json({ ok: true });
++}

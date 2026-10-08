@@ -1,0 +1,6 @@
+diff --git a/db/migrations/0042_add_sequence_state.sql b/db/migrations/0042_add_sequence_state.sql
+--- /dev/null
++++ b/db/migrations/0042_add_sequence_state.sql
+@@ -0,0 +1,2 @@
++ALTER TABLE sequences ADD COLUMN state text NOT NULL DEFAULT 'active';
++CREATE INDEX sequences_state_idx ON sequences (state);

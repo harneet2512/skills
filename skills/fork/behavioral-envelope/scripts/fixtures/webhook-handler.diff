@@ -1,0 +1,12 @@
+diff --git a/server/webhooks/email-events.ts b/server/webhooks/email-events.ts
+--- /dev/null
++++ b/server/webhooks/email-events.ts
+@@ -0,0 +1,7 @@
++router.post("/webhooks/email-events", async (req, res) => {
++  const sig = req.headers["svix-signature"];
++  const event = verify(req.rawBody, sig, process.env.EMAIL_WEBHOOK_SECRET);
++  if (event.type === "email.bounced") {
++    await db.query("UPDATE messages SET status = 'bounced' WHERE provider_id = $1", [event.data.id]);
++  }
++  res.status(200).end();
++});

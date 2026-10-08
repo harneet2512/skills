@@ -1,0 +1,8 @@
+diff --git a/app/tasks.py b/app/tasks.py
+--- a/app/tasks.py
++++ b/app/tasks.py
+@@ -1,0 +1,4 @@
++@shared_task(bind=True, max_retries=3)
++def sync_contacts(self, account_id):
++    contacts = crm_client.list_contacts(account_id)
++    Contact.objects.bulk_create(contacts)

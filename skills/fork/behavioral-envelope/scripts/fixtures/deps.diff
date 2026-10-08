@@ -1,0 +1,6 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -12,1 +12,1 @@
+-    "zod": "3.22.4",
++    "zod": "3.23.8",

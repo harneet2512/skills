@@ -10,7 +10,7 @@
 
 # Skills For Real Engineers
 
-> **This is a fork** of [mattpocock/skills](https://github.com/mattpocock/skills). Every upstream skill ships unchanged. The fork adds two skills, [`deep-engineering`](./skills/fork/deep-engineering/SKILL.md) and [`wp-loop`](./skills/fork/wp-loop/SKILL.md). [FORK.md](./FORK.md) says what each one builds on, how to install this fork, and how to pull in Matt's latest. The rest of this README is upstream's.
+> **This is a fork** of [mattpocock/skills](https://github.com/mattpocock/skills). Every upstream skill ships unchanged. The fork adds three skills, [`deep-engineering`](./skills/fork/deep-engineering/SKILL.md), [`behavioral-envelope`](./skills/fork/behavioral-envelope/SKILL.md) and [`wp-loop`](./skills/fork/wp-loop/SKILL.md). [FORK.md](./FORK.md) says what each one builds on, how to install this fork, and how to pull in Matt's latest. The rest of this README is upstream's.
 
 [![skills.sh](https://skills.sh/b/mattpocock/skills)](https://skills.sh/mattpocock/skills)
 

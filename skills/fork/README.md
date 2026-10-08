@@ -9,3 +9,4 @@ Skills this fork adds on top of upstream. Each one is shipped in the plugin. See
 ## Model-invoked
 
 - **[deep-engineering](./deep-engineering/SKILL.md)**: Build a system model from repo evidence, derive invariants and risks, and write an engineering contract before any spec or code.
+- **[behavioral-envelope](./behavioral-envelope/SKILL.md)**: Find every concern a change must satisfy, with concern packs picked by a script from the code and every item answered, so no run skips the basics.
