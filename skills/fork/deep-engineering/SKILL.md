@@ -35,7 +35,7 @@ State what must remain true, from this domain and this code, not from a template
 
 ## 3. Discover the relevant concerns
 
-Call the Skill tool with `behavioral-envelope`, for every tier, Tiny included: a color change has concerns too, just different ones. Pass it the purpose and the files from section 1. Its packs are the floor, chosen by a script and answered item by item, so a concern is never skipped because a run forgot it. Its Live items become this contract's Risks, and their proofs go into *Verification required*.
+Call the Skill tool with `behavioral-envelope`, for every tier, Tiny included: a color change has concerns too, just different ones. Pass it the request text, the purpose and the files from section 1. Its packs are the floor, chosen by a script and answered item by item, so a concern is never skipped because a run forgot it. It returns, for every Live item, a mechanism, where it is enforced, its proof and its runtime signal, plus a build order with shared mechanisms first. Sections 5 to 7 design around that output; they do not re-derive it.
 
 For Normal and Major, then use [concerns.md](concerns.md) as a source of discovery prompts on top of the envelope, **not a checklist to emit**. For each prompt the system model makes live, write one line: the concern, the specific way it bites here, and how it is handled. List irrelevant dimensions as one line: `Irrelevant: <name> - <one-clause reason>`. This makes silence explicit and auditable. Add concerns the list lacks; it is incomplete on purpose.
 
@@ -45,7 +45,7 @@ List every assumption that, if wrong, breaks correctness and that you cannot con
 
 ## 5. Compare alternatives (only where the choice is consequential)
 
-For decisions that are hard to reverse or shape ownership, compare the 2-3 simplest credible options on: correctness against the invariants, failure behavior, fit with existing architecture, complexity, compatibility, maintainability. Pick one and say why the others lost. Where there is one sensible option, write one sentence saying so. No performative options; no extensibility without evidence.
+For decisions that are hard to reverse or shape ownership, compare the 2-3 simplest credible options on: correctness against the invariants, how each satisfies the envelope's Live items (an option that cannot host a needed mechanism loses), failure behavior, fit with existing architecture, complexity, compatibility, maintainability. Pick one and say why the others lost. Where there is one sensible option, write one sentence saying so. No performative options; no extensibility without evidence.
 
 ## 6. Judge architectural fit and root cause
 
@@ -53,7 +53,7 @@ Answer, tersely, only the ones that apply: Is the responsibility in the right la
 
 ## 7. Emit the engineering contract
 
-Use [contract-template.md](contract-template.md). Required sections, in this order: **Invariants, Constraints, Risks (each with why), Verification required, Open questions**; preceded by a short system model, chosen design with rationale, and the tier line. Target length: Tiny a few lines, Normal about one page, Major about two. Every risk says *why it happens in this code*, not a generic warning.
+Use [contract-template.md](contract-template.md). Required sections, in this order: **Invariants, Constraints, Risks (each with why), Verification required, Open questions**; preceded by a short system model, chosen design with rationale (naming the envelope's mechanisms and where each is enforced), the build order from the envelope, and the tier line. Target length: Tiny a few lines, Normal about one page, Major about two. Every risk says *why it happens in this code*, not a generic warning.
 
 ## How it composes with Matt's skills
 

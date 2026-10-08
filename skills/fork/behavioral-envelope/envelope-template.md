@@ -2,14 +2,27 @@
 
 **Purpose:** <what the change is for, and for whom>
 **Properties:** <what must hold for that purpose, comma separated>
-**Packs:** <from detect-packs.sh, with the triggering line for each> <+ any added by judgment, with why>
+**Packs:** <from detect-packs.sh --plan and --paths, with the triggering line for each> <+ any added by judgment, with why>
 **Second pass:** <not required | done: model, and which Live items it added or disputed>
 
 ## Live
 
-| ID | Failure path in this code | Right way | Proof | Source |
+| ID | Severity | Failure path | Mechanism | Enforced at | Proof | Runtime signal |
+|---|---|---|---|---|---|---|
+| OUT-01 | Critical | `sendFollowUp` retries on timeout and calls the provider again (`src/mail/send.ts:sendFollowUp`) | M1 idempotency key per message | `outbound_sends` table, unique key | Injected timeout then retry: one provider call | Count of duplicate-key rejections |
+
+## Mechanisms
+
+| ID | Mechanism | Covers | Enforced at | Built in slice |
 |---|---|---|---|---|
-| EMAIL-02 | `sendFollowUp` retries on timeout and calls the provider again (`src/mail/send.ts:sendFollowUp`) | Idempotency key per message, stored before the provider call, sent with it | Test: injected timeout then retry produces one provider call | packs/outbound.md, S4 |
+| M1 | Idempotency key per outbound message, written before the provider call | OUT-01, API-03, LLM-05 | Unique constraint on `outbound_sends.idempotency_key` | 1 (foundation) |
+
+## Build plan
+
+1. Foundation: <mechanisms several slices depend on>, proven by <proofs>
+2. Slice: <thin end-to-end behavior>, carrying <Live IDs>
+3. Rollout: <migration order, flag, backfill, staged enable>
+4. Operate: <runtime signals wired to alerts before users get it>
 
 ## Later
 
@@ -21,7 +34,7 @@
 
 ## Extra (from purpose, not in any pack)
 
-| Item | Failure path | Right way | Proof |
+| Item | Failure path | Mechanism | Proof |
 |---|---|---|---|
 
 ## Open questions

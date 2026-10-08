@@ -41,3 +41,13 @@ Search, embeddings, vector stores, ranking, scraping or ingesting content as con
 - **Ask:** Can ingested pages carry instructions that steer the model?
 - **Right way:** Treat retrieved text as data (see `llm` LLM-03).
 - **Proof:** Eval case with an injected page.
+
+### RET-09 Citations are real
+- **Ask:** Can an answer cite a source that was not retrieved, does not support the claim, belongs to another tenant, or links somewhere the reader cannot open?
+- **Right way:** Structured output mapping each claim to retrieved chunk ids; validate every citation against the retrieved set and the current index version; drop or hand off when a claim is unsupported.
+- **Proof:** Eval cases with fabricated and mismatched citations.
+
+### RET-10 Customer-supplied URLs
+- **Ask:** Does ingestion fetch pages from URLs a customer entered?
+- **Right way:** Treat it as server-side request forgery risk: see `api` API-10 (allowlist, block private addresses after DNS resolution, re-check after redirects, size and time caps).
+- **Proof:** Tests with a metadata address and a redirect to a private address.

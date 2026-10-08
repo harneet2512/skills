@@ -36,3 +36,8 @@ Prices, amounts, currency, payments, invoices, quantities, rounding, trading and
 - **Ask:** What stops a bug from moving a large amount of money quickly?
 - **Right way:** Per-operation and per-period limits; a manual kill switch.
 - **Proof:** Test that an over-limit operation is refused.
+
+### MON-08 Orders already in flight
+- **Ask:** Does the next decision count orders or payments that are open, partly filled or pending, or does it act on the same need twice?
+- **Right way:** Effective position or balance = settled plus open and partial; cancel or replace stale open orders before placing new ones.
+- **Proof:** Test where an open partial order exists when the next cycle runs.

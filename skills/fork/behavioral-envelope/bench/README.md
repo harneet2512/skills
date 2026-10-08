@@ -1,6 +1,6 @@
 # Bench: is the envelope complete and consistent?
 
-Two layers, measured separately.
+Two layers, measured separately. The planning-level stress test (eight plain-language requests, two blind runs each, answer keys written first) and its results are in [stress-2026-10-08.md](stress-2026-10-08.md); the scenarios and keys are in [scenarios/](scenarios/).
 
 ## 1. Pack selection (deterministic)
 

@@ -41,3 +41,8 @@ Third-party APIs, OAuth connections, API keys, SDKs.
 - **Ask:** Will a provider API or SDK change break this without warning?
 - **Right way:** Pin API and SDK versions; read deprecation notices; contract tests on what you rely on.
 - **Proof:** Pinned version in config.
+
+### INT-09 Two-way sync loops and conflicts
+- **Ask:** If data syncs both ways, can our write trigger their event that triggers our write again, and who wins when both sides change the same field?
+- **Right way:** Record the origin and last-synced value of each field and drop echoes; a per-field conflict rule decided from each system's own change history, not wall clocks compared across systems; guard against a bad batch mass-deleting or blanking records.
+- **Proof:** Tests for an echo, a same-field conflict, and a reconcile that would delete more than a threshold.

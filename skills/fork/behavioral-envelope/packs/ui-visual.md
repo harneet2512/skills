@@ -51,3 +51,8 @@ Colors, tokens, typography, spacing, layout, themes.
 - **Ask:** Does the change add user-facing text, and does it fit when translated, longer or right-to-left?
 - **Right way:** Text through the translation layer, never hard-coded; layouts that tolerate longer strings; dates and numbers formatted per locale.
 - **Proof:** Screenshot with the longest supported language, or pseudo-localized text.
+
+### VIS-11 Values the search cannot see
+- **Ask:** Are any affected styles built at runtime (`bg-${color}-600`) or set outside the stylesheet (inline styles, SVG fills, third-party theme config, email templates, `meta theme-color`)?
+- **Right way:** Inventory those surfaces explicitly; ban runtime-built class names where the CSS tool cannot see them.
+- **Proof:** A search for runtime-built classes and non-stylesheet colors, plus screenshots of each such surface.

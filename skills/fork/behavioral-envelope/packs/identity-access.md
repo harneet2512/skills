@@ -41,3 +41,8 @@ Users, roles, permissions, tenants, sessions, contact identity.
 - **Ask:** Does the change store credentials or add a sign-in path?
 - **Right way:** Slow password hashing (bcrypt, scrypt or argon2), never reversible; rate limits and lockout on attempts; MFA available; generic error messages that do not reveal which accounts exist (S9).
 - **Proof:** Tests for hashing, the attempt limit and the error message.
+
+### ID-09 Single-use links and tokens
+- **Ask:** Does the change issue a link or token that grants access (password reset, magic link, invite, email verification)?
+- **Right way:** At least 128 bits from a secure random generator, stored only as a hash, short expiry, consumed atomically on the action (POST), never on page load, because email scanners open links; newer tokens and credential changes void older ones; the same response whether or not the account exists.
+- **Proof:** Tests for reuse, expiry, a GET that does not consume, and identical responses for known and unknown accounts.

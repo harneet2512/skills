@@ -1,0 +1,1 @@
+Ghost (multi-tenant, Postgres). Build two-way contact sync with HubSpot for each customer workspace: HubSpot webhooks update our contacts in near real time, edits made in Ghost are written back to HubSpot, and a nightly job reconciles both sides.

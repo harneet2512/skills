@@ -34,6 +34,25 @@ check stripe-charge.diff    "core money data"                                   
 check go-handler.diff       "core api"                                              "ui-visual llm money"
 check deps.diff             "core dependencies"                                     "ui-visual llm money"
 
+# --plan mode: plain-language requests, including packs implied by others.
+check_plan() {
+  local fixture="$1" must="$2" must_not="$3" got pack bad=0
+  got=$("$detect" --plan "$here/fixtures/plans/$fixture" | cut -f1 | tr '\n' ' ')
+  for pack in $must; do
+    case " $got" in *" $pack "*) ;; *) echo "FAIL plan $fixture: expected $pack, got: $got"; bad=1 ;; esac
+  done
+  for pack in $must_not; do
+    case " $got" in *" $pack "*) echo "FAIL plan $fixture: did not expect $pack, got: $got"; bad=1 ;; esac
+  done
+  if [ "$bad" -eq 0 ]; then echo "ok   plan $fixture: $got"; else fail=1; fi
+}
+check_plan readme-typo.txt      "core"                                          "ui-visual outbound money llm data api"
+check_plan button-color.txt     "core ui-visual"                                "outbound money llm data api"
+check_plan ghost-sequences.txt  "core outbound jobs-time llm data inbound-events" "money ui-visual"
+check_plan seat-billing.txt     "core money data api inbound-events"            "ui-visual llm"
+check_plan quant-orders.txt     "core money data api jobs-time"                 "ui-visual outbound"
+check_plan password-reset.txt   "core identity-access outbound api data"        "money llm"
+
 # Evidence keeps paths with spaces whole.
 "$detect" --stdin < "$here/fixtures/space-path.diff" >/dev/null
 sp=$(printf '%s\n' 'diff --git a/my dir/x.css b/my dir/x.css' '+++ b/my dir/x.css' '@@ -0,0 +1 @@' '+a { color: red; }' | "$detect" --stdin | grep '^ui-visual' || true)

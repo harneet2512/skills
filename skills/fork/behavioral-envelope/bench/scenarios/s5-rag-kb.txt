@@ -1,0 +1,1 @@
+Ghost (multi-tenant). Let each customer upload product docs (PDFs, some scanned, and web pages) into a knowledge base; when prospects ask questions in email replies, the agent drafts answers grounded in that customer's documents with citations.

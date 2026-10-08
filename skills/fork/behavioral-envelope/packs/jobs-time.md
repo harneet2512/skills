@@ -41,3 +41,8 @@ Scheduled jobs, background workers, timers, retries over time, dates and time zo
 - **Ask:** If the queue grows faster than workers drain it, what happens?
 - **Right way:** Alert on queue age, not just length; scale workers or shed low-priority work.
 - **Proof:** Queue age metric and its alert threshold.
+
+### JOB-09 Calendar rules
+- **Ask:** Does a schedule use business days, a send window or a "local morning" for a person whose time zone may be unknown or wrong?
+- **Right way:** Define business days and holidays per whose calendar; a stated fallback when the zone is missing (never server time); a missed window rolls to the next valid slot instead of firing late at night.
+- **Proof:** Tests with an unknown zone, a weekend, and a backlog that misses the window.

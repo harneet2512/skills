@@ -1,0 +1,1 @@
+Ghost. Add seat-based paid plans with Stripe: admins buy seats through Stripe Checkout, Stripe webhooks update the subscription, and features are locked when the subscription is unpaid or seats are exceeded.

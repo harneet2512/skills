@@ -108,7 +108,7 @@ It was written on 2026-10-03 as a personal skill (`~/.claude/skills/deep-enginee
 
 ## 3. `behavioral-envelope` (new, model-invoked)
 
-Finds every concern a change must satisfy to really work, and finds them the same way on every run. `deep-engineering` calls it for every tier, Tiny included, and `wp-loop` calls it again on the diff before review.
+Finds every concern a change must satisfy to really work, the same way on every run, and turns them into how the change is built: a mechanism, enforcement point, proof and production signal for each live concern, ranked by severity, and a build order with shared mechanisms first. It runs as soon as what to build is decided (from the request text, before any code), `deep-engineering` designs around its output for every tier, and `wp-loop` re-checks the diff with it before review.
 
 ### Why it exists
 
@@ -116,12 +116,13 @@ Asking a model "what could go wrong?" returns a different list on each run, and 
 
 | Piece | What it does |
 |---|---|
-| `scripts/detect-packs.sh` | Picks concern packs from the code (file paths and added lines, comment-only lines skipped, `.scratch/` ignored) with fixed patterns. Same input, same packs |
+| `scripts/detect-packs.sh` | Picks concern packs from the request text (`--plan`), the files to touch (`--paths`) or the diff (`--diff`) with fixed patterns, then adds implied packs (money implies data and api, and so on). Comment-only lines are skipped and `.scratch/` is ignored. Same input, same packs |
 | `packs/*.md` | 17 packs, one per kind of change (core, UI visual, UI behavior, API, data, outbound messages, inbound events, jobs and time, integrations and auth, LLM, retrieval, identity and access, files, personal data, infra and config, dependencies, money). Every item in a selected pack gets an answer: Live, Later or N/A |
 | `packs/SOURCES.md` | Primary sources the items cite (WCAG, Stripe idempotency and webhooks, Google sender guidelines, Google SRE book, OWASP, ISO/IEC 25010, Kleppmann, Nygard, RFC 8058, Twelve-Factor, IANA tz). Provider rules carry the date they were checked |
 | Purpose step | Concerns are judged against what the change is for; the model may add items beyond the packs, never drop a selected pack |
 | Second pass | For risky packs (outbound, inbound events, money, identity, personal data, data), a fresh subagent answers independently and the Live items are unioned |
-| `scripts/test-detect.sh` and `bench/` | Fixtures that pin pack selection, and a recall and agreement bench for the model's answers |
+| Design step | Every Live item gets a severity, a mechanism, the strongest enforcement point, a proof and a runtime signal; mechanisms are grouped and ordered into a build plan (foundations, slices, rollout, operate) |
+| `scripts/test-detect.sh` and `bench/` | Fixtures that pin pack selection, and a recall and agreement bench. `bench/stress-2026-10-08.md` records eight scenarios run twice each: 100% recall on the keys, 88% mean run agreement, raised to 94% on the worst case after the implied-pack fix |
 
 The envelope file goes to `.scratch/envelope/`; the PR carries only the handled Live items and their evidence.
 
@@ -131,6 +132,7 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 |---|---|---|
 | `deep-engineering/SKILL.md`, tier table, Tiny output | `intended behavior, invariant touched (if any), verification` | adds the envelope's Live items in one line; the full envelope stays in `.scratch/` |
 | `deep-engineering/SKILL.md`, section 3 | `concerns.md` prompts only | calls `behavioral-envelope` for every tier first; `concerns.md` prompts on top for Normal and Major |
+| `deep-engineering/SKILL.md`, sections 5 and 7 | alternatives compared on invariants, failure behavior and fit | alternatives also compared on how they satisfy the envelope's Live items; the contract names the envelope's mechanisms and build order |
 | `deep-engineering/SKILL.md`, "How it composes" | Behavioral Envelope listed as an optional sibling | listed as a called skill; Adversarial Engineering stays optional |
 | `wp-loop/SKILL.md`, step 10 | `code-review` with the issue checklist and the contract as the spec | first runs `behavioral-envelope` section 7 to re-check the diff; the envelope's Live items join the spec |
 
