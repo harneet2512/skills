@@ -134,7 +134,7 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 | `deep-engineering/SKILL.md`, section 3 | `concerns.md` prompts only | calls `behavioral-envelope` for every tier first; `concerns.md` prompts on top for Normal and Major |
 | `deep-engineering/SKILL.md`, sections 5 and 7 | alternatives compared on invariants, failure behavior and fit | alternatives also compared on how they satisfy the envelope's Live items; the contract names the envelope's mechanisms and build order |
 | `deep-engineering/SKILL.md`, "How it composes" | Behavioral Envelope listed as an optional sibling | listed as a called skill; Adversarial Engineering stays optional |
-| `wp-loop/SKILL.md`, step 10 | `code-review` with the issue checklist and the contract as the spec | first runs `behavioral-envelope` section 7 to re-check the diff; the envelope's Live items join the spec |
+| `wp-loop/SKILL.md`, step 10 | `code-review` with the issue checklist and the contract as the spec | first runs `behavioral-envelope`'s "Re-check against the diff" section; the envelope's Live items join the spec |
 
 `concerns.md` is unchanged.
 
