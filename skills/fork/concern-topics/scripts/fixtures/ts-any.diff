@@ -1,0 +1,10 @@
+diff --git a/src/handler.ts b/src/handler.ts
+new file mode 100644
+--- /dev/null
++++ b/src/handler.ts
+@@ -0,0 +1,5 @@
++export function handle(payload: any): Result {
++  const body = JSON.parse(payload.raw) as any;
++  const index: Record<string, any> = {};
++  return build(<any>body, index);
++}

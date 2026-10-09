@@ -1,9 +1,9 @@
 # About this fork
 
-This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds three skills on top. This file records every difference from upstream: what the original was, what was added, and why.
+This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds nine skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.2`
+- **Fork version:** `1.3.1-fork.3`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -14,9 +14,11 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/wp-loop/` | does not exist | new user-invoked skill |
 | `skills/fork/deep-engineering/` | does not exist | new model-invoked skill |
 | `skills/fork/behavioral-envelope/` | does not exist | new model-invoked skill |
-| `skills/fork/README.md` | does not exist | bucket README for the three skills |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.2`; `repository` this fork; the three fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.2` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `skills/fork/feature-loop/` | does not exist | new user-invoked skill |
+| `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
+| `skills/fork/README.md` | does not exist | bucket README for the fork skills |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.3`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.3` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -146,6 +148,38 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 - `skills/fork/behavioral-envelope/scripts/detect-packs.sh`: pack selection; `test-detect.sh` and `fixtures/` test it
 - `skills/fork/behavioral-envelope/bench/README.md`: how to measure recall and agreement
 - `skills/fork/behavioral-envelope/agents/openai.yaml`: Codex metadata, model-invoked
+
+## 4. The feature loop (six new skills)
+
+`wp-loop` ships one work package well, but nothing in upstream or the fork above says how a feature should be shaped around its users, designed from its concerns, proven live, attacked, shipped and learned from. These skills add that, each one calling existing skills rather than replacing them:
+
+| Skill | Invocation | What it adds |
+|---|---|---|
+| `feature-loop` | user | The order of stages for one feature: baseline, shape, understand, design from concerns, plan, build, prove, attack, ship, learn. Sized small, normal or large |
+| `shape` | model | Intent, actors and surfaces, a journey map crossed with interaction cases (twice, two actors, stale, abandoned, slow or failed, hostile, first and empty), success metric, scope line |
+| `concern-topics` | model | 13 fixed topics (user journey, concurrency, scale, data integrity, reliability, security, multi-tenancy, AI behavior, latency, cost, operability, compliance, code craft), 176 categories in about 7,000 lines. Each category: how it fails, a real incident where one was verified, how to spot it in a plan and in code, dangerous and safe code, the proof, and what v1 needs. Used at design (journey x topic matrix), just in time while coding, and to attack. `scripts/slop-check.sh` flags mechanical code-craft problems in a diff |
+| `evals` | model | Success criteria, error analysis, case sets, code graders, calibrated binary judges, confidence intervals, paired comparisons, pass^k, CI gates, production sampling. 27 primary sources in `references/research.md`. Zero-dependency harness in `scripts/` |
+| `live-verify` | model | Runs the real app against recording stand-ins for Slack, Gmail and an Anthropic-compatible model API, with fault injection, two instances on shared storage and evidence files. Nothing reaches a real workspace. Includes the reference product `bench/inbox-assist/` (a Slack agent that drafts Gmail replies) with 40 scenarios |
+| `adversarial-review` | model | Runs `code-review`, then design-applied, one attacker per topic, code craft, a second model and blast radius. A finding counts only when reproduced |
+
+### Edits to the other fork skills
+
+| Where | Change |
+|---|---|
+| `deep-engineering/SKILL.md`, section 3 | After the envelope, calls `concern-topics` and builds the journey x topic matrix and safety arguments; calls `evals` for the eval plan when the change produces model output |
+| `wp-loop/SKILL.md`, step 6 | The builder's brief names the topic categories in play and the attack tests are written first |
+| `wp-loop/SKILL.md`, new step 6b | slop-check, the eval gate and live verification before the PR |
+| `wp-loop/SKILL.md`, step 10 | Normal and Major work runs `adversarial-review` instead of `code-review` alone |
+
+### Measured, not assumed
+
+`skills/fork/feature-loop/bench/scorecard-2026-10-08.md` records the first run: 13 planted bugs, blind reviewers with and without the topics, mutant runs of the live suite, and one eval-driven iteration with a paired comparison. The planted-bug material is in `skills/fork/adversarial-review/bench/` (`run-mutants.sh` reruns it).
+
+### Sources and licences
+
+The topic files follow the structure of Trail of Bits' `sharp-edges` skill (CC BY-SA 4.0) and copy none of its text. `user-journey.md` uses ideas from gstack's `plan-eng-review` (MIT), credited in its sources. `live-verify`'s proof standards follow pstack's `create-verification-skill`. Every incident and figure in the topics and in `evals/references/research.md` cites a page its author opened; claims that could not be verified are labelled in place.
+
+`live-verify/ci/live-verify.yml` is an example workflow for target repos. It is not installed in this repo, where Actions stays off.
 
 ## Install
 

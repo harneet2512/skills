@@ -1,0 +1,10 @@
+diff --git a/app/parse.py b/app/parse.py
+new file mode 100644
+--- /dev/null
++++ b/app/parse.py
+@@ -0,0 +1,5 @@
++def parse_amount(raw: str) -> int | None:
++    try:
++        return int(raw)
++    except:
++        return None

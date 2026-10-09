@@ -1,0 +1,19 @@
+diff --git a/src/report.ts b/src/report.ts
+new file mode 100644
+--- /dev/null
++++ b/src/report.ts
+@@ -0,0 +1,5 @@
++export function render(rows: Row[]): string {
++  // const filtered = rows.filter((r) => r.visible);
++  // if (rows.length === 0) {
++  return rows.map(format).join("\n");
++}
+diff --git a/app/report.py b/app/report.py
+new file mode 100644
+--- /dev/null
++++ b/app/report.py
+@@ -0,0 +1,4 @@
++def render(rows: list[Row]) -> str:
++    # filtered = [r for r in rows if keep(r)]
++    # def keep(row):
++    return "\n".join(format_row(r) for r in rows)

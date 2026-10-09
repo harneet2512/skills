@@ -1,0 +1,21 @@
+diff --git a/src/deploy.ts b/src/deploy.ts
+new file mode 100644
+--- /dev/null
++++ b/src/deploy.ts
+@@ -0,0 +1,5 @@
++export async function waitForReady(svc: Service): Promise<void> {
++  await svc.start();
++  await new Promise((r) => setTimeout(r, 2000));
++  await sleep(500);
++}
+diff --git a/app/deploy.py b/app/deploy.py
+new file mode 100644
+--- /dev/null
++++ b/app/deploy.py
+@@ -0,0 +1,6 @@
++import time
++
++
++def wait_for_ready(svc: Service) -> None:
++    svc.start()
++    time.sleep(2)

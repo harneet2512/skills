@@ -1,0 +1,45 @@
+# Example workflow: runs the live verification harness on every pull request.
+# Copy to .github/workflows/live-verify.yml to enable it. It needs no secrets:
+# Slack, Gmail and the LLM are stand-ins started by the runner, so nothing
+# reaches a real workspace or mailbox.
+name: live-verify
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: skills/fork/live-verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Unit tests
+        run: node --no-warnings --test bench/inbox-assist/test/*.test.mjs harness/test/*.test.mjs
+
+      - name: Live scenarios (2 instances, stand-in LLM)
+        run: node --no-warnings harness/runner.mjs --app bench/inbox-assist --instances 2 --llm stub
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-verify-evidence
+          path: skills/fork/live-verify/.scratch/live
+          if-no-files-found: warn
+          retention-days: 14

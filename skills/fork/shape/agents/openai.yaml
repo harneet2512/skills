@@ -1,0 +1,3 @@
+interface:
+  display_name: "Shape"
+  short_description: "Intent, journey map with interaction cases, success metric and scope before design"

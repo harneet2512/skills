@@ -1,0 +1,12 @@
+diff -ruN a/src/slack.mjs b/src/slack.mjs
+--- a/src/slack.mjs	2026-10-08 19:55:48.983318269 -0400
++++ b/src/slack.mjs	2026-10-08 20:13:28.832531785 -0400
+@@ -7,7 +7,7 @@
+ // Runs on the raw body bytes; constant-time compare; five minute window.
+ export function verifySlackSignature({ signingSecret, timestamp, signature, rawBody, nowSec = Math.floor(Date.now() / 1000) }) {
+   if (!/^\d+$/.test(String(timestamp ?? ''))) return { ok: false, reason: 'missing_timestamp' };
+-  if (Math.abs(nowSec - Number(timestamp)) > SIGNATURE_WINDOW_SEC) return { ok: false, reason: 'stale_timestamp' };
++  if (nowSec - Number(timestamp) > SIGNATURE_WINDOW_SEC * 1000) return { ok: false, reason: 'stale_timestamp' };
+   const expected = Buffer.from('v0=' + crypto.createHmac('sha256', signingSecret).update(`v0:${timestamp}:`).update(rawBody).digest('hex'));
+   const got = Buffer.from(String(signature ?? ''));
+   if (got.length !== expected.length || !crypto.timingSafeEqual(got, expected)) return { ok: false, reason: 'bad_signature' };

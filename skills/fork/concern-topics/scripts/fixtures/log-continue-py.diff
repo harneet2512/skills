@@ -1,0 +1,16 @@
+diff --git a/app/sync.py b/app/sync.py
+new file mode 100644
+--- /dev/null
++++ b/app/sync.py
+@@ -0,0 +1,11 @@
++import logging
++
++logger = logging.getLogger(__name__)
++
++
++def sync_account(account_id: str) -> None:
++    try:
++        crm.push(account_id)
++    except CrmError as exc:
++        logger.warning("sync failed: %s", exc)
++    audit.write(account_id)

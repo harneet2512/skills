@@ -1,0 +1,17 @@
+diff --git a/app/cache.py b/app/cache.py
+new file mode 100644
+--- /dev/null
++++ b/app/cache.py
+@@ -0,0 +1,12 @@
++def read_cache(key: str) -> str | None:
++    try:
++        return store[key]
++    except Exception: pass
++    return None
++
++
++def warm(keys: list[str]) -> None:
++    try:
++        store.load(keys)
++    except (ValueError, KeyError):
++        pass

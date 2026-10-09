@@ -1,0 +1,5 @@
+interface:
+  display_name: "Feature Loop"
+  short_description: "Shape, design from concerns, build, prove, attack, ship and learn"
+policy:
+  allow_implicit_invocation: false

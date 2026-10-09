@@ -1,7 +1,7 @@
 {
   "name": "mattpocock-skills",
-  "version": "1.3.1-fork.2",
-  "description": "Matt Pocock's agent skills for real engineering: grilling, spec/ticket flows, TDD, code review, domain modelling and more. Plug-and-play, not vibe coding. This fork adds deep-engineering, behavioral-envelope and wp-loop; see FORK.md.",
+  "version": "1.3.1-fork.3",
+  "description": "Matt Pocock's agent skills for real engineering: grilling, spec/ticket flows, TDD, code review, domain modelling and more. Plug-and-play, not vibe coding. This fork adds a feature loop (shape, concern topics, evals, live verification in the cloud, adversarial review) on top of deep-engineering, behavioral-envelope and wp-loop; see FORK.md.",
   "author": {
     "name": "Matt Pocock",
     "url": "https://www.aihero.dev"
@@ -19,8 +19,14 @@
     "productivity"
   ],
   "skills": [
+    "./skills/fork/feature-loop",
+    "./skills/fork/shape",
     "./skills/fork/deep-engineering",
     "./skills/fork/behavioral-envelope",
+    "./skills/fork/concern-topics",
+    "./skills/fork/evals",
+    "./skills/fork/live-verify",
+    "./skills/fork/adversarial-review",
     "./skills/fork/wp-loop",
     "./skills/engineering/ask-matt",
     "./skills/engineering/diagnosing-bugs",

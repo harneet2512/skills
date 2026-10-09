@@ -1,0 +1,27 @@
+diff -ruN a/src/replies.mjs b/src/replies.mjs
+--- a/src/replies.mjs	2026-10-08 19:55:20.037972004 -0400
++++ b/src/replies.mjs	2026-10-08 20:13:28.832249765 -0400
+@@ -23,16 +23,14 @@
+   // Claims the send for this user; the loser is told who won. Returns { ok, message }.
+   function requestSend({ teamId, userId, suggestionId, text, channel }, log) {
+     const messageId = newMessageId('inbox-assist.app');
+-    const result = tx(db, () => {
+-      const current = suggestions.get(db, teamId, suggestionId);
+-      if (!current) return { found: false };
+-      const won = suggestions.claimSend(db, { teamId, id: suggestionId, userId, text, messageId });
+-      if (won) enqueue(db, { kind: 'send_reply', teamId, payload: { suggestionId }, cid: current.cid, maxAttempts });
+-      return { found: true, won, current: won ? current : suggestions.get(db, teamId, suggestionId) };
++    const current = suggestions.get(db, teamId, suggestionId);
++    if (!current) return reject(teamId, userId, suggestionId, log);
++    const won = current.status === 'posted' && tx(db, () => {
++      suggestions.claimSend(db, { teamId, id: suggestionId, userId, text, messageId });
++      enqueue(db, { kind: 'send_reply', teamId, payload: { suggestionId }, cid: current.cid, maxAttempts });
++      return true;
+     });
+-    if (!result.found) return reject(teamId, userId, suggestionId, log);
+-    const { current } = result;
+-    if (result.won) {
++    if (won) {
+       log.info('reply.claimed', { cid: current.cid, suggestion: suggestionId, user: userId });
+       return { ok: true };
+     }

@@ -1,0 +1,20 @@
+diff --git a/src/billing.ts b/src/billing.ts
+new file mode 100644
+--- /dev/null
++++ b/src/billing.ts
+@@ -0,0 +1,6 @@
++// Added a helper to compute proration
++export function prorate(plan: Plan, days: number): number {
++  // This function calculates the prorated amount
++  // Now we divide by the days in the period
++  return Math.round((plan.cents * days) / plan.periodDays);
++}
+diff --git a/app/billing.py b/app/billing.py
+new file mode 100644
+--- /dev/null
++++ b/app/billing.py
+@@ -0,0 +1,4 @@
++def prorate(plan: Plan, days: int) -> int:
++    """Updated to round half to even like the ledger."""
++    # Fixed the rounding bug from last week
++    return round(plan.cents * days / plan.period_days)

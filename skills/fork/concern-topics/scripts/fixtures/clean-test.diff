@@ -1,0 +1,26 @@
+diff --git a/tests/seats.test.ts b/tests/seats.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/seats.test.ts
+@@ -0,0 +1,8 @@
++import { applySeatChange } from "../src/seats";
++
++test("removing a seat bills the remainder", async () => {
++  const invoice = await applySeatChange({ kind: "removed", userId: "u1", at: new Date(0) });
++  console.log(invoice);
++  await new Promise((r) => setTimeout(r, 2000));
++  expect(invoice.lines).toHaveLength(1);
++}, 10000);
+diff --git a/tests/test_seats.py b/tests/test_seats.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_seats.py
+@@ -0,0 +1,8 @@
++import time
++
++
++def test_seat_removal_bills_remainder() -> None:
++    invoice = apply_seat_change(SeatChange(SeatChangeKind.REMOVED, "u1"))
++    print(invoice)
++    time.sleep(1)
++    assert len(invoice.lines) == 1

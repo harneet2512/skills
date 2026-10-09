@@ -1,0 +1,12 @@
+diff -ruN a/src/jobs.mjs b/src/jobs.mjs
+--- a/src/jobs.mjs	2026-10-08 20:50:49.475958226 -0400
++++ b/src/jobs.mjs	2026-10-08 20:56:19.287947280 -0400
+@@ -24,7 +24,7 @@
+ export function claim(db, workerId, leaseMs, { slowKinds = [], allowSlow = true, tenantSlowCap = 0 } = {}) {
+   const t = now();
+   const row = db.prepare(`UPDATE jobs SET status = 'running', attempts = attempts + 1, lease_until = ?, locked_by = ?, updated_at = ?
+-    WHERE id = (SELECT id FROM jobs j WHERE ((status = 'queued' AND run_at <= ?) OR (status = 'running' AND lease_until < ?))
++    WHERE id = (SELECT id FROM jobs j WHERE (status = 'queued' AND run_at <= ? AND ? IS NOT NULL)
+       AND (j.kind NOT IN (SELECT value FROM json_each(?))
+         OR (? AND (? = 0 OR (SELECT count(*) FROM jobs r WHERE r.team_id = j.team_id AND r.kind = j.kind AND r.status = 'running' AND r.lease_until >= ?) < ?)))
+       ORDER BY run_at, id LIMIT 1)

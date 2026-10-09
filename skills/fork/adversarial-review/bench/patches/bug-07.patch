@@ -1,0 +1,12 @@
+diff -ruN a/src/tenants.mjs b/src/tenants.mjs
+--- a/src/tenants.mjs	2026-10-08 20:49:24.910544718 -0400
++++ b/src/tenants.mjs	2026-10-08 20:56:19.272191328 -0400
+@@ -68,6 +68,6 @@
+ // History ids only move forward, whatever order pushes and syncs finish in.
+ export function advanceHistoryId(db, teamId, historyId) {
+   if (!Number.isSafeInteger(historyId)) throw new Error(`refusing history id ${historyId}`);
+-  return db.prepare('UPDATE tenants SET last_history_id = ? WHERE team_id = ? AND (last_history_id IS NULL OR last_history_id < ?)')
+-    .run(historyId, teamId, historyId).changes === 1;
++  return db.prepare('UPDATE tenants SET last_history_id = ? WHERE team_id = ?')
++    .run(historyId, teamId).changes === 1;
+ }

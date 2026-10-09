@@ -1,0 +1,32 @@
+diff -ruN a/src/draft.mjs b/src/draft.mjs
+--- a/src/draft.mjs	2026-10-08 19:46:10.454761648 -0400
++++ b/src/draft.mjs	2026-10-08 20:13:28.834279515 -0400
+@@ -32,23 +32,23 @@
+ 
+ const render = (m) => `From: ${m.from}\nDate: ${m.date}\n\n${m.text}`;
+ 
+-// Keeps the newest messages that fit the token budget. If even the newest one
+-// does not fit, its beginning is kept (the newest words a sender wrote are at the top).
++// Keeps the messages that fit the token budget. If even the first one does not
++// fit, its beginning is kept (the newest words a sender wrote are at the top).
+ export function fitThreadToBudget(messages, budgetTokens) {
+   const recent = messages.slice(-THREAD_MESSAGES).map((m) => ({ ...m, text: stripQuoted(m.text ?? '') }));
+   const kept = [];
+   let used = 0;
+-  for (let i = recent.length - 1; i >= 0; i--) {
++  for (let i = 0; i < recent.length; i++) {
+     const cost = estimateTokens(render(recent[i]));
+     if (used + cost <= budgetTokens) {
+-      kept.unshift(recent[i]);
++      kept.push(recent[i]);
+       used += cost;
+       continue;
+     }
+     if (kept.length === 0) {
+       const headerCost = estimateTokens(render({ ...recent[i], text: '' }) + TRUNCATION_MARK);
+       const chars = Math.max(0, (budgetTokens - headerCost) * 4);
+-      kept.unshift({ ...recent[i], text: recent[i].text.slice(0, chars) + TRUNCATION_MARK });
++      kept.push({ ...recent[i], text: recent[i].text.slice(0, chars) + TRUNCATION_MARK });
+     }
+     break;
+   }
