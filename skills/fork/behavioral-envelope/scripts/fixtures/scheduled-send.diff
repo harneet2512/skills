@@ -1,0 +1,8 @@
+diff --git a/worker/followups.ts b/worker/followups.ts
+--- a/worker/followups.ts
++++ b/worker/followups.ts
+@@ -3,1 +3,4 @@
++cron.schedule("*/5 * * * *", async () => {
++  const due = await dueFollowUps(DateTime.now().setZone(contact.timeZone));
++  for (const f of due) await queue.add("send-followup", f);
++});

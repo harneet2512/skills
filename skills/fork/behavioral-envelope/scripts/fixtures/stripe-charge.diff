@@ -1,0 +1,7 @@
+diff --git a/billing/charge.ts b/billing/charge.ts
+--- /dev/null
++++ b/billing/charge.ts
+@@ -0,0 +1,3 @@
++export async function chargeSeat(customerId: string, seats: number) {
++  return stripe.paymentIntents.create({ customer: customerId, amount: seats * 4900, currency: "usd" });
++}

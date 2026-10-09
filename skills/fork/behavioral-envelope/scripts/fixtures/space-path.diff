@@ -1,0 +1,6 @@
+diff --git a/my docs/notes file.md b/my docs/notes file.md
+--- a/my docs/notes file.md
++++ b/my docs/notes file.md
+@@ -1,1 +1,1 @@
+-Old note.
++New note.

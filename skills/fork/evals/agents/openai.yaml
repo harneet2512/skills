@@ -1,0 +1,3 @@
+interface:
+  display_name: "Evals"
+  short_description: "Graded case sets, calibrated judges, error bars and merge gates for every LLM feature"

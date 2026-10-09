@@ -1,0 +1,32 @@
+diff --git a/src/webhooks.ts b/src/webhooks.ts
+new file mode 100644
+--- /dev/null
++++ b/src/webhooks.ts
+@@ -0,0 +1,14 @@
++// Stripe retries for three days, so a delivery we already handled must be a no-op, not an error.
++export async function onInvoicePaid(event: StripeEvent): Promise<void> {
++  // The ledger is the source of truth for balances; the event only tells us to re-read it.
++  const balance = await ledger.balanceFor(event.customerId);
++  // @ts-expect-error -- stripe-node 14 types omit `livemode` on test clocks
++  if (event.livemode === false) return;
++  try {
++    await mirror.write(balance);
++  } catch (err) {
++    // The mirror is a cache rebuilt nightly; losing one write is cheaper than failing the webhook.
++    metrics.increment("mirror_write_failed");
++  }
++  await sleep(backoffMs(event.attempt));
++}
+diff --git a/app/webhooks.py b/app/webhooks.py
+new file mode 100644
+--- /dev/null
++++ b/app/webhooks.py
+@@ -0,0 +1,8 @@
++def on_invoice_paid(event: StripeEvent) -> None:
++    # Stripe retries for three days, so a repeat delivery must be a no-op, not an error.
++    balance = ledger.balance_for(event.customer_id)  # type: ignore[attr-defined]
++    try:
++        mirror.write(balance)
++    except MirrorUnavailable:
++        # The mirror is rebuilt nightly; one lost write is cheaper than a failed webhook.
++        pass

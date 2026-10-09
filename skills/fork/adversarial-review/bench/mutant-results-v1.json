@@ -1,0 +1,250 @@
+{
+  "generatedAt": "2026-10-09T00:27:41.401Z",
+  "control": {
+    "id": "control",
+    "ran": true,
+    "caught": false,
+    "totals": {
+      "scenarios": 25,
+      "passed": 25,
+      "failed": 0,
+      "assertions": 202
+    },
+    "failing": []
+  },
+  "mutants": [
+    {
+      "id": "bug-01",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 197
+      },
+      "failing": [
+        {
+          "file": "10-two-users-race.mjs",
+          "failedAssertions": [
+            "exactly one email sent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-02",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 196
+      },
+      "failing": [
+        {
+          "file": "11-gmail-send-timeout-after-success.mjs",
+          "failedAssertions": [
+            "exactly one email in the mailbox sent folder"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-03",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 197
+      },
+      "failing": [
+        {
+          "file": "19-stale-timestamp.mjs",
+          "failedAssertions": [
+            "stale timestamp -> 401"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-04",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 198
+      },
+      "failing": [
+        {
+          "file": "20-cross-tenant.mjs",
+          "failedAssertions": [
+            "no modal opened in either workspace"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-05",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 200
+      },
+      "failing": [
+        {
+          "file": "15-prompt-injection.mjs",
+          "failedAssertions": [
+            "to: original sender only; no cc, no bcc"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-06",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 199
+      },
+      "failing": [
+        {
+          "file": "16-no-reply-loop.mjs",
+          "failedAssertions": [
+            "waitFor: both skipped"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-07",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 200
+      },
+      "failing": [
+        {
+          "file": "07-out-of-order-push.mjs",
+          "failedAssertions": [
+            "history id stays at the newest after the slow sync lands"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-08",
+      "ran": true,
+      "caught": false,
+      "totals": {
+        "scenarios": 25,
+        "passed": 25,
+        "failed": 0,
+        "assertions": 202
+      },
+      "failing": []
+    },
+    {
+      "id": "bug-09",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 197
+      },
+      "failing": [
+        {
+          "file": "23-long-thread-truncated.mjs",
+          "failedAssertions": [
+            "newest message included"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-10",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 200
+      },
+      "failing": [
+        {
+          "file": "13-slack-429-on-post.mjs",
+          "failedAssertions": [
+            "retry waited at least Retry-After (1 s)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-11",
+      "ran": true,
+      "caught": false,
+      "totals": {
+        "scenarios": 25,
+        "passed": 25,
+        "failed": 0,
+        "assertions": 202
+      },
+      "failing": []
+    },
+    {
+      "id": "bug-12",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 200
+      },
+      "failing": [
+        {
+          "file": "15-prompt-injection.mjs",
+          "failedAssertions": [
+            "to: original sender only; no cc, no bcc"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-13",
+      "ran": true,
+      "caught": true,
+      "totals": {
+        "scenarios": 25,
+        "passed": 24,
+        "failed": 1,
+        "assertions": 197
+      },
+      "failing": [
+        {
+          "file": "21-crash-between-claim-and-send.mjs",
+          "failedAssertions": [
+            "waitFor: sent after recovery"
+          ]
+        }
+      ]
+    }
+  ]
+}

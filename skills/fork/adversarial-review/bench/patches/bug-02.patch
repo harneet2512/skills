@@ -1,0 +1,14 @@
+diff -ruN a/src/replies.mjs b/src/replies.mjs
+--- a/src/replies.mjs	2026-10-08 19:55:20.037972004 -0400
++++ b/src/replies.mjs	2026-10-08 20:22:03.214674419 -0400
+@@ -110,8 +110,8 @@
+     const s = suggestions.get(db, job.team_id, job.payload.suggestionId);
+     if (!tenant || !s || s.status !== 'sending') return log.info('send.nothing_to_do', { status: s?.status });
+     let gmailId = null;
+-    // Any earlier attempt may have reached Gmail: look for our Message-ID before sending again.
+-    if (job.attempts > 1) {
++    // An earlier attempt that got a response from Gmail may have gone through: look for our Message-ID before sending again.
++    if (job.attempts > 1 && !/transport/.test(job.last_error ?? '')) {
+       gmailId = await gmail.findSent(tenant.gmailToken, s.thread_id, s.send_message_id);
+       if (gmailId) log.info('send.reconciled', { suggestion: s.id, gmailId });
+     }

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Live Verify"
+  short_description: "Run the real app against recording stand-ins in the cloud and prove every journey"

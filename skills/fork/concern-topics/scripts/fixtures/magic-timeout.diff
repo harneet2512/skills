@@ -1,0 +1,17 @@
+diff --git a/src/fetcher.ts b/src/fetcher.ts
+new file mode 100644
+--- /dev/null
++++ b/src/fetcher.ts
+@@ -0,0 +1,5 @@
++export async function fetchProfile(id: string): Promise<Profile> {
++  const res = await fetch(url(id), { signal: AbortSignal.timeout(30000) });
++  const retry = setTimeout(() => poll(id), 15_000);
++  return client.get(url(id), { timeout: 5000 });
++}
+diff --git a/app/fetcher.py b/app/fetcher.py
+new file mode 100644
+--- /dev/null
++++ b/app/fetcher.py
+@@ -0,0 +1,2 @@
++def fetch_profile(profile_id: str) -> Profile:
++    return client.get(url(profile_id), timeout_ms=5000)

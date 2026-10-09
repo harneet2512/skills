@@ -1,0 +1,40 @@
+diff -ruN a/src/db.mjs b/src/db.mjs
+--- a/src/db.mjs	2026-10-08 20:49:13.670979932 -0400
++++ b/src/db.mjs	2026-10-08 20:56:19.277931948 -0400
+@@ -25,8 +25,7 @@
+   gmail_message_id  TEXT NOT NULL,
+   thread_id         TEXT NOT NULL,
+   cid               TEXT NOT NULL,
+-  created_at        INTEGER NOT NULL,
+-  PRIMARY KEY (team_id, gmail_message_id)
++  created_at        INTEGER NOT NULL
+ );
+ CREATE TABLE IF NOT EXISTS suggestions (
+   id                TEXT PRIMARY KEY,
+diff -ruN a/src/inbox.mjs b/src/inbox.mjs
+--- a/src/inbox.mjs	2026-10-08 20:52:43.845939697 -0400
++++ b/src/inbox.mjs	2026-10-08 20:56:19.278034830 -0400
+@@ -71,17 +71,15 @@
+       advanceHistoryId(db, tenant.team_id, Number(profile.historyId));
+       return log.warn('sync.history_expired', { resumedAt: Number(profile.historyId) });
+     }
+-    let fresh = 0;
+-    for (const m of result.added) {
++    const known = db.prepare('SELECT 1 FROM emails WHERE team_id = ? AND gmail_message_id = ?');
++    const unseen = result.added.filter((m) => !known.get(tenant.team_id, m.id));
++    for (const m of unseen) {
+       tx(db, () => {
+-        const inserted = db.prepare('INSERT OR IGNORE INTO emails (team_id, gmail_message_id, thread_id, cid, created_at) VALUES (?, ?, ?, ?, ?)')
+-          .run(tenant.team_id, m.id, m.threadId, job.cid, Date.now()).changes === 1;
+-        if (inserted) {
+-          fresh += 1;
+-          enqueue(db, { kind: 'draft_email', teamId: tenant.team_id, payload: { gmailMessageId: m.id }, cid: job.cid, maxAttempts });
+-        }
++        db.prepare('INSERT INTO emails (team_id, gmail_message_id, thread_id, cid, created_at) VALUES (?, ?, ?, ?, ?)').run(tenant.team_id, m.id, m.threadId, job.cid, Date.now());
++        enqueue(db, { kind: 'draft_email', teamId: tenant.team_id, payload: { gmailMessageId: m.id }, cid: job.cid, maxAttempts });
+       });
+     }
++    const fresh = unseen.length;
+     advanceHistoryId(db, tenant.team_id, result.historyId);
+     log.info('sync.done', { seen: result.added.length, fresh, historyId: result.historyId });
+   }

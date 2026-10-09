@@ -1,0 +1,4 @@
+{ "runId": "r1", "scenarios": [
+  { "name": "first reply after install", "journey": "J1.first-run: admin installs", "result": "pass" },
+  { "name": "two reviewers race", "journey": ["J2.two-actors"], "result": "pass" }
+], "totals": { "passed": 2, "failed": 0 } }

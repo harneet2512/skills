@@ -1,0 +1,3 @@
+{ "runId": "r3", "scenarios": [
+  { "name": "first reply after install", "journey": "J1.first-run", "result": "pass" }
+], "totals": { "passed": 1, "failed": 0 } }

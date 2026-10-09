@@ -1,0 +1,226 @@
+{
+ "all": {
+  "n": 40,
+  "passAfter": "69.2% [58.5%, 79.8%]",
+  "passBefore": "12.5% [5.6%, 19.4%]",
+  "pass3After": "45.0%",
+  "pass3Before": "0.0%",
+  "delta": "+56.7 pts [43.8, 69.5] (32 better / 2 worse, n=40)",
+  "graders": {
+   "answers_question": {
+    "before": "100.0% [91.2%, 100.0%] W n=40",
+    "after": "85.8% [76.9%, 94.8%] n=40",
+    "delta": "-14.2 pts [-23.1, -5.2] (0 better / 9 worse, n=40)"
+   },
+   "appropriate_tone": {
+    "before": "97.5% [92.4%, 100.0%] n=40",
+    "after": "97.1% [93.8%, 100.0%] n=40",
+    "delta": "-0.4 pts [-6.6, 5.8] (1 better / 3 worse, n=40)"
+   },
+   "injection_resisted": {
+    "before": "100.0% [61.0%, 100.0%] W n=6",
+    "after": "100.0% [61.0%, 100.0%] W n=6",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=6)"
+   },
+   "language_match": {
+    "before": "97.5% [92.4%, 100.0%] n=40",
+    "after": "99.2% [97.5%, 100.0%] n=40",
+    "delta": "+1.7 pts [-3.8, 7.1] (1 better / 1 worse, n=40)"
+   },
+   "length_cap": {
+    "before": "100.0% [91.2%, 100.0%] W n=40",
+    "after": "100.0% [91.2%, 100.0%] W n=40",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=40)"
+   },
+   "no_fabricated_facts": {
+    "before": "77.5% [66.4%, 88.6%] n=40",
+    "after": "100.0% [91.2%, 100.0%] W n=40",
+    "delta": "+22.5 pts [11.4, 33.6] (15 better / 0 worse, n=40)"
+   },
+   "no_forbidden_strings": {
+    "before": "100.0% [61.0%, 100.0%] W n=6",
+    "after": "100.0% [61.0%, 100.0%] W n=6",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=6)"
+   },
+   "no_foreign_emails": {
+    "before": "100.0% [91.2%, 100.0%] W n=40",
+    "after": "100.0% [91.2%, 100.0%] W n=40",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=40)"
+   },
+   "no_invented_numbers": {
+    "before": "100.0% [91.2%, 100.0%] W n=40",
+    "after": "100.0% [91.2%, 100.0%] W n=40",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=40)"
+   },
+   "non_empty": {
+    "before": "100.0% [91.2%, 100.0%] W n=40",
+    "after": "100.0% [91.2%, 100.0%] W n=40",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=40)"
+   },
+   "option_count": {
+    "before": "100.0% [91.2%, 100.0%] W n=40",
+    "after": "100.0% [91.2%, 100.0%] W n=40",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=40)"
+   },
+   "options_distinct": {
+    "before": "17.1% [9.3%, 24.9%] n=40",
+    "after": "91.2% [84.8%, 97.7%] n=40",
+    "delta": "+74.2 pts [64.4, 83.9] (37 better / 0 worse, n=40)"
+   },
+   "target_ran": {
+    "before": "0.0% [0.0%, 49.0%] W n=4",
+    "after": "0.0% [0.0%, 35.4%] W n=7",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=3)"
+   }
+  }
+ },
+ "dev": {
+  "n": 15,
+  "passAfter": "71.1% [54.2%, 88.0%]",
+  "passBefore": "4.4% [0.0%, 11.0%]",
+  "pass3After": "40.0%",
+  "pass3Before": "0.0%",
+  "delta": "+66.7 pts [49.5, 83.9] (14 better / 0 worse, n=15)",
+  "graders": {
+   "answers_question": {
+    "before": "100.0% [79.6%, 100.0%] W n=15",
+    "after": "95.6% [85.9%, 100.0%] n=15",
+    "delta": "-4.4 pts [-14.1, 5.2] (0 better / 1 worse, n=15)"
+   },
+   "appropriate_tone": {
+    "before": "93.3% [78.9%, 100.0%] n=15",
+    "after": "97.8% [93.0%, 100.0%] n=15",
+    "delta": "+4.4 pts [-11.1, 20.0] (1 better / 1 worse, n=15)"
+   },
+   "injection_resisted": {
+    "before": "100.0% [34.2%, 100.0%] W n=2",
+    "after": "100.0% [34.2%, 100.0%] W n=2",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=2)"
+   },
+   "language_match": {
+    "before": "93.3% [78.9%, 100.0%] n=15",
+    "after": "100.0% [79.6%, 100.0%] W n=15",
+    "delta": "+6.7 pts [-7.8, 21.1] (1 better / 0 worse, n=15)"
+   },
+   "length_cap": {
+    "before": "100.0% [79.6%, 100.0%] W n=15",
+    "after": "100.0% [79.6%, 100.0%] W n=15",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=15)"
+   },
+   "no_fabricated_facts": {
+    "before": "64.4% [41.8%, 87.0%] n=15",
+    "after": "100.0% [79.6%, 100.0%] W n=15",
+    "delta": "+35.6 pts [13.0, 58.2] (8 better / 0 worse, n=15)"
+   },
+   "no_forbidden_strings": {
+    "before": "100.0% [34.2%, 100.0%] W n=2",
+    "after": "100.0% [34.2%, 100.0%] W n=2",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=2)"
+   },
+   "no_foreign_emails": {
+    "before": "100.0% [79.6%, 100.0%] W n=15",
+    "after": "100.0% [79.6%, 100.0%] W n=15",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=15)"
+   },
+   "no_invented_numbers": {
+    "before": "100.0% [79.6%, 100.0%] W n=15",
+    "after": "100.0% [79.6%, 100.0%] W n=15",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=15)"
+   },
+   "non_empty": {
+    "before": "100.0% [79.6%, 100.0%] W n=15",
+    "after": "100.0% [79.6%, 100.0%] W n=15",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=15)"
+   },
+   "option_count": {
+    "before": "100.0% [79.6%, 100.0%] W n=15",
+    "after": "100.0% [79.6%, 100.0%] W n=15",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=15)"
+   },
+   "options_distinct": {
+    "before": "14.4% [3.6%, 25.3%] n=15",
+    "after": "83.3% [67.6%, 99.1%] n=15",
+    "delta": "+68.9 pts [51.1, 86.7] (13 better / 0 worse, n=15)"
+   },
+   "target_ran": {
+    "before": "0.0% [0.0%, 79.3%] W n=1",
+    "after": "0.0% [0.0%, 56.1%] W n=3"
+   }
+  }
+ },
+ "heldout": {
+  "n": 25,
+  "passAfter": "68.0% [53.3%, 82.7%]",
+  "passBefore": "17.3% [7.2%, 27.5%]",
+  "pass3After": "48.0%",
+  "pass3Before": "0.0%",
+  "delta": "+50.7 pts [32.6, 68.8] (18 better / 2 worse, n=25)",
+  "graders": {
+   "answers_question": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "80.0% [66.8%, 93.2%] n=25",
+    "delta": "-20.0 pts [-33.2, -6.8] (0 better / 8 worse, n=25)"
+   },
+   "appropriate_tone": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "96.7% [92.0%, 100.0%] n=25",
+    "delta": "-3.3 pts [-8.0, 1.4] (0 better / 2 worse, n=25)"
+   },
+   "injection_resisted": {
+    "before": "100.0% [51.0%, 100.0%] W n=4",
+    "after": "100.0% [51.0%, 100.0%] W n=4",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=4)"
+   },
+   "language_match": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "98.7% [96.0%, 100.0%] n=25",
+    "delta": "-1.3 pts [-4.0, 1.3] (0 better / 1 worse, n=25)"
+   },
+   "length_cap": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "100.0% [86.7%, 100.0%] W n=25",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=25)"
+   },
+   "no_fabricated_facts": {
+    "before": "85.3% [74.1%, 96.6%] n=25",
+    "after": "100.0% [86.7%, 100.0%] W n=25",
+    "delta": "+14.7 pts [3.4, 25.9] (7 better / 0 worse, n=25)"
+   },
+   "no_forbidden_strings": {
+    "before": "100.0% [51.0%, 100.0%] W n=4",
+    "after": "100.0% [51.0%, 100.0%] W n=4",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=4)"
+   },
+   "no_foreign_emails": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "100.0% [86.7%, 100.0%] W n=25",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=25)"
+   },
+   "no_invented_numbers": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "100.0% [86.7%, 100.0%] W n=25",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=25)"
+   },
+   "non_empty": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "100.0% [86.7%, 100.0%] W n=25",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=25)"
+   },
+   "option_count": {
+    "before": "100.0% [86.7%, 100.0%] W n=25",
+    "after": "100.0% [86.7%, 100.0%] W n=25",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=25)"
+   },
+   "options_distinct": {
+    "before": "18.7% [7.5%, 29.9%] n=25",
+    "after": "96.0% [91.5%, 100.0%] n=25",
+    "delta": "+77.3 pts [64.9, 89.8] (24 better / 0 worse, n=25)"
+   },
+   "target_ran": {
+    "before": "0.0% [0.0%, 56.1%] W n=3",
+    "after": "0.0% [0.0%, 49.0%] W n=4",
+    "delta": "+0.0 pts [0.0, 0.0] (0 better / 0 worse, n=2)"
+   }
+  }
+ }
+}

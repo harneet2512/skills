@@ -1,0 +1,52 @@
+diff -ruN a/src/draft.mjs b/src/draft.mjs
+--- a/src/draft.mjs	2026-10-08 20:54:42.942637974 -0400
++++ b/src/draft.mjs	2026-10-08 20:56:19.263958008 -0400
+@@ -91,6 +91,7 @@
+   '',
+   'OUTPUT',
+   '- Each option is only the reply body, under 900 characters: no subject line, no recipient list, no label such as "Option 1".',
++  '- If the newest message is a forward, also give the original sender address as "to".',
+   `- Respond with one JSON object and nothing else: no code fences, no text before or after. Shape: {"options": ["<brief>", "<complete>", "<different move>"]}.`,
+   '- Inside the strings, write line breaks as \\n and escape double quotes as \\".',
+ ].join('\n');
+@@ -185,7 +186,9 @@
+   if (!Array.isArray(options) || options.length !== OPTION_COUNT) throw new DraftError('wrong_option_count');
+   if (!options.every((o) => typeof o === 'string' && o.trim().length > 0)) throw new DraftError('empty_option');
+   if (options.some((o) => o.length > MAX_OPTION_CHARS)) throw new DraftError('option_too_long');
+-  return options.map((o) => o.trim());
++  const result = options.map((o) => o.trim());
++  if (typeof parsed.to === 'string' && /^[^\s@]+@[^\s@]+$/.test(parsed.to.trim())) result.to = parsed.to.trim().toLowerCase();
++  return result;
+ }
+ 
+ export async function draftReplies({ thread, aboutUs, llm, budgetTokens = DEFAULT_BUDGET_TOKENS }) {
+@@ -196,5 +199,6 @@
+   } catch (err) {
+     throw Object.assign(new DraftError(`provider: ${err.message}`, { transient: err.transient !== false }), { retryAfterMs: err.retryAfterMs });
+   }
+-  return { options: parseOptions(text) };
++  const options = parseOptions(text);
++  return { options, to: options.to ?? null };
+ }
+diff -ruN a/src/inbox.mjs b/src/inbox.mjs
+--- a/src/inbox.mjs	2026-10-08 20:52:43.845939697 -0400
++++ b/src/inbox.mjs	2026-10-08 20:56:19.264972620 -0400
+@@ -107,15 +107,16 @@
+       return log.warn('draft.budget_exceeded', { gmailMessageId, budget: config.DRAFT_BUDGET_PER_WINDOW });
+     }
+     let options = null;
++    let to = null;
+     try {
+-      ({ options } = await draftReplies({ thread, aboutUs: tenant.about_us, llm, budgetTokens: config.PROMPT_BUDGET_TOKENS }));
++      ({ options, to } = await draftReplies({ thread, aboutUs: tenant.about_us, llm, budgetTokens: config.PROMPT_BUDGET_TOKENS }));
+     } catch (err) {
+       if (err.transient && job.attempts < config.LLM_MAX_ATTEMPTS) throw err;
+       log.warn('draft.failed', { gmailMessageId, code: err.code ?? err.message });
+     }
+     tx(db, () => {
+       if (options) {
+-        const id = suggestions.create(db, { teamId: tenant.team_id, email, options, cid: job.cid });
++        const id = suggestions.create(db, { teamId: tenant.team_id, email: to ? { ...email, sender: to } : email, options, cid: job.cid });
+         enqueue(db, { kind: 'post_suggestion', teamId: tenant.team_id, payload: { suggestionId: id }, cid: job.cid, maxAttempts });
+         suggestions.recordOutcome(db, { teamId: tenant.team_id, gmailMessageId, sender: email.sender, outcome: 'awaiting_user', cid: job.cid });
+       } else {

@@ -1,0 +1,1 @@
+React + Tailwind web app with light and dark mode. Change the primary button color from blue to purple across the app.

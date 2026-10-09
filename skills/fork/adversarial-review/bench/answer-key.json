@@ -1,0 +1,119 @@
+[
+  {
+    "id": "bug-01",
+    "topic_ids": ["CONC-09", "CONC-03"],
+    "file": "src/replies.mjs",
+    "lines": "26-33 (requestSend)",
+    "description": "requestSend reads the suggestion outside the write lock, gates on current.status === 'posted', then inside the transaction ignores claimSend's return value and enqueues send_reply unconditionally. Two concurrent clicks on two instances can both read 'posted'; the loser's conditional UPDATE changes nothing but its send_reply job is still enqueued, and both jobs see status 'sending' on attempt 1 (no reconciliation) and send.",
+    "user_visible_failure": "A double click, or two teammates clicking Send at the same moment, sends the customer the same reply twice; the second clicker is not told someone else already sent it.",
+    "expected_catching_scenario": "09-double-click, 10-two-users-race (race window is small: flaky)"
+  },
+  {
+    "id": "bug-02",
+    "topic_ids": ["REL-07", "CONC-11"],
+    "file": "src/replies.mjs",
+    "lines": "111-112 (sendReply)",
+    "description": "Reconciliation by Message-ID (thread read plus rfc822msgid search) is skipped when the previous attempt failed with a transport error (timeout, reset), on the belief that such a request never reached Gmail. Timeouts are exactly the ambiguous case: the retry sends a second copy without looking for the first.",
+    "user_visible_failure": "When Gmail accepts a send but the response is lost, the customer receives the reply twice.",
+    "expected_catching_scenario": "11-gmail-send-timeout-after-success"
+  },
+  {
+    "id": "bug-03",
+    "topic_ids": ["SEC-03", "SEC-04"],
+    "file": "src/slack.mjs",
+    "lines": "10 (verifySlackSignature)",
+    "description": "The timestamp window compares seconds against SIGNATURE_WINDOW_SEC * 1000 and dropped Math.abs, so the effective window is about 3.5 days into the past and unbounded into the future.",
+    "user_visible_failure": "A captured, validly signed Send click can be replayed for days (or pre-dated) and is accepted.",
+    "expected_catching_scenario": "19-stale-timestamp"
+  },
+  {
+    "id": "bug-04",
+    "topic_ids": ["TEN-03", "TEN-02", "SEC-02"],
+    "file": "src/replies.mjs (uses new src/suggestions.mjs getById)",
+    "lines": "replies.mjs 85; suggestions.mjs 33-36",
+    "description": "The Edit button handler looks the suggestion up by id only (getById), not scoped to the verified payload team_id, then opens the modal with the caller's workspace token.",
+    "user_visible_failure": "A user in workspace B who obtains a workspace A suggestion id can open an Edit modal showing A's draft replies and A's customer address (cross-tenant data leak).",
+    "expected_catching_scenario": "20-cross-tenant"
+  },
+  {
+    "id": "bug-05",
+    "topic_ids": ["AI-07", "AI-05", "AI-04"],
+    "file": "src/draft.mjs, src/inbox.mjs",
+    "lines": "draft.mjs 64-65, 97-99, 110-111; inbox.mjs 74, 76, 83",
+    "description": "To handle forwarded mail, the prompt asks the model for an optional \"to\", parseOptions accepts any address-shaped value, and draftEmail stores it as the suggestion's reply_to. The model reads untrusted email text, so an injected email can choose the recipient.",
+    "user_visible_failure": "A hostile email gets the reply (with company context) sent to an attacker address instead of the original sender.",
+    "expected_catching_scenario": "15-prompt-injection"
+  },
+  {
+    "id": "bug-06",
+    "topic_ids": ["COST-03", "UJ-12"],
+    "file": "src/mail.mjs",
+    "lines": "60 (skipReason)",
+    "description": "The own-mailbox check compares the raw From header (with display name, e.g. 'Support <support@acme.test>') to the bare mailbox address, so it only matches when From has no display name. Mail from the connected mailbox to itself is drafted.",
+    "user_visible_failure": "Notes or forwards the support mailbox sends to itself produce Slack drafts and LLM spend, and a reply would go back to the mailbox itself.",
+    "expected_catching_scenario": "16-no-reply-loop"
+  },
+  {
+    "id": "bug-07",
+    "topic_ids": ["CONC-14"],
+    "file": "src/tenants.mjs",
+    "lines": "54-57 (advanceHistoryId)",
+    "description": "last_history_id is written unconditionally. A slow sync that read older history and finishes after a newer sync moves the stored history id backward.",
+    "user_visible_failure": "After out-of-order syncs the next sync re-reads old history (re-processing work, more API calls) and stale pushes are no longer recognised as stale.",
+    "expected_catching_scenario": "07-out-of-order-push"
+  },
+  {
+    "id": "bug-08",
+    "topic_ids": ["LAT-03", "LAT-02"],
+    "file": "src/server.mjs",
+    "lines": "115-117 (POST /slack/interactions)",
+    "description": "The deferred work (views.open for the Edit modal, an outbound Slack API call) now runs before the HTTP ack is written instead of after it.",
+    "user_visible_failure": "When the Slack API is slow, Edit clicks are acked after Slack's 3 s deadline: the user sees an error and Slack retries the interaction.",
+    "expected_catching_scenario": "none (no scenario slows views.open); would need a slow views.open variant of 04 or 22"
+  },
+  {
+    "id": "bug-09",
+    "topic_ids": ["AI-09", "AI-10"],
+    "file": "src/draft.mjs",
+    "lines": "35-51 (fitThreadToBudget)",
+    "description": "The budget loop walks the last N messages oldest first and appends, so when the thread exceeds the token budget it keeps the oldest messages that fit and drops the newest one, which is the message being replied to.",
+    "user_visible_failure": "On long threads the drafts answer an earlier message and ignore the customer's latest question.",
+    "expected_catching_scenario": "23-long-thread-truncated"
+  },
+  {
+    "id": "bug-10",
+    "topic_ids": ["REL-05", "LAT-09"],
+    "file": "src/slack.mjs",
+    "lines": "41 (createSlackClient call, 429 branch)",
+    "description": "Retry-After (seconds) is passed through as milliseconds, so a 429 is retried after about 1 ms plus jitter instead of the advised wait.",
+    "user_visible_failure": "Under Slack rate limiting the app hammers the API, burns its retry attempts in a fraction of a second and DMs can be dropped into the dead-letter state.",
+    "expected_catching_scenario": "13-slack-429-on-post"
+  },
+  {
+    "id": "bug-11",
+    "topic_ids": ["CONC-04", "DI-01"],
+    "file": "src/db.mjs, src/inbox.mjs",
+    "lines": "db.mjs 17-24 (emails table); inbox.mjs 47-55 (syncMailbox)",
+    "description": "The (team_id, gmail_message_id) primary key on emails was dropped and INSERT OR IGNORE replaced by an app-level filter (SELECT, then INSERT in a later transaction). Two concurrent syncs for one tenant on two instances can both see a message as unseen and both enqueue a draft job.",
+    "user_visible_failure": "Occasional duplicate drafting of the same email: two LLM calls, and the second draft job errors on the suggestions unique key and retries until it notices the existing suggestion.",
+    "expected_catching_scenario": "06-duplicate-push, 08-same-push-both-instances, 07-out-of-order-push (race window is narrow: likely missed)"
+  },
+  {
+    "id": "bug-12",
+    "topic_ids": ["SEC-07", "AI-05"],
+    "file": "src/mail.mjs",
+    "lines": "71-74 (headerValue)",
+    "description": "headerValue no longer strips CR/LF, and its ASCII test accepts control characters (\\x00-\\x7f), so a subject containing CRLF is written raw into the outgoing RFC 2822 headers.",
+    "user_visible_failure": "An inbound email with subject 'Invoice\\r\\nBcc: attacker@evil.test' makes the user's reply silently Bcc the attacker.",
+    "expected_catching_scenario": "15-prompt-injection"
+  },
+  {
+    "id": "bug-13",
+    "topic_ids": ["CONC-06", "REL-10"],
+    "file": "src/jobs.mjs",
+    "lines": "17-23 (claim)",
+    "description": "claim() only picks queued jobs; the clause that reclaims running jobs whose lease expired was removed. Leases are still written and renewed but nothing ever reads them, so a job held by a crashed instance stays 'running' forever.",
+    "user_visible_failure": "If an instance dies mid-job (deploy, OOM) the reply the user clicked Send on is never sent and Slack never updates; the suggestion is stuck in 'sending'.",
+    "expected_catching_scenario": "21-crash-between-claim-and-send"
+  }
+]

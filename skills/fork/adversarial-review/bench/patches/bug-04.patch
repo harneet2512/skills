@@ -1,0 +1,27 @@
+diff -ruN a/src/replies.mjs b/src/replies.mjs
+--- a/src/replies.mjs	2026-10-08 19:55:20.037972004 -0400
++++ b/src/replies.mjs	2026-10-08 20:13:28.832708490 -0400
+@@ -84,7 +84,7 @@
+         return { body: '' };
+       }
+       if (action.action_id === 'edit') {
+-        const s = suggestions.get(db, teamId, action.value);
++        const s = suggestions.getById(db, action.value);
+         if (!s) { const r = reject(teamId, userId, action.value, log); notify(teamId, 'c_reject', channel, userId, r.message); return { body: '' }; }
+         if (s.status !== 'posted') { notify(teamId, s.cid, channel, userId, ALREADY[s.status](s)); return { body: '' }; }
+         // views.open must use the trigger within 3 s, so it cannot wait for the job
+diff -ruN a/src/suggestions.mjs b/src/suggestions.mjs
+--- a/src/suggestions.mjs	2026-10-08 19:55:43.771150969 -0400
++++ b/src/suggestions.mjs	2026-10-08 20:13:28.832628639 -0400
+@@ -30,6 +30,11 @@
+   return row ? { ...row, options: JSON.parse(row.options_json) } : null;
+ }
+ 
++export function getById(db, id) {
++  const row = db.prepare('SELECT * FROM suggestions WHERE id = ?').get(id);
++  return row ? { ...row, options: JSON.parse(row.options_json) } : null;
++}
++
+ export function getByEmail(db, teamId, gmailMessageId) {
+   return db.prepare('SELECT id, status FROM suggestions WHERE team_id = ? AND gmail_message_id = ?').get(teamId, gmailMessageId) ?? null;
+ }

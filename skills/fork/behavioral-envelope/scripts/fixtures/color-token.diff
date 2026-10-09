@@ -1,0 +1,7 @@
+diff --git a/src/styles/tokens.css b/src/styles/tokens.css
+--- a/src/styles/tokens.css
++++ b/src/styles/tokens.css
+@@ -4,3 +4,3 @@
+-  --color-primary: #2563eb;
++  --color-primary: #7c3aed;
+   --color-primary-hover: #1d4ed8;

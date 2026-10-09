@@ -1,0 +1,1 @@
+Small quant fund. Build the order placement service: it receives target positions from the strategy every minute, computes the orders needed from current positions, and places them through the broker's REST API. Orders must reflect current prices and positions.

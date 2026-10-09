@@ -1,0 +1,6 @@
+diff --git a/src/layout/grid.ts b/src/layout/grid.ts
+--- a/src/layout/grid.ts
++++ b/src/layout/grid.ts
+@@ -3,0 +4,2 @@
++// balance the columns so the session sidebar and the email list line up
++# TODO: price this later

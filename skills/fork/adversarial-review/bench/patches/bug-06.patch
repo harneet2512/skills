@@ -1,0 +1,12 @@
+diff -ruN a/src/mail.mjs b/src/mail.mjs
+--- a/src/mail.mjs	2026-10-08 19:59:27.842957235 -0400
++++ b/src/mail.mjs	2026-10-08 20:13:28.833617553 -0400
+@@ -57,7 +57,7 @@
+   const h = msg.headers;
+   if (msg.labelIds.includes('SENT') || msg.labelIds.includes('DRAFT')) return 'own_message';
+   if (h.has(APP_HEADER.toLowerCase())) return 'sent_by_app';
+-  if (msg.sender === mailbox.toLowerCase()) return 'own_mailbox';
++  if (msg.from.toLowerCase() === mailbox.toLowerCase()) return 'own_mailbox';
+   if (!msg.labelIds.includes('INBOX')) return 'not_inbox';
+   const autoSubmitted = (h.get('auto-submitted') ?? 'no').toLowerCase();
+   if (autoSubmitted !== 'no') return 'auto_submitted';

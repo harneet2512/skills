@@ -1,0 +1,1 @@
+Add AI-drafted follow-up email sequences: after a first email, Ghost drafts up to 3 follow-ups and sends them on a schedule in the prospect time zone, stopping when the prospect replies.

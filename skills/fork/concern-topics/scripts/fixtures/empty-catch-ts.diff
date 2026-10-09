@@ -1,0 +1,19 @@
+diff --git a/src/cache.ts b/src/cache.ts
+new file mode 100644
+--- /dev/null
++++ b/src/cache.ts
+@@ -0,0 +1,14 @@
++export function readCache(key: string): string | undefined {
++  try {
++    return store.get(key);
++  } catch (e) {}
++  return undefined;
++}
++
++export async function warm(keys: string[]): Promise<void> {
++  try {
++    await store.load(keys);
++  } catch {
++  }
++  await refresh().catch(() => {});
++}

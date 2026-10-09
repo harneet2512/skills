@@ -1,0 +1,10 @@
+diff --git a/src/agent/draft.py b/src/agent/draft.py
+--- a/src/agent/draft.py
++++ b/src/agent/draft.py
+@@ -10,2 +10,6 @@ def draft_reply(thread):
++    response = client.messages.create(
++        model="claude-opus-5-5",
++        system=SYSTEM_PROMPT,
++        messages=[{"role": "user", "content": thread.text}],
++    )
++    return response.content[0].text
