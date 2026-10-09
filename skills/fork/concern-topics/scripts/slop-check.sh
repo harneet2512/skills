@@ -2,10 +2,17 @@
 # Flag generated-code slop in a change, the same way every run. Rule IDs map to topics/code-craft.md.
 #
 # Usage (run from the target repo's root):
-#   slop-check.sh --diff [base]      scan lines added since base (default: merge-base with the default branch),
-#                                    including uncommitted and untracked files, excluding .scratch/ and fixtures/
+#   slop-check.sh --diff [base] [--justified FILE]
+#                                    scan lines added since base (default: merge-base with the default branch),
+#                                    including uncommitted and untracked files, excluding .scratch/ and fixtures/.
+#                                    --justified works as for --staged (below)
 #   slop-check.sh --paths FILE...    scan whole files
 #   slop-check.sh --stdin            scan the added lines of a unified diff read from stdin
+#   slop-check.sh --staged [--justified FILE]
+#                                    scan only the lines added in the git index (git diff --cached), nothing
+#                                    untracked, excluding .scratch/ and fixtures/. With --justified, skip findings
+#                                    whose file:line is listed with a reason under "## Justified" in FILE
+#                                    (the review file; a missing FILE justifies nothing)
 #   slop-check.sh --rules            print every rule ID
 #
 # Output: one finding per line, "<rule><TAB><file>:<line><TAB><snippet>", sorted by file, line, rule.
@@ -56,6 +63,67 @@ corpus_from_git() {
   local -a spec=(-- . ':(exclude).scratch' ':(exclude,glob)**/fixtures/**')
   git diff --unified=0 --no-color --no-ext-diff "$base" "${spec[@]}" | corpus_from_diff
   git ls-files --others --exclude-standard "${spec[@]}" | while IFS= read -r f; do corpus_from_paths "$f"; done
+}
+
+# Lines staged for the next commit. Same exclusions as corpus_from_git; untracked and unstaged lines do not count.
+corpus_from_staged() {
+  git diff --cached --unified=0 --no-color --no-ext-diff -- . ':(exclude).scratch' ':(exclude,glob)**/fixtures/**' | corpus_from_diff
+}
+
+# Drop findings (stdin: "<rule><TAB><file>:<line><TAB><snippet>") whose file:line appears under "## Justified" in
+# the file $1, on a line that also carries a reason (three letters left once locations and rule IDs are removed).
+# The one justification rule: check-gates G6 runs this same code (slop-check.sh --diff --justified), so the commit
+# hook and the merge gate cannot disagree about a review file. A location may carry a leading ./ in the review file.
+filter_justified() {
+  [ -f "$1" ] || { cat; return 0; }
+  awk -F "$TAB" -v jf="$1" '
+    function has_loc(line, loc,   from, pos, before, after, bdot) {
+      from = 1
+      while ((pos = index(substr(line, from), loc)) > 0) {
+        pos += from - 1
+        before = (pos == 1) ? " " : substr(line, pos - 1, 1)
+        after = substr(line, pos + length(loc), 1)
+        if (before ~ /[ \t(\[,;]/ && after !~ /[0-9]/) return 1
+        if (before == "/" && pos >= 3 && substr(line, pos - 2, 1) == "." && after !~ /[0-9]/) {
+          bdot = (pos == 3) ? " " : substr(line, pos - 3, 1)
+          if (bdot ~ /[ \t(\[,;]/) return 1
+        }
+        from = pos + 1
+      }
+      return 0
+    }
+    function has_reason(line,   r) {
+      r = line
+      sub(/^[ \t]*[-*+][ \t]*/, "", r)
+      gsub(/[^ \t]+:[0-9]+/, " ", r)
+      gsub(/(CRAFT-[0-9]+|SLOP)(\.[a-z-]+)?/, " ", r)
+      return r ~ /[A-Za-z][A-Za-z][A-Za-z]/
+    }
+    BEGIN {
+      n = 0; insec = 0; level = 0; fence = 0
+      while ((getline l < jf) > 0) {
+        if (l ~ /^ ? ? ?(```|~~~)/) { fence = !fence; continue }
+        if (fence) continue
+        if (l ~ /^ ? ? ?#+[ \t]/) {
+          h = l; sub(/^ */, "", h)
+          depth = match(h, /^#+/) ? RLENGTH : 0
+          title = h; sub(/^#+[ \t]+/, "", title); sub(/[ \t#]+$/, "", title)
+          if (insec && depth <= level) insec = 0
+          # "Justified", "Justified:" and "justified" are one heading (punctuation and case do not matter).
+          title = tolower(title); gsub(/[^a-z0-9]+/, " ", title); sub(/^ /, "", title); sub(/ $/, "", title)
+          if (!insec && title == "justified") { insec = 1; level = depth }
+          continue
+        }
+        if (insec) { gsub(/`/, "", l); J[n++] = l }
+      }
+      close(jf)
+    }
+    {
+      ok = 0
+      for (i = 0; i < n && !ok; i++) if (has_loc(J[i], $2) && has_reason(J[i])) ok = 1
+      if (!ok) print
+    }
+  '
 }
 
 # The rule engine. It keeps a little state per run of consecutive lines so that a catch block spread over
@@ -221,7 +289,20 @@ scan() {
   '
 }
 
+# --justified FILE may sit anywhere on the line; it only makes sense with --staged or --diff.
+justified=""
+rest=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --justified)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "slop-check: --justified needs a file" >&2; exit 2; }
+      justified="$2"; shift 2 ;;
+    *) rest+=("$1"); shift ;;
+  esac
+done
+set -- ${rest[@]+"${rest[@]}"}
 mode="${1:-}"
+if [ -n "$justified" ] && [ "$mode" != "--staged" ] && [ "$mode" != "--diff" ]; then echo "slop-check: --justified only works with --staged or --diff" >&2; exit 2; fi
 case "$mode" in
   --rules) for r in $RULES; do echo "$r"; done; exit 0 ;;
   --stdin) corpus=$(corpus_from_diff) ;;
@@ -230,17 +311,26 @@ case "$mode" in
     [ "$#" -gt 0 ] || { echo "slop-check: --paths needs at least one file" >&2; exit 2; }
     for p in "$@"; do [ -f "$p" ] || { echo "slop-check: not a file: $p" >&2; exit 2; }; done
     corpus=$(corpus_from_paths "$@") ;;
+  --staged)
+    shift
+    [ "$#" -eq 0 ] || { echo "slop-check: --staged takes no arguments except --justified FILE" >&2; exit 2; }
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "slop-check: --staged must run inside the target git repo" >&2; exit 2; }
+    corpus=$(corpus_from_staged) ;;
   --diff)
     shift
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "slop-check: --diff must run inside the target git repo" >&2; exit 2; }
     if [ "$#" -gt 0 ]; then base="$1"; else base=$(default_base) || { echo "slop-check: no default branch found; pass a base: --diff <base>" >&2; exit 2; }; fi
     git rev-parse --verify --quiet "${base}^{commit}" >/dev/null || { echo "slop-check: base '$base' is not a commit" >&2; exit 2; }
     corpus=$(corpus_from_git "$base") ;;
-  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
 
 findings=$(printf '%s\n' "$corpus" | grep -v '^$' | scan | LC_ALL=C sort -t "$TAB" -k1,1 -k2,2n -k3,3 -u |
   awk -F "$TAB" -v T="$TAB" '{ s=$0; sub(/^[^\t]*\t[^\t]*\t[^\t]*\t/, "", s); print $3 T $1 ":" $2 T s }' || true)
+
+if [ -n "$justified" ] && [ -n "$findings" ]; then
+  findings=$(printf '%s\n' "$findings" | filter_justified "$justified")
+fi
 
 if [ -n "$findings" ]; then
   printf '%s\n' "$findings"

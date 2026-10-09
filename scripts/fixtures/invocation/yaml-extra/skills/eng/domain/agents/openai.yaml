@@ -1,0 +1,5 @@
+interface:
+  display_name: "domain"
+  short_description: "Fixture"
+policy:
+  allow_implicit_invocation: false

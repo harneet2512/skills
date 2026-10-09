@@ -15,6 +15,8 @@ Run these steps in order. Any push to the branch sends you back to step 2: CI on
 
    Write down the head SHA the first command prints. Step 5 needs it as a literal value: shell variables do not survive between separate tool calls, and an empty value would silently drop the head check.
 
+   When CI does not report as GitHub checks on the PR (for example, it runs on a mirror repository), `.scratch/gates.json` names a `merge_check` command with `{sha}` and `{pr}` placeholders. Run that instead of `gh pr checks`; its exit `0` is the pass. The merge hook runs the same check before any `gh pr merge`.
+
    Only exit `0` passes: nothing failed and nothing is pending. Exit `8` means pending, so go back to step 2. Exit `1` means a check failed, or no checks were reported yet (right after a push, wait one interval and check again). If the repo has no CI at all, say so and get the user's explicit approval before merging without it.
 
    Checking only that the branch merges cleanly is not enough. A scripted loop that checks mergeability alone will merge a red build.
