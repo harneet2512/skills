@@ -1,0 +1,52 @@
+name: Fork CI
+
+# Checks for this fork (see FORK.md). Upstream's release workflow is deleted: the fork releases by hand.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Plugin version matches package.json
+        run: npm run check-plugin-version
+
+      # Runs the invocation lint on this repo too, as its last case, so there is no separate lint step.
+      - name: Invocation lint and its tests
+        run: bash scripts/test-invocation.sh
+
+      - name: Feature-loop gates and hooks
+        run: bash skills/fork/feature-loop/scripts/test-gates.sh
+
+      - name: Behavioral-envelope pack detection
+        run: bash skills/fork/behavioral-envelope/scripts/test-detect.sh
+
+      - name: Concern-topics slop check
+        run: bash skills/fork/concern-topics/scripts/test-slop.sh
+
+      - name: Evals harness
+        run: node --test skills/fork/evals/scripts/test-stats.mjs skills/fork/evals/scripts/test-harness.mjs
+
+      - name: Live-verify harness
+        run: node --test skills/fork/live-verify/harness/test/*.mjs
+
+      - name: Live-verify inbox-assist bench
+        run: node --test skills/fork/live-verify/bench/inbox-assist/test/*.mjs

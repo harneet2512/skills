@@ -1,0 +1,5 @@
+interface:
+  display_name: "setup"
+  short_description: "Fixture"
+policy:
+  allow_implicit_invocation: false

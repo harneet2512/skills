@@ -1,14 +1,19 @@
 // Evaluates the feature-loop gates (see ../gates.md). Called by check-gates.sh, which has already found the
 // repo root, read the last commit time and validated the gate names. Node 22, no dependencies.
 //
-//   node check-gates.mjs --root <dir> --last-commit <unix seconds> --slop <slop-check.sh> [G1 ... G7]
+//   node check-gates.mjs --root <dir> [--work <dir>] --last-commit <unix seconds> --slop <slop-check.sh>
+//                        [--phase build|merge|close] [G1 ... G8]
+//
+// --root holds .scratch/; --work is the git worktree whose code G6 scans (default: --root). A phase narrows the
+// gates to those due at that point of the loop; gate IDs narrow them further.
 //
 // Exit: 0 every evaluated gate green (or n/a), 1 any red, 2 the run file is invalid.
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { clean, blank, section, firstTable, tables } from './md-table.mjs';
 
-const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7'];
+const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
 const NORMAL_UP = new Set(['normal', 'large']);
 const APPLIES = {
   G1: (size) => NORMAL_UP.has(size),
@@ -18,23 +23,32 @@ const APPLIES = {
   G5: (size) => NORMAL_UP.has(size),
   G6: () => true,
   G7: (size) => NORMAL_UP.has(size),
+  G8: () => true, // decided by whether .scratch/loop-status.md exists, below
+};
+// Which gates are due when: build = before the first push or PR, merge = before the merge, close = all of them.
+const PHASES = {
+  build: ['G1', 'G2', 'G8'],
+  merge: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G8'],
+  close: ALL,
 };
 const CASE_RE = /\bJ[0-9]+\.[a-z][a-z0-9-]*\b/g;
-const PLACEHOLDER = /^(tbd|todo|\?|<[^>]*>)$/i;
 
 // ---- arguments
 const args = process.argv.slice(2);
-let root = process.cwd(), lastCommit = 0, slop = '';
+let root = process.cwd(), work = '', lastCommit = 0, slop = '', phase = '';
 const wanted = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--root') root = args[++i];
+  else if (a === '--work') work = args[++i];
+  else if (a === '--phase') { phase = args[++i]; if (!PHASES[phase]) { console.error(`check-gates: unknown phase: ${phase}`); process.exit(2); } }
   else if (a === '--last-commit') lastCommit = Number(args[++i]) || 0;
   else if (a === '--slop') slop = args[++i];
-  else if (/^G[1-7]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
+  else if (/^G[1-8]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
-const selected = wanted.length ? ALL.filter((g) => wanted.includes(g)) : ALL;
+work = work || root;
+const selected = ALL.filter((g) => (!phase || PHASES[phase].includes(g)) && (!wanted.length || wanted.includes(g)));
 
 // ---- the run file
 const runPath = join(root, '.scratch', 'gates.json');
@@ -42,6 +56,10 @@ const die = (msg) => { console.error(msg); process.exit(2); };
 let run;
 try { run = JSON.parse(readFileSync(runPath, 'utf8')); }
 catch (e) { die(`gates: invalid .scratch/gates.json: ${e.message}`); }
+if (run?.status === 'closed') {
+  console.log('gates: loop closed (.scratch/gates.json says "status": "closed"), nothing to check');
+  process.exit(0);
+}
 const slug = typeof run?.slug === 'string' ? run.slug : '';
 const size = typeof run?.size === 'string' ? run.size : '';
 const base = typeof run?.base === 'string' && run.base ? run.base : '';
@@ -62,86 +80,14 @@ const P = {
   evals: `.scratch/evals/${slug}/results.json`,
   review: `.scratch/review/${slug}.md`,
   metrics: '.scratch/loop-metrics.md',
+  status: '.scratch/loop-status.md',
 };
 const abs = (p) => join(root, p);
 const read = (p) => { try { return readFileSync(abs(p), 'utf8'); } catch { return null; } };
 const newerThanCommit = (p) => statSync(abs(p)).mtimeMs / 1000 > lastCommit;
 const listShort = (xs, n = 5) => xs.length <= n ? xs.join(', ') : `${xs.slice(0, n).join(', ')} and ${xs.length - n} more`;
 
-// ---- markdown helpers, tolerant of leading/trailing pipes, padding, backticks and bold in cells
-
-// Split one table row into cells. Pipes inside backtick spans or escaped as \| do not split.
-function splitRow(line) {
-  let s = line.trim();
-  if (!s.includes('|')) return null;
-  if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
-  const cells = [];
-  let cur = '', tick = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === '\\' && s[i + 1] === '|') { cur += '|'; i++; continue; }
-    if (c === '`') {
-      let n = 1;
-      while (s[i + n] === '`') n++;
-      if (tick === 0) tick = n; else if (tick === n) tick = 0;
-      cur += '`'.repeat(n); i += n - 1; continue;
-    }
-    if (c === '|' && tick === 0) { cells.push(cur); cur = ''; continue; }
-    cur += c;
-  }
-  cells.push(cur);
-  return cells;
-}
-const isSeparator = (line) => {
-  const cells = splitRow(line);
-  return !!cells && cells.length > 0 && cells.every((c) => /^\s*:?-{1,}:?\s*$/.test(c));
-};
-// Cell text without markup: surrounding backticks, bold or italic markers, padding.
-function clean(cell) {
-  let s = (cell ?? '').trim();
-  for (let k = 0; k < 3; k++) {
-    s = s.replace(/^(\*\*|__|\*|_)(.*)\1$/s, '$2').trim();
-    s = s.replace(/^(`+)(.*)\1$/s, '$2').trim();
-  }
-  return s;
-}
-const norm = (h) => clean(h).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const blank = (cell) => { const s = clean(cell); return s === '' || PLACEHOLDER.test(s); };
-
-// Lines of a section whose heading text is `title` (any level), up to the next heading of the same or higher level.
-// Fenced code blocks are skipped so an example inside ``` does not count.
-function section(md, title) {
-  const lines = md.split(/\r?\n/);
-  let level = 0, out = null, fence = false;
-  for (const line of lines) {
-    if (/^\s{0,3}(```|~~~)/.test(line)) { fence = !fence; if (out) out.push(''); continue; }
-    if (fence) { if (out) out.push(''); continue; }
-    const h = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
-    if (h) {
-      if (out) { if (h[1].length <= level) break; out.push(line); continue; }
-      if (norm(h[2]) === title) { level = h[1].length; out = []; }
-      continue;
-    }
-    if (out) out.push(line);
-  }
-  return out;
-}
-// The first table in some lines: { header: [normalized names], rows: [[cells]] }.
-function firstTable(lines) {
-  for (let i = 0; i + 1 < lines.length; i++) {
-    const head = splitRow(lines[i]);
-    if (!head || !isSeparator(lines[i + 1])) continue;
-    const rows = [];
-    for (let j = i + 2; j < lines.length; j++) {
-      if (!lines[j].trim() || !lines[j].includes('|')) break;
-      const r = splitRow(lines[j]);
-      if (r) rows.push(r);
-    }
-    return { header: head.map(norm), rows };
-  }
-  return null;
-}
+// ---- markdown helpers live in md-table.mjs
 const caseIds = (text) => [...new Set(String(text ?? '').match(CASE_RE) ?? [])];
 
 // Does the Packs line name the llm or retrieval pack? Backtick spans holding one word count as that word;
@@ -296,50 +242,79 @@ function G5() {
   return green();
 }
 
-function justifiedLines() {
-  const md = read(P.review);
-  if (md === null) return null;
-  return (section(md, 'justified') ?? []).map((l) => l.replace(/`/g, ''));
-}
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-function isJustified(lines, loc) {
-  const re = new RegExp(`(^|[\\s(\\[,;])(\\./)?${escapeRe(loc)}(?![0-9])`);
-  return lines.some((l) => {
-    if (!re.test(l)) return false;
-    const reason = l
-      .replace(/^\s*[-*+]\s*/, '')
-      .replace(/\S+:[0-9]+/g, ' ')
-      .replace(/\b(CRAFT-[0-9]+|SLOP)(\.[a-z-]+)?\b/g, ' ');
-    return /[A-Za-z]{3,}/.test(reason);
-  });
-}
-
+// The justification rule ("## Justified" in the review file, a reason on the line) lives in slop-check.sh --justified,
+// the same code the commit hook runs, so the commit hook and this gate cannot disagree about a review file.
 function G6() {
   if (!slop || !existsSync(slop)) return red('slop-check.sh not found next to the feature loop', slop || 'concern-topics/scripts/slop-check.sh');
   const argv = [slop, '--diff'];
   if (base) argv.push(base);
-  const r = spawnSync('bash', argv, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (existsSync(abs(P.review))) argv.push('--justified', abs(P.review).replaceAll('\\', '/'));
+  const r = spawnSync('bash', argv, { cwd: work, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (r.status === 0) return green();
   if (r.status !== 1) {
     const why = (r.stderr || r.stdout || String(r.error ?? 'no output')).trim().split('\n')[0];
     return red(`slop-check could not run: ${why}`, '.scratch/gates.json base');
   }
-  const findings = r.stdout.split('\n').filter(Boolean).map((l) => { const [rule, loc] = l.split('\t'); return { rule, loc }; });
-  const lines = justifiedLines() ?? [];
-  const open = findings.filter((f) => !isJustified(lines, f.loc)).map((f) => `${f.rule} ${f.loc}`);
-  if (open.length) return red(`slop findings not justified under ## Justified: ${listShort(open)}`, P.review);
-  return green();
+  const open = r.stdout.split('\n').filter(Boolean).map((l) => { const [rule, loc] = l.split('\t');return `${rule} ${loc}`; });
+  return red(`slop findings not justified under ## Justified: ${listShort(open)}`, P.review);
+}
+
+// How many findings in the review file are CONFIRMED, of any severity.
+function confirmedCount() {
+  const md = read(P.review);
+  const table = md && firstTable(section(md, 'findings') ?? []);
+  const status = table ? table.header.indexOf('status') : -1;
+  return status < 0 ? 0 : table.rows.filter((r) => clean(r[status]).toUpperCase() === 'CONFIRMED').length;
 }
 
 function G7() {
   const md = read(P.metrics);
   if (md === null) return red(`no metrics line containing ${slug}`, P.metrics);
   // A bypass record names the slug too, but it is not the change's numbers.
-  const ok = md.split(/\r?\n/).some((l) => l.includes(slug) && !/gates bypassed:/.test(l));
-  return ok ? green() : red(`no metrics line containing ${slug}`, P.metrics);
+  const lines = md.split(/\r?\n/).filter((l) => l.includes(slug) && !/gates bypassed:/.test(l));
+  if (!lines.length) return red(`no metrics line containing ${slug}`, P.metrics);
+  const confirmed = confirmedCount();
+  if (!confirmed) return green();
+  // Every CONFIRMED finding is a defect that got past the earlier layers, so the line must count at least that many
+  // escapes=<n>, and each escape must have raised a floor (a check, pack item, scenario or eval case): floors=<m>,
+  // m at least n. Only the last line for the slug is the change's final numbers.
+  const last = lines[lines.length - 1];
+  const e = /(?:^|[^A-Za-z0-9_])escapes=([0-9]+)/.exec(last);
+  const f = /(?:^|[^A-Za-z0-9_])floors=([0-9]+)/.exec(last);
+  if (!e || !f) return red(`the review has CONFIRMED findings, so a ${slug} metrics line needs escapes=<n> floors=<m>`, P.metrics);
+  const escapes = Number(e[1]), floors = Number(f[1]);
+  if (escapes < confirmed) {
+    return red(`escapes=${escapes} is below the ${confirmed} CONFIRMED finding${confirmed > 1 ? 's' : ''} in ${P.review}: every CONFIRMED finding is an escape`, P.metrics);
+  }
+  if (floors < escapes) {
+    return red(`floors=${floors} is below escapes=${escapes}, so an escape raised no floor (a check, pack item, scenario or eval case)`, P.metrics);
+  }
+  return green();
 }
 
-const IMPL = { G1, G2, G3, G4, G5, G6, G7 };
+// The ledger: a stage is done only on evidence, and evidence says how it is known.
+function G8() {
+  const md = read(P.status);
+  if (md === null) return na('no .scratch/loop-status.md');
+  const table = tables(md.split(/\r?\n/)).find((t) => t.header.includes('status') && t.header.includes('evidence'));
+  if (!table) return red('no stage table with Status and Evidence columns', P.status);
+  const col = (n) => table.header.indexOf(n);
+  const unmarked = [], assumed = [];
+  for (const r of table.rows) {
+    if (!/^done\b/i.test(clean(r[col('status')] ?? ''))) continue; // running rows are the Stop hook's business
+    const name = [clean(r[col('stage')] ?? ''), clean(r[col('skill')] ?? '')].filter(Boolean).join(' ') || `row ${table.rows.indexOf(r) + 1}`;
+    const ev = clean(r[col('evidence')] ?? '');
+    const tag = ev.replace(/^[`*_\s]+/, ''); // `measured:` or **measured:** still counts
+    if (!/^(measured|inferred|assumed):/i.test(tag)) unmarked.push(`${name} (${ev === '' ? 'empty' : JSON.stringify(ev)})`);
+    else if (/^assumed:/i.test(tag) && !/(^|[^A-Za-z])(measured|inferred):/i.test(tag)) assumed.push(name);
+  }
+  const problems = [];
+  if (unmarked.length) problems.push(`done stage without evidence (measured:, inferred: or assumed:): ${listShort(unmarked, 4)}`);
+  if (assumed.length) problems.push(`a stage cannot be done on an assumption: ${listShort(assumed, 4)}`);
+  return problems.length ? red(problems.join('; '), P.status) : green();
+}
+
+const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8 };
 const SIZE_NOTE = 'applies to normal and large only';
 const counts = { green: 0, red: 0, na: 0 };
 for (const g of selected) {

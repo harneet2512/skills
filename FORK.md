@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds nine skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.4`
+- **Fork version:** `1.3.1-fork.5`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -11,36 +11,55 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 
 | Path | Upstream | This fork |
 |---|---|---|
-| `skills/fork/wp-loop/` | does not exist | new user-invoked skill |
+| `skills/fork/wp-loop/` | does not exist | new skill; model-invoked since fork.5 |
 | `skills/fork/deep-engineering/` | does not exist | new model-invoked skill |
 | `skills/fork/behavioral-envelope/` | does not exist | new model-invoked skill |
 | `skills/fork/feature-loop/` | does not exist | new user-invoked skill |
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
-| `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hook: a `PreToolUse` hook on `Bash` that runs the feature-loop gates before `git push` and PR creation; see section 4, "Gates" |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.4`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.4` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.5`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.5` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
-| GitHub Actions (repo setting, not a file) | enabled | **disabled** on this fork; see below |
+| `.github/workflows/` | `release.yml`, `needs-info.yml`, `triage-label.yml` | those three removed (fork.5); `fork-ci.yml` added; Actions enabled again; see "GitHub Actions on this fork" |
+| `skills/engineering/to-spec/`, `to-tickets/`, `retro/` (SKILL.md frontmatter and `agents/openai.yaml`) | user-invoked (`disable-model-invocation: true`, `allow_implicit_invocation: false`) | **model-invoked**, with model-facing descriptions, so `feature-loop` can call them (fork.5, section 5). The skill bodies are unchanged. |
+| `README.md`, `skills/engineering/README.md`, `skills/fork/README.md` | list those skills (and `wp-loop`) as user-invoked | list them as model-invoked |
+| `docs/engineering/retro.md` | "the skill stays human-in-the-loop and user-invoked" | stays human-in-the-loop; notes that the fork makes it model-invoked so `feature-loop` can run it, and that it still only proposes |
+| `scripts/check-invocation.mjs`, `scripts/test-invocation.sh`, `scripts/fixtures/invocation/` | do not exist | invocation lint and its tests (section 5) |
 | `FORK.md` | does not exist | this file |
 
-Every other file, including every upstream `SKILL.md`, is identical to upstream.
+Every other file is identical to upstream. Three upstream `SKILL.md` files changed in fork.5, frontmatter only (bodies unchanged); their original `description:` lines were:
 
-### GitHub Actions is off on this fork
+- `to-spec`: `"Turn the current conversation into a spec and publish it to the project issue tracker: no interview, just synthesis of what you've already discussed."`
+- `to-tickets`: `Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker (edges as text in one file per ticket locally, or native blocking links on a real tracker).`
+- `retro`: `"Conduct a retrospective on a coding session."`
 
-Upstream's `.github/workflows/release.yml` runs on every push to `main`. On this fork it would run `changeset version` over upstream's pending changesets, which turns `1.3.1-fork.1` back into a plain upstream version and deletes the changesets, and then fail to open its release PR. So Actions is disabled in the repo settings:
+Each also had `disable-model-invocation: true`, and its `agents/openai.yaml` had `policy: allow_implicit_invocation: false`.
+
+### GitHub Actions on this fork
+
+Upstream's workflows misbehave on a fork, so fork.5 removes three of them and adds the fork's own CI:
+
+| Workflow | What it would do here | Fork.5 |
+|---|---|---|
+| `release.yml` | runs `changeset version` on every push to `main`: turns the fork version back into a plain upstream version, deletes the changesets, then fails to open its release PR | removed; the fork releases by hand (see "Ship a change to the fork") |
+| `needs-info.yml` | closes this fork's issues labelled `needs-info` after 14 days, with a message pointing at upstream's CONTRIBUTING | removed |
+| `triage-label.yml` | fails on this fork's issues wherever the `needs-triage` label does not exist | removed |
+| `fork-ci.yml` | new: on push and pull request, runs the invocation lint and every test suite (gates, hooks, packs, slop, invocation, evals, live-verify, the inbox-assist bench) and the plugin-version check; actions pinned to full SHAs | added |
+
+Before fork.5, Actions was disabled in the repo settings because of `release.yml`. With it removed, Actions is enabled again so `fork-ci.yml` runs:
 
 ```bash
-gh api -X PUT repos/<owner>/skills/actions/permissions -F enabled=false
+gh api -X PUT repos/<owner>/skills/actions/permissions -F enabled=true
 ```
 
-If you fork this fork, do the same before your first push.
+If you fork this fork, keep those three workflows removed before your first push.
 
-## 1. `wp-loop` (new, user-invoked)
+## 1. `wp-loop` (new; model-invoked since fork.5)
 
-Type `/mattpocock-skills:wp-loop <issue>` to take one work package (one issue, one branch, one PR) from issue to merged.
+Type `/mattpocock-skills:wp-loop <issue>` (or let `feature-loop` call it) to take one work package (one issue, one branch, one PR) from issue to merged.
 
 ### What upstream already had
 
@@ -82,9 +101,9 @@ The loop was run on a private project from 2026-10-02, using the upstream skills
 - `skills/fork/wp-loop/merge-gate.md`: the merge gate and the degraded-CI procedure
 - `skills/fork/wp-loop/check-comment.md`: the results comment template
 - `skills/fork/wp-loop/review-checks.md`: extra checks for the reviewer
-- `skills/fork/wp-loop/agents/openai.yaml`: Codex metadata, user-invoked
+- `skills/fork/wp-loop/agents/openai.yaml`: Codex metadata (model-invoked since fork.5)
 
-`wp-loop` calls only model-invoked skills through the Skill tool (`deep-engineering`, `tdd`, `pr`, `code-review`, `diagnosing-bugs`). It tells the user to run the user-invoked ones (`/setup-matt-pocock-skills`, `/to-spec`, `/grill-with-docs`), following [`.agents/invocation.md`](./.agents/invocation.md). The issue tracker is whatever `setup-matt-pocock-skills` configured (GitHub by default). The `gh` commands target GitHub.
+`wp-loop` calls only model-invoked skills through the Skill tool (`deep-engineering`, `tdd`, `pr`, `code-review`, `diagnosing-bugs`). Since fork.5 it also calls `to-spec`, and resolves fuzzy terms with `grilling` and `domain-modeling`; it tells the user to run only `/setup-matt-pocock-skills`.agents/invocation.md`](./.agents/invocation.md). The issue tracker is whatever `setup-matt-pocock-skills` configured (GitHub by default). The `gh` commands target GitHub.
 
 ## 2. `deep-engineering` (new, model-invoked)
 
@@ -176,7 +195,7 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 
 ### Gates
 
-Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines seven gates (G1 to G7) on those files. `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
+Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines eight gates (G1 to G8) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
 
 The plugin enforces the gates with a hook, which is new in this fork (upstream ships no hooks):
 
@@ -194,7 +213,28 @@ An upstream merge cannot conflict with the hook unless upstream adds its own `ho
 
 The topic files follow the structure of Trail of Bits' `sharp-edges` skill (CC BY-SA 4.0) and copy none of its text. `user-journey.md` uses ideas from gstack's `plan-eng-review` (MIT), credited in its sources. `live-verify`'s proof standards follow pstack's `create-verification-skill`. Every incident and figure in the topics and in `evals/references/research.md` cites a page its author opened; claims that could not be verified are labelled in place.
 
-`live-verify/ci/live-verify.yml` is an example workflow for target repos. It is not installed in this repo, where Actions stays off.
+`live-verify/ci/live-verify.yml` is an example workflow for target repos. It is not installed in this repo; this repo's own CI is `fork-ci.yml`.
+
+## 5. The autonomous loop (fork.5)
+
+**Why:** before fork.5, the loop broke at stage 4. `feature-loop` told the model to "call the Skill tool with" `to-spec`, `to-tickets`, `wp-loop` and `retro`, but all four were user-invoked. `.agents/invocation.md` says no skill can reach a user-invoked skill, so stages 4, 5 and 9 could never run unattended, and nothing tested for it. Found on 2026-10-09 while running HAR-150 on a private project.
+
+**What changed:**
+
+| Change | Where | Rule it enforces |
+|---|---|---|
+| `to-spec`, `to-tickets`, `retro`, `wp-loop` made model-invoked | frontmatter, `agents/openai.yaml`, READMEs | `feature-loop` stays the single user-invoked entry point; every skill it calls is reachable |
+| `feature-loop` rewritten | `skills/fork/feature-loop/SKILL.md` | Matt's main flow (`ask-matt`: understand, `to-spec`, `to-tickets`, build with `tdd` + `code-review`, `retro`) as the spine, with the fork's layer at each step. Adds roles, visibility, the evidence ledger, resume, and one PR per feature: tickets are slices on one integration branch, as Matt's `implement-spec` builds them, each reviewed before it merges. |
+| `wp-loop` | `SKILL.md`, `merge-gate.md` | used whole for small work, and for steps 12–13 on a feature's PR. A fuzzy term calls `grilling` + `domain-modeling` instead of stopping. `merge_check` for CI that is not GitHub checks. |
+| Hooks | `hooks/hooks.json`, `feature-loop/scripts/` | commit gate (`slop-check --staged`); merge gate (green gates + green CI on the exact head + `--match-head-commit`); Stop (no stage left `running`); SessionStart (prints the ledger) |
+| Gates G7 (floors) and G8 (ledger) | `check-gates.mjs`, `gates.md` | every escape raises a floor; no stage is done on an assumption |
+| Invocation lint | `scripts/check-invocation.mjs` | no skill can call a user-invoked skill again |
+| `detect-packs.sh` | `behavioral-envelope/scripts/` | portable awk on Windows Git Bash (its own test suite failed there before) |
+| Fork CI | `.github/workflows/fork-ci.yml` (upstream workflows removed: see "GitHub Actions on this fork") | every test suite runs on push and PR |
+
+**Upstream's reason for keeping `retro` user-invoked** is that deciding what deserves a permanent check takes judgement (`docs/engineering/retro.md`). The fork keeps that: `retro` still only proposes, and `feature-loop` stage 9 stops for the user to pick which proposals become checks.
+
+**Principle (from Lauren Tan's pstack talk):** put each rule at the strongest layer that can hold it. Skill text can be skipped, so hooks and CI hold the loop.
 
 ## Install
 
@@ -226,13 +266,14 @@ git fetch upstream
 git merge upstream/main
 ```
 
-Expect a conflict on the `version` line of `package.json` and `.claude-plugin/plugin.json` whenever Matt releases. Resolve it as `<upstream version>-fork.1`. Then:
+Expect a conflict on the `version` line of `package.json` and `.claude-plugin/plugin.json` whenever Matt releases, and on the frontmatter of `to-spec`, `to-tickets` and `retro` (and their `agents/openai.yaml`) whenever Matt edits those lines: keep the fork's model-invoked frontmatter and take Matt's body. Resolve it as `<upstream version>-fork.1`. Then:
 
 1. Check that every path in `plugin.json`'s `skills` still exists (upstream sometimes removes or moves skills).
 2. Check that `wp-loop`, `deep-engineering` and `behavioral-envelope` still name skills upstream ships. If upstream renamed or removed one, update the fork skill and record it here.
 3. Run `claude plugin validate .` (upstream's own `CLAUDE.md` makes `--strict` fail on upstream too) and `node scripts/sync-plugin-version.mjs --check`.
 4. Update the **Upstream base** line at the top of this file.
-5. Commit and push. Leave Actions disabled.
+5. Run `node scripts/check-invocation.mjs`: an upstream change can make a skill the loop calls user-invoked again.
+6. Commit and push. Keep `release.yml`, `needs-info.yml` and `triage-label.yml` out (see "GitHub Actions on this fork").
 
 ## Ship a change to the fork
 

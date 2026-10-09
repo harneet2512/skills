@@ -12,7 +12,11 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 { "slug": "reply-options", "size": "normal", "base": "main" }
 ```
 
-`size` is `small`, `normal` or `large`. Without this file the gates do not apply, so the hook stays silent on work that is not running the loop.
+`size` is `small`, `normal` or `large`. An optional `"merge_check"` is the command the merge hook runs instead of `gh pr checks`, for projects whose CI runs elsewhere: `{sha}` and `{pr}` are filled in, and exit 0 means CI is green on exactly that sha (for example `{ "merge_check": "scripts/ci-status.sh {sha}" }`). Without this file the gates do not apply, so the hook stays silent on work that is not running the loop.
+
+`base` is also the branch a push may not target while the loop is active (see "Running them"). The optional `"status": "closed"` ends the loop: set it when the feature is merged and its metrics line is written (the close phase has passed). A closed loop is invisible to every hook and to `check-gates.sh`: they print nothing (`check-gates.sh` says "loop closed" and exits 0), the SessionStart summary is empty, and Stop no longer holds the session. Any other `status`, or none, means the loop is active.
+
+`.scratch/` is untracked, so `git worktree add` does not copy it. A command that runs in a linked worktree of the repository (a builder's worktree) therefore uses the run file, the notes and the review file of the **main worktree**: the hooks look for `.scratch/gates.json` in the working directory, then in the git top level, then in the main worktree (the directory holding the common `.git`). The code they check is the worktree's own: the staged diff for a commit, the diff against `base` for G6, the checked-out HEAD for a merge.
 
 ## The gates
 
@@ -23,8 +27,9 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 | G3 live | normal, large | the newest `.scratch/live/<run>/report.json` is newer than the last commit, every scenario in it has `result: "pass"`, and every journey case ID from the shape file appears in at least one scenario's `journey` field |
 | G4 evals | any size whose envelope `**Packs:**` line names `llm` or `retrieval` | `.scratch/evals/<slug>/results.json` exists, is newer than the last commit, and every entry in its `gates` array has `ok: true` |
 | G5 review | normal, large | `.scratch/review/<slug>.md` exists; no row in its `## Findings` table is `CONFIRMED` with severity `CRITICAL` or `HIGH` and resolution `open` or empty |
-| G6 craft | all | `concern-topics/scripts/slop-check.sh --diff <base>` reports nothing, or every finding's `file:line` is listed under `## Justified` in `.scratch/review/<slug>.md` with a reason |
-| G7 metrics | normal, large | `.scratch/loop-metrics.md` has a line containing `<slug>` |
+| G6 craft | all | `concern-topics/scripts/slop-check.sh --diff <base> --justified .scratch/review/<slug>.md` reports nothing: every finding's `file:line` is listed under `## Justified` with a reason (the commit hook runs the same code with `--staged`, so the two never disagree about a review file) |
+| G7 metrics | normal, large | `.scratch/loop-metrics.md` has a line containing `<slug>` (bypass records do not count); and when `.scratch/review/<slug>.md` has any `CONFIRMED` finding, the **last** such line carries `escapes=<n>` and `floors=<m>` with `n` at least the number of `CONFIRMED` rows in the review's Findings table (every confirmed finding is an escape) and `m` at least `n` (each escape raised a floor: a check, pack item, scenario or eval case) |
+| G8 ledger | all, once `.scratch/loop-status.md` exists (n/a before) | every row of the stage table with status `done` has an Evidence cell that starts with `measured:`, `inferred:` or `assumed:`, and not one that is only `assumed:` (a stage cannot be done on an assumption); `running` rows are ignored here, the Stop hook holds them |
 
 ## The review file
 
@@ -46,8 +51,32 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 ## Running them
 
 ```
-<feature-loop>/scripts/check-gates.sh            # every gate that applies, exit 0 green, 1 red, 2 usage
-<feature-loop>/scripts/check-gates.sh G2 G6      # only these
+<feature-loop>/scripts/check-gates.sh                  # every gate that applies (the close phase), exit 0 green, 1 red, 2 usage
+<feature-loop>/scripts/check-gates.sh G2 G6            # only these
+<feature-loop>/scripts/check-gates.sh --phase build    # G1 G2 G8
+<feature-loop>/scripts/check-gates.sh --phase merge    # G1 to G6 and G8
+<feature-loop>/scripts/check-gates.sh --phase close    # all eight, as with no phase
 ```
 
-Each red gate prints one line: the gate ID, what is missing, and the file to fix. The plugin hook runs the script before `git push` and `gh pr create` whenever `.scratch/gates.json` exists. A deliberate bypass is `FEATURE_LOOP_GATES=off` with a reason in `FEATURE_LOOP_BYPASS_REASON`; the hook appends the bypass and its reason to `.scratch/loop-metrics.md`, so every skipped gate is on record.
+Each red gate prints one line: the gate ID, what is missing, and the file to fix. Every gate is still subject to its size (the "Applies to" column), and a phase together with gate IDs checks the gates in both.
+
+### Phases
+
+The gates are not all due at the same time. Feature-loop pushes slices and opens the draft PR during Build, before the live run, the review and the metrics exist, and G7 is written after the merge. So each moment asks for the gates that can be green by then:
+
+| Phase | Gates | Asked by |
+|---|---|---|
+| `build` | G1, G2, G8 | the hook on `git push`, `gh pr create`, `gh api` POST to `.../pulls` and a `createPullRequest` mutation |
+| `merge` | G1, G2, G3, G4, G5, G6, G8 | the hook on a merge (`gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, a `mergePullRequest` mutation) |
+| `close` | G1 to G8, G7 included | you, after the merge, once the metrics line is written; also what `check-gates.sh` runs with no phase |
+
+### The hooks
+
+The plugin hooks (hooks/hooks.json) act only while a loop is active (`.scratch/gates.json`, not closed; worktrees resolve to the main worktree's, see "The run file"):
+
+- **push and PR creation** run `--phase build`. A `git push` whose target is the `base` branch (`git push origin HEAD:main`, `git push origin main`, `--all`, or a plain `git push` while the base branch is checked out) is refused: merge through the PR so the merge gate runs.
+- **commit** runs `slop-check.sh --staged` on what the commit will contain, in the worktree the commit runs in, with the review file of the loop root.
+- **merge** needs the sha being merged (`--match-head-commit`, `sha=`, `expectedHeadOid`); refuses unless the checked-out HEAD is that sha ("check out the PR head <sha> first", because the gates read the local tree); runs `--phase merge`; and needs green CI on exactly that sha.
+- **fail closed**: with a loop active, a missing `node`, a hook that cannot read its input, a `gates.json` that is not valid JSON, or a chained `git add` that fails blocks the command (exit 2) and says why. Only with no loop active do these end in a warning.
+
+A deliberate bypass is `FEATURE_LOOP_GATES=off` with a reason in `FEATURE_LOOP_BYPASS_REASON`; the hook appends the bypass and its reason to `.scratch/loop-metrics.md`, so every skipped gate is on record.

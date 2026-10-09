@@ -8,8 +8,9 @@
 #   (b) a Proof cell in the envelope's Live table is blanked             -> G2
 #   (c) a review finding becomes CONFIRMED HIGH with resolution open     -> G5
 #   (d) an unjustified `catch {}` is added to src                        -> G6
-#   (e) gate-hook.sh, fed a `git push` command: blocks (exit 2) while a gate is red, passes (exit 0) with a
-#       recorded bypass, and names exactly the gates check-gates.sh names.
+#   (e) gate-hook.sh, fed a `git push` command: asks only the build gates (G1 G2 G8), so a red G4 or G6 does not
+#       stop a push during Build; blocks (exit 2) while a build gate is red, passes (exit 0) with a recorded bypass,
+#       and names exactly the gates check-gates.sh --phase build names.
 #
 # G4 (evals) applies because the envelope's Packs line names llm. It is checked against the real eval run in
 # evals/examples/inbox-assist/results/after/results.json, whose gate pass.lo>=0.6 fails narrowly (58.5%), so the
@@ -108,7 +109,7 @@ cp "$app/loop/shape.md" "$repo/.scratch/shape/$SLUG.md"
 cp "$app/loop/envelope.md" "$repo/.scratch/envelope/$SLUG.md"
 cp "$app/loop/review.md" "$repo/.scratch/review/$SLUG.md"
 cp "$eval_results" "$repo/.scratch/evals/$SLUG/results.json"
-printf '# Loop metrics\n\n2026-10-08 %s: review 14 CONFIRMED (all fixed), 0 open; live scenarios 40 (15 added from review); planted bugs caught 13 of 13; evals all-graders pass +56.7 points, gate pass.lo>=0.6 failing narrowly\n' "$SLUG" > "$repo/.scratch/loop-metrics.md"
+printf '# Loop metrics\n\n2026-10-08 %s: review 14 CONFIRMED (all fixed), 0 open; live scenarios 40 (15 added from review); planted bugs caught 13 of 13; evals all-graders pass +56.7 points, gate pass.lo>=0.6 failing narrowly; escapes=14 floors=14\n' "$SLUG" > "$repo/.scratch/loop-metrics.md"
 echo "demo repo: base $base, feature $(git -C "$repo" rev-parse --short HEAD), slug $SLUG, size normal"
 
 # ---- baseline
@@ -155,15 +156,17 @@ printf '\nexport function quietly(fn) {\n  try { return fn(); } catch {}\n}\n' >
 line="$(grep -n 'catch {}' "$repo/src/log.mjs" | head -n 1 | cut -d: -f1)"
 expect_gates "(d) catch {} added at src/log.mjs:$line: G6 red" 1 "G6" "src/log.mjs:$line" "${SIX[@]}"
 
-hook "(e) git push while G6 is red: blocked" "git push -u origin feature" 2 "G6 red: slop findings not justified"
-hook "(e) the block names every red gate, G4 included" "git push -u origin feature" 2 "G4 red: eval gates not ok"
+hook "(e) git push while G6 is red: allowed, G6 is a merge gate" "git push -u origin feature" 0 ""
 cp "$work/log.bak" "$repo/src/log.mjs"
 expect_gates "(d) restored: six gates green again" 0 "" "" "${SIX[@]}"
-hook "(e) git push with only G4 red: still blocked, names G4 alone" "git push origin feature" 2 "G4 red: eval gates not ok: pass.lo>=0.6"
+hook "(e) git push with only G4 red: allowed during Build, evals gate the merge" "git push origin feature" 0 ""
+awk 'BEGIN { FS = OFS = "|" } $2 ~ /^ OUT-01 $/ && !done { $7 = " "; done = 1 } { print }' "$work/envelope.bak" > "$env_file"
+hook "(e) git push with a Proof cell blanked: blocked, names G2" "git push origin feature" 2 "G2 red: Live rows not filled: OUT-01 (Proof empty)"
 out="$(cd "$work" && node -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], tool_name: "Bash", tool_input: { command: "git push origin feature" } }))' "$repo" | bash "$hook" 2>&1 >/dev/null)"
-if [ "$(printf '%s\n' "$out" | grep -cE '^G[1-7] red:')" = 1 ]; then ok "hook: (e) blocks on exactly the gates check-gates names (G4)"; else bad "hook: (e) red lines differ from check-gates" "$out"; fi
-hook "(e) git push with a recorded bypass: allowed" "git push origin feature" 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=eval gate pass.lo>=0.6 at 58.5%, accepted for the demo"
-if grep -qF "$SLUG gates bypassed: eval gate pass.lo>=0.6 at 58.5%, accepted for the demo" "$repo/.scratch/loop-metrics.md"; then ok "hook: (e) bypass recorded in loop-metrics.md"; else bad "hook: (e) bypass not recorded" "$(cat "$repo/.scratch/loop-metrics.md")"; fi
+if [ "$(printf '%s\n' "$out" | grep -cE '^G[1-7] red:')" = 1 ]; then ok "hook: (e) blocks on exactly the gates check-gates --phase build names (G2)"; else bad "hook: (e) red lines differ from check-gates" "$out"; fi
+hook "(e) git push with a recorded bypass: allowed" "git push origin feature" 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=envelope proof to follow, accepted for the demo"
+if grep -qF "$SLUG gates bypassed: envelope proof to follow, accepted for the demo" "$repo/.scratch/loop-metrics.md"; then ok "hook: (e) bypass recorded in loop-metrics.md"; else bad "hook: (e) bypass not recorded" "$(cat "$repo/.scratch/loop-metrics.md")"; fi
+cp "$work/envelope.bak" "$env_file"
 hook "(e) an unrelated command passes" "git status" 0 ""
 
 expect_gates "end: six gates still green after the bypass record" 0 "" "" "${SIX[@]}"

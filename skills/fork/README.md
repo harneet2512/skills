@@ -7,10 +7,10 @@ How they fit: `feature-loop` runs a feature through `shape`, `deep-engineering` 
 ## User-invoked
 
 - **[feature-loop](./feature-loop/SKILL.md)**: Take one feature from request to shipped: shape, design from concerns, plan, build, prove (tests, evals, live verification), attack, staged ship, learn.
-- **[wp-loop](./wp-loop/SKILL.md)**: Ship one work package end to end: issue, engineering contract, branch, TDD, PR, green CI, two-axis review, verified fixes, gated merge, results comment.
 
 ## Model-invoked
 
+- **[wp-loop](./wp-loop/SKILL.md)**: Ship one work package end to end: issue, engineering contract, branch, TDD, PR, green CI, two-axis review, verified fixes, gated merge, results comment.
 - **[shape](./shape/SKILL.md)**: Intent, actors and surfaces, a journey map crossed with interaction cases, the success metric and the scope line, before any design.
 - **[deep-engineering](./deep-engineering/SKILL.md)**: Build a system model from repo evidence, derive invariants and risks, and write an engineering contract before any spec or code.
 - **[behavioral-envelope](./behavioral-envelope/SKILL.md)**: Find every concern a change must satisfy, with concern packs picked by a script from the code and every item answered, so no run skips the basics.

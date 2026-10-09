@@ -1,12 +1,19 @@
 ---
 name: wp-loop
-description: "Ship one work package end to end: issue, engineering contract, branch, TDD, PR, green CI, two-axis review, verified fixes, gated merge, results comment."
-disable-model-invocation: true
+description: "Ship one issue or small change end to end: issue, engineering contract, branch, TDD, PR, green CI, two-axis review, verified fixes, gated merge, results comment. Use when the user asks to take one issue to a merged PR, for small work, or to run the merge gate and results report on a feature's PR."
 ---
 
 Take one **work package** (one issue, one branch, one PR, its own review) from issue to merged, with **proof** at every **gate**: a green run on the exact head, a re-run test, a quoted spec line. A builder's "fixed" is a claim until the lead checks its proof. Reviewer silence and green tests speak for the code; the contract is proven right against the spec.
 
 The issue tracker should have been provided to you. If it is missing, tell the user to run `/setup-matt-pocock-skills`.
+
+Size names: Tiny, Normal and Major here are `feature-loop`'s Small, Normal and Large.
+
+**How `feature-loop` uses it:**
+- **Small work:** the whole loop, steps 1 to 13: one issue, one branch, one PR.
+- **A normal or large feature:** only steps 12 (merge gate) and 13 (report), run on the feature's single PR and issue after `feature-loop` has built and reviewed every ticket on its integration branch.
+
+Run on its own, it is the whole loop for one issue.
 
 If the user passes an issue reference, fetch it from the issue tracker and state its title before starting. If the reference is ambiguous, ask.
 
@@ -20,13 +27,13 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
 
 ## Steps
 
-1. **Read the issue in full**, plus its parent or any spec it cites, and write the checklist. If the domain terms are still fuzzy, stop and tell the user to run `/grill-with-docs`.
+1. **Read the issue in full**, plus its parent or any spec it cites, and write the checklist. If the domain terms are still fuzzy, call the Skill tool twice, for `grilling` and `domain-modeling`, and resolve them with the user before going on.
    **Done when:** every requirement and acceptance criterion in the issue and its cited specs is a checklist line.
 
 2. **Contract.** **Requires:** the step 1 checklist. Call the Skill tool with `deep-engineering`. Resolve its blocking open questions with the user. A shared-contract change (API schema, DB schema, wire format) lands first, as its own PR.
    **Done when:** the contract has zero open blocking questions, and any shared-contract change is merged in its own PR.
 
-3. **Spec.** **Requires:** the checklist and the contract. When they say what to build, they are the spec for every later gate. When they leave gaps on work larger than Tiny, tell the user to run `/to-spec` with the contract as input, then resume from that spec.
+3. **Spec.** **Requires:** the checklist and the contract. When they say what to build, they are the spec for every later gate. When they leave gaps on work larger than Tiny, call the Skill tool with `to-spec`, passing the contract as input, then resume from that spec.
    **Done when:** the spec says what to build for every checklist line.
 
 4. **Confirm seams.** **Requires:** the contract's *Verification required* section. Show the user each proposed seam with a line on what it catches; `tdd` and the builder need confirmed seams.
@@ -43,7 +50,7 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
    - when the envelope's `**Packs:**` line names `llm` or `retrieval`, run its `evals` suite with the gate from the eval plan;
    - for every normal and large change, run `live-verify` with two instances, with a scenario for each new journey case or Live item that has a live proof.
 
-   **Done when:** gates G6, G3 (every normal and large change; small skips it) and G4 (when `**Packs:**` names `llm` or `retrieval`) are green: `feature-loop/scripts/check-gates.sh G3 G4 G6` exits 0, or, without `.scratch/gates.json`, their conditions in [gates.md](../feature-loop/gates.md) hold by inspection.
+   **Done when:** gates G6, G3 (every normal and large change; small skips it) and G4 (when `**Packs:**` names `llm` or `retrieval`) are green: `check-gates.sh G3 G4 G6` exits 0, or, without `.scratch/gates.json`, their conditions in gates.md (the gates `check-gates.sh` prints, each red line naming the file to fix) hold by inspection.
 
 7. **Commit with traceability.** Before each commit, check the diff against the issue checklist; record deviations in the commit body and later in the results comment.
    **Done when:** every commit in `git log <default branch>..HEAD` carries `Refs: #<issue>` and names its deviations from the checklist in its body.
@@ -60,7 +67,7 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
 11. **Fix round.** Every CRITICAL or HIGH finding goes back to the builder first. The lead then **verifies each fix personally**: re-run the targeted test for each HIGH and read the changed lines. LOW is the builder's call. Fixes push a new head, so repeat step 9.
     **Done when:** gate G5 is green, the lead has re-run each HIGH's targeted test, every MEDIUM is fixed or filed as a follow-up issue, and `gh pr checks <pr>` exits 0 on the new head.
 
-12. **Merge gate.** **Requires:** whenever `.scratch/gates.json` exists, a 0 exit from `feature-loop/scripts/check-gates.sh` on this head; run it first and fix each red gate it prints until it exits 0. Follow [merge-gate.md](merge-gate.md): bring the branch up to date, renumber migrations and ADRs, wait for CI on that head, check it, and merge exactly the commit you checked.
+12. **Merge gate.** **Requires:** whenever `.scratch/gates.json` exists, a 0 exit from `check-gates.sh --phase merge` on this head; run it first and fix each red gate it prints until it exits 0. Follow [merge-gate.md](merge-gate.md): bring the branch up to date, renumber migrations and ADRs, wait for CI on that head, check it, and merge exactly the commit you checked.
     **Done when:** `gh pr view <pr> --json state` shows `MERGED`, merged with `--match-head-commit` set to the head SHA that `gh pr checks` exited 0 on.
 
 13. **Report.** Post the results comment from [check-comment.md](check-comment.md) on the PR and on the issue, then close the issue the way the tracker closes work.

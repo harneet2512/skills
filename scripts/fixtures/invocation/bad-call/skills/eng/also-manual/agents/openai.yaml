@@ -1,0 +1,5 @@
+interface:
+  display_name: "also-manual"
+  short_description: "Fixture"
+policy:
+  allow_implicit_invocation: false

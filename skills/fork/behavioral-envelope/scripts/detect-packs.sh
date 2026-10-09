@@ -81,7 +81,7 @@ plan_pattern() {
 
 # Corpus lines: "FILE<TAB>path" and "LINE<TAB>path:lineno<TAB>content".
 # Lines that are only a comment are skipped: a comment saying "balance the columns" is not money code.
-COMMENT_ONLY='^[[:space:]]*(//|#[[:space:]!]|#$|--[[:space:]]|/\*|\*[[:space:]/]|\*$|<!--)'
+COMMENT_ONLY='^[[:space:]]*(//|#[[:space:]!]|#$|--[[:space:]]|/[*]|[*][[:space:]/]|[*]$|<!--)'
 
 corpus_from_diff() {
   awk -v T="$TAB" -v C="$COMMENT_ONLY" '

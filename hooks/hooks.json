@@ -1,5 +1,5 @@
 {
-  "description": "Fork only (see FORK.md): run the feature-loop gates before git push and PR creation when .scratch/gates.json exists.",
+  "description": "Fork only (see FORK.md): enforce the feature loop when the repo (or its main worktree) has .scratch/gates.json without status closed. PreToolUse on Bash gates git commit (slop in the staged lines), git push and PR creation (build-phase gates; pushes to the base branch refused) and gh pr merge or a GraphQL mergePullRequest (match-head-commit, merge-phase gates, green CI on that sha, HEAD equal to that sha); fails closed while a loop is active. Stop refuses to end a turn while a stage is running. SessionStart summarizes where the loop stands.",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,6 +9,28 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/gate-hook.sh\"",
             "timeout": 120
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/stop-hook.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/session-start-hook.sh\"",
+            "timeout": 10
           }
         ]
       }
