@@ -2,7 +2,7 @@ import { installTenant, admin, slackEvent, receiveEmail, waitPosted } from './_f
 
 export const meta = {
   name: 'a mailbox freed by an uninstall can be connected again; an active one cannot',
-  journey: 'Onboarding: a company moves its support mailbox to a new Slack workspace',
+  journey: 'J1.two-actors Onboarding: a company moves its support mailbox to a new Slack workspace',
   concerns: ['TEN-11', 'DI-05', 'UJ-01'],
 };
 

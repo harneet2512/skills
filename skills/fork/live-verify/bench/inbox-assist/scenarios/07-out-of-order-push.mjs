@@ -2,7 +2,7 @@ import { installTenant, SENDER, waitPosted, settled, okPosts } from './_fixtures
 
 export const meta = {
   name: 'out-of-order pushes: history only moves forward',
-  journey: 'UJ step 2 under reordering: the push for the older email arrives last',
+  journey: 'J2.stale UJ step 2 under reordering: the push for the older email arrives last',
   concerns: ['CONC-14', 'CONC-04', 'REL-08'],
 };
 

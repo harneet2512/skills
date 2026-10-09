@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, sendCalls
 
 export const meta = {
   name: 'one tenant flooding slow drafts does not delay sends or other tenants',
-  journey: 'UJ steps 2-3 while another workspace gets a burst of mail and the model is slow',
+  journey: 'J2.noisy-tenant J3.noisy-tenant UJ steps 2-3 while another workspace gets a burst of mail and the model is slow',
   concerns: ['REL-06', 'TEN-09', 'LAT-03'],
 };
 

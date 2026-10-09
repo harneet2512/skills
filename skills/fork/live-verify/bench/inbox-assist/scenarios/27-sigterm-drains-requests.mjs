@@ -2,7 +2,7 @@ import { admin } from './_fixtures.mjs';
 
 export const meta = {
   name: 'SIGTERM lets an in-flight request finish before exit',
-  journey: 'Deploy: an instance is told to stop while an installation is being completed',
+  journey: 'J1.abandoned Deploy: an instance is told to stop while an installation is being completed',
   concerns: ['REL-11', 'OPS-05'],
 };
 

@@ -1,0 +1,1 @@
+Ghost (Postgres, about 40 million rows in leads). Rename the column leads.company to leads.company_name. It is read by the public API, the enrichment worker and a nightly analytics export, and the app deploys with zero downtime.

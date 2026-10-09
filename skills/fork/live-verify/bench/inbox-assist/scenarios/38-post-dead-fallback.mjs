@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, settled, okPosts, outcomes } from './_fixt
 
 export const meta = {
   name: 'suggestion post that dies falls back to a plain notice and is recorded',
-  journey: 'UJ step 2 when Slack keeps rejecting the suggestion message',
+  journey: 'J2.slack-down UJ step 2 when Slack keeps rejecting the suggestion message',
   concerns: ['REL-14', 'OPS-08', 'UJ-06'],
 };
 

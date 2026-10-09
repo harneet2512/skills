@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled, okPosts } from './_fi
 
 export const meta = {
   name: 'Slack 429 on post: retried after Retry-After, posted once',
-  journey: 'UJ step 2 while Slack rate limits the workspace',
+  journey: 'J2.slow-slack UJ step 2 while Slack rate limits the workspace',
   concerns: ['REL-05', 'LAT-09', 'REL-03'],
 };
 

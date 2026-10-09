@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, blockText } from './_fixtures.
 
 export const meta = {
   name: 'unknown charset in headers still reaches the user',
-  journey: 'UJ step 2 with an email whose headers name a charset we cannot decode',
+  journey: 'J2.encoding UJ step 2 with an email whose headers name a charset we cannot decode',
   concerns: ['DI-11', 'REL-14', 'UJ-06'],
 };
 

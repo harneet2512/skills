@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, slackEvent } from './_fixtures
 
 export const meta = {
   name: 'tokens_revoked for user tokens only keeps the workspace connected',
-  journey: 'A member revokes their own user token; the bot keeps working for the workspace',
+  journey: 'J7.partial-revoke A member revokes their own user token; the bot keeps working for the workspace',
   concerns: ['TEN-14', 'UJ-12'],
 };
 

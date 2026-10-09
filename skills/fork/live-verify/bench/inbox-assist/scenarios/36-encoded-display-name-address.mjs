@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, outcomes 
 
 export const meta = {
   name: 'an encoded display name cannot override the From address',
-  journey: 'Attack: From display name hides <someone@else> inside an RFC 2047 encoded word',
+  journey: 'J2.hostile-sender Attack: From display name hides <someone@else> inside an RFC 2047 encoded word',
   concerns: ['DI-11', 'SEC-07', 'AI-07'],
 };
 

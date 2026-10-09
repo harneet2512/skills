@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled, okPosts, llmCallsFor 
 
 export const meta = {
   name: 'duplicate Pub/Sub push drafts once',
-  journey: 'UJ step 2 under redelivery: Pub/Sub delivers the same push twice',
+  journey: 'J2.twice UJ step 2 under redelivery: Pub/Sub delivers the same push twice',
   concerns: ['CONC-04', 'SEC-04', 'REL-08', 'UJ-06'],
 };
 

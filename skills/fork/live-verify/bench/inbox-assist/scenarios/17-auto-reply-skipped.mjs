@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, settled, okPosts, outcomes } from './_fixt
 
 export const meta = {
   name: 'auto-replies, noreply and bulk mail are skipped',
-  journey: 'UJ step 2 for machine mail: no drafts, no DMs, no model spend',
+  journey: 'J2.machine-mail UJ step 2 for machine mail: no drafts, no DMs, no model spend',
   concerns: ['UJ-12', 'COST-13', 'COST-03'],
 };
 

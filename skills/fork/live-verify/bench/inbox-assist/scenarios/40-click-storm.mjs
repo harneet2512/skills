@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled } from './
 
 export const meta = {
   name: 'click storm: many concurrent Send clicks across instances, one email per suggestion',
-  journey: 'UJ step 3 under a burst: several people and retries click Send on the same drafts at once',
+  journey: 'J3.twice J3.two-actors UJ step 3 under a burst: several people and retries click Send on the same drafts at once',
   concerns: ['CONC-03', 'CONC-09', 'UJ-06'],
 };
 

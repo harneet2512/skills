@@ -1,0 +1,17 @@
+{
+  "description": "Fork only (see FORK.md): run the feature-loop gates before git push and PR creation when .scratch/gates.json exists.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/gate-hook.sh\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled, llmCallsFor } from '.
 
 export const meta = {
   name: 'LLM 429 with Retry-After: the draft waits as told, then succeeds',
-  journey: 'UJ step 2 while the model provider rate limits us',
+  journey: 'J2.llm-rate-limited UJ step 2 while the model provider rate limits us',
   concerns: ['AI-11', 'REL-05', 'COST-08'],
 };
 

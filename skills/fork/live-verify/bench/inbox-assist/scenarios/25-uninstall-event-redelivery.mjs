@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, settled, okPosts } from './_fixtures.mjs';
 
 export const meta = {
   name: 'uninstall event, redelivered by Slack, disconnects once',
-  journey: 'UJ last step: workspace admin uninstalls; Slack retries the event',
+  journey: 'J7.twice UJ last step: workspace admin uninstalls; Slack retries the event',
   concerns: ['TEN-14', 'TEN-11', 'SEC-04', 'SEC-10'],
 };
 

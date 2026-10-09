@@ -2,7 +2,7 @@ import { installTenant, settled, okPosts, llmCallsFor, outcomes } from './_fixtu
 
 export const meta = {
   name: 'per-tenant draft budget: over the cap, a plain notice instead of an LLM call',
-  journey: 'UJ step 2 when a workspace receives a burst of mail (or is being mail-bombed)',
+  journey: 'J2.flood UJ step 2 when a workspace receives a burst of mail (or is being mail-bombed)',
   concerns: ['COST-13', 'COST-04', 'TEN-09'],
 };
 

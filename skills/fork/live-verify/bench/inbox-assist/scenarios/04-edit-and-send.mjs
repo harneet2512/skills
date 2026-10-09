@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, click, settled } from './_fixt
 
 export const meta = {
   name: 'edit opens a modal and sends the edited text',
-  journey: 'UJ step 3b: user edits a draft in a modal and sends it',
+  journey: 'J4.happy UJ step 3b: user edits a draft in a modal and sends it',
   concerns: ['AI-07', 'UJ-04', 'UJ-05'],
 };
 

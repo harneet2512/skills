@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled, outcomes } from './_f
 
 export const meta = {
   name: 'Gmail 200 with a truncated body is retried, not read as empty',
-  journey: 'UJ step 2 when Gmail starts a 200 response and the body stops halfway',
+  journey: 'J2.truncated-body UJ step 2 when Gmail starts a 200 response and the body stops halfway',
   concerns: ['REL-07', 'REL-03', 'DI-03'],
 };
 

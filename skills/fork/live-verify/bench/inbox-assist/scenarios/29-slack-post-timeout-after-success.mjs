@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled } from './_fixtures.mj
 
 export const meta = {
   name: 'Slack post times out after success: one DM, not two',
-  journey: 'UJ step 2 when chat.postMessage succeeds but the response is lost',
+  journey: 'J2.lost-response UJ step 2 when chat.postMessage succeeds but the response is lost',
   concerns: ['REL-07', 'CONC-11', 'UJ-06'],
 };
 

@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, click } from './_fixtures.mjs'
 
 export const meta = {
   name: 'Edit click is acked under 3 s while views.open is slow',
-  journey: 'UJ step 3b while the Slack API answers views.open slowly',
+  journey: 'J4.slow-slack UJ step 3b while the Slack API answers views.open slowly',
   concerns: ['LAT-02', 'LAT-03', 'UJ-05'],
 };
 

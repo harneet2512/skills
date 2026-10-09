@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled } from './
 
 export const meta = {
   name: 'stale timestamp and replayed request are rejected',
-  journey: 'Attack: a captured, validly signed click is replayed later',
+  journey: 'J3.hostile-replay Attack: a captured, validly signed click is replayed later',
   concerns: ['SEC-03', 'SEC-04'],
 };
 

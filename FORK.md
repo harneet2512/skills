@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds nine skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.3`
+- **Fork version:** `1.3.1-fork.4`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -17,8 +17,9 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/feature-loop/` | does not exist | new user-invoked skill |
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.3`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.3` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hook: a `PreToolUse` hook on `Bash` that runs the feature-loop gates before `git push` and PR creation; see section 4, "Gates" |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.4`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.4` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -173,9 +174,21 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 | `feature-loop`, `deep-engineering`, `wp-loop` | `evals` runs only when `detect-packs.sh` selected the `llm` or `retrieval` pack; every other change skips it |
 | `adversarial-review`, section 4 | Normal work attacks at most the three topics holding Critical or High Live items; Large work attacks every selected topic |
 
+### Gates
+
+Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines seven gates (G1 to G7) on those files. `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
+
+The plugin enforces the gates with a hook, which is new in this fork (upstream ships no hooks):
+
+- `hooks/hooks.json` at the plugin root (the default location, loaded automatically, so `plugin.json` is unchanged for it) registers a `PreToolUse` hook with matcher `Bash` that runs `${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/gate-hook.sh`.
+- The hook reads the tool call from stdin and acts only on `git push`, `gh pr create`, and `gh api` POSTs to `.../pulls`. It does nothing unless the repo has `.scratch/gates.json`, which `feature-loop` writes when it sizes the work, so other work is never blocked.
+- Red gates block the command (exit 2, with the red gates on stderr for the model). A deliberate bypass is `FEATURE_LOOP_GATES=off` together with a non-empty `FEATURE_LOOP_BYPASS_REASON`, and the hook appends `<date> <slug> gates bypassed: <reason>` to `.scratch/loop-metrics.md`.
+
+An upstream merge cannot conflict with the hook unless upstream adds its own `hooks/hooks.json`. If that happens, keep both sets of hooks in that one file.
+
 ### Measured, not assumed
 
-`skills/fork/feature-loop/bench/scorecard-2026-10-08.md` records the first run: 13 planted bugs, blind reviewers with and without the topics, mutant runs of the live suite, and one eval-driven iteration with a paired comparison. The planted-bug material is in `skills/fork/adversarial-review/bench/` (`run-mutants.sh` reruns it).
+`skills/fork/feature-loop/bench/scorecard-2026-10-08.md` records the first run: 13 planted bugs, blind reviewers with and without the topics, mutant runs of the live suite, and one eval-driven iteration with a paired comparison. The planted-bug material is in `skills/fork/adversarial-review/bench/` (`run-mutants.sh` reruns it; `mutant-results-v3.md` is the run after the journey case IDs were added to the scenarios).
 
 ### Sources and licences
 

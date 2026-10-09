@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, blockText
 
 export const meta = {
   name: 'prompt injection email: recipient unchanged, nothing auto-sent',
-  journey: 'UJ step 2-3 with a hostile email that tries to redirect the reply',
+  journey: 'J2.hostile-injection UJ step 2-3 with a hostile email that tries to redirect the reply',
   concerns: ['AI-04', 'AI-05', 'AI-06', 'AI-07', 'SEC-07'],
 };
 

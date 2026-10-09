@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled } from './_fixtures.mj
 
 export const meta = {
   name: 'team B cannot act on team A suggestion',
-  journey: 'Attack: a user in workspace B crafts a click carrying workspace A suggestion id',
+  journey: 'J3.hostile-tenant Attack: a user in workspace B crafts a click carrying workspace A suggestion id',
   concerns: ['TEN-03', 'TEN-02', 'SEC-02'],
 };
 

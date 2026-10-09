@@ -2,7 +2,7 @@ import { admin, receiveEmail, waitPosted } from './_fixtures.mjs';
 
 export const meta = {
   name: 'reinstall with a different mailbox starts from that mailbox history',
-  journey: 'Onboarding: a workspace reconnects with another support mailbox',
+  journey: 'J1.twice Onboarding: a workspace reconnects with another support mailbox',
   concerns: ['TEN-01', 'DI-12', 'CONC-14'],
 };
 

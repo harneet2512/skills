@@ -72,7 +72,7 @@ plan_pattern() {
     identity-access) echo "$(w 'users?|accounts?|teams?|workspaces?|tenants?|organi[sz]ations?|orgs?|roles?|permissions?|admins?|login|log in|sign in|sign-in|signup|sign up|passwords?|sso|mfa|share|sharing|access|customers?')" ;;
     files) echo "$(w 'uploads?|files?|attachments?|images?|photos?|documents?|pdfs?|csv|exports?|imports?|downloads?|avatars?')" ;;
     personal-data) echo "$(w 'e-?mails?|phones?|names?|contacts?|address(es)?|personal|pii|gdpr|delete (my )?account|profiles?|leads?|prospects?|customers?|users?')" ;;
-    infra-config) echo "$(w 'deploy|deployment|infrastructure|environments?|config|configuration|feature flags?|rollout|cdn|cache|caching|domains?|dns|ssl|docker|kubernetes|ci|staging|scale|scaling')" ;;
+    infra-config) echo "$(w 'deploys?|deployed|deploying|deployments?|zero.downtime|secrets?|api keys?|infrastructure|environments?|config|configuration|feature flags?|rollout|cdn|cache|caching|domains?|dns|ssl|docker|kubernetes|ci|staging|scale|scaling')" ;;
     dependencies) echo "$(w 'library|libraries|packages?|dependency|dependencies|upgrade|bump|npm|pip|sdk version')" ;;
     money) echo "$(w 'price|prices|pricing|billing|payments?|pay|charges?|invoices?|refunds?|subscriptions?|seats?|plans?|checkout|orders?|trades?|trading|quant|portfolio|currency|revenue|credits?|balances?|payouts?|fills?|positions?')" ;;
     *) echo '' ;;
@@ -131,7 +131,7 @@ corpus_from_git() {
 # Applied after detection so the result does not depend on how the request was worded.
 implied_by() {
   case "$1" in
-    money) echo "data api" ;;
+    money) echo "data api personal-data" ;;
     inbound-events) echo "api data" ;;
     outbound) echo "data" ;;
     identity-access) echo "api data" ;;

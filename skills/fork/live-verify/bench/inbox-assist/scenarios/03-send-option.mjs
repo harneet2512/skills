@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, outcomes 
 
 export const meta = {
   name: 'send option replies in the same thread',
-  journey: 'UJ step 3: user clicks Send option 2, reply goes out, Slack shows who sent it',
+  journey: 'J3.happy UJ step 3: user clicks Send option 2, reply goes out, Slack shows who sent it',
   concerns: ['AI-07', 'CONC-09', 'UJ-08', 'OPS-01', 'OPS-02'],
 };
 

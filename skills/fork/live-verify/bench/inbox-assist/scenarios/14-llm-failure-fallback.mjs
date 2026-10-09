@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, settled, okPosts, llmCallsFor, outcomes } 
 
 export const meta = {
   name: 'LLM down or invalid output: fallback message, no drafts',
-  journey: 'UJ step 2 when drafting fails: user still learns about the email',
+  journey: 'J2.llm-down UJ step 2 when drafting fails: user still learns about the email',
   concerns: ['AI-08', 'AI-11', 'REL-14', 'COST-04'],
 };
 

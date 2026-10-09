@@ -2,7 +2,7 @@ import { installTenant, admin, receiveEmail, waitPosted, settled, okPosts } from
 
 export const meta = {
   name: 'install and first run do not flood old mail',
-  journey: 'UJ step 1: admin installs, connects a mailbox that already has mail',
+  journey: 'J1.first-and-empty UJ step 1: admin installs, connects a mailbox that already has mail',
   concerns: ['UJ-02', 'UJ-03', 'CONC-14', 'COST-03'],
 };
 

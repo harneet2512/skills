@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, sendCalls
 
 export const meta = {
   name: 'Gmail 500 on send, then success: one email',
-  journey: 'UJ step 3 with a transient Gmail failure',
+  journey: 'J3.slow-gmail UJ step 3 with a transient Gmail failure',
   concerns: ['REL-03', 'REL-07', 'CONC-11'],
 };
 

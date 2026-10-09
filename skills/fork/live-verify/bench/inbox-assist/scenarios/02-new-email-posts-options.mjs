@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, okPosts, blockText } from './_
 
 export const meta = {
   name: 'new email posts 3 options in DM',
-  journey: 'UJ step 2: email arrives, user sees 3 drafts with buttons in their DM',
+  journey: 'J2.happy UJ step 2: email arrives, user sees 3 drafts with buttons in their DM',
   concerns: ['UJ-04', 'LAT-03', 'AI-08', 'TEN-14'],
 };
 

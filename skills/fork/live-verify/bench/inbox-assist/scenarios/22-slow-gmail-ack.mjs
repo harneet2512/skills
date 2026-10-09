@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled } from './
 
 export const meta = {
   name: 'acks stay under 3 s while Gmail is slow',
-  journey: 'UJ steps 2-3 while Gmail takes 3.5 s per call',
+  journey: 'J2.slow-gmail J3.slow-gmail UJ steps 2-3 while Gmail takes 3.5 s per call',
   concerns: ['LAT-02', 'LAT-03', 'UJ-05'],
 };
 

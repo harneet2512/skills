@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, sendCalls
 
 export const meta = {
   name: 'Gmail send times out after success: reconciled, never sent twice',
-  journey: 'UJ step 3 with an ambiguous send: Gmail sends, the response is lost',
+  journey: 'J3.lost-response UJ step 3 with an ambiguous send: Gmail sends, the response is lost',
   concerns: ['REL-07', 'CONC-11', 'REL-10', 'DI-07'],
 };
 

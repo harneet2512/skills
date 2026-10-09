@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled, okPosts, llmCallsFor 
 
 export const meta = {
   name: 'same push to both instances at once drafts once',
-  journey: 'UJ step 2 across instances: two replicas receive the same push concurrently',
+  journey: 'J2.twice UJ step 2 across instances: two replicas receive the same push concurrently',
   concerns: ['CONC-04', 'CONC-05', 'CONC-10', 'CONC-12'],
 };
 

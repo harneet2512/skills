@@ -1,0 +1,1 @@
+{ "metrics": {}, "gates": [ { "gate": "pass.lo>=0.8", "ok": true }, { "gate": "judge.tone>=0.9", "ok": true } ] }

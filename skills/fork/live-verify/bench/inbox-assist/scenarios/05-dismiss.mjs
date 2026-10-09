@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, click, sendOption, settled, ou
 
 export const meta = {
   name: 'dismiss, then a stale Send click does nothing',
-  journey: 'UJ step 3c: user dismisses; an old copy of the message is clicked later',
+  journey: 'J5.happy J5.stale UJ step 3c: user dismisses; an old copy of the message is clicked later',
   concerns: ['CONC-09', 'UJ-08', 'UJ-11'],
 };
 

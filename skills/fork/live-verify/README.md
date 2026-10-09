@@ -26,9 +26,11 @@ Zero npm dependencies. Node 22 or later (`node:sqlite`, `node:test`, `fetch`).
 One file per journey step or attack in `<app>/scenarios/`, sorted by name. Files starting with `_` are helpers; `_setup.mjs` may export `beforeEach(ctx)`.
 
 ```js
-export const meta = { name: 'send option replies in the same thread', journey: 'UJ step 3: ...', concerns: ['AI-07', 'CONC-09'] };
+export const meta = { name: 'send option replies in the same thread', journey: 'J3.two-actors UJ step 3: ...', concerns: ['AI-07', 'CONC-09'] };
 export default async function (ctx) { /* drive, then assert on recorded calls, DB rows, responses */ }
 ```
+
+`journey` (a string or an array) names the journey case ID(s) the scenario proves, in the shape file's form `J<n>.<case>`; gate G3 checks that every journey case ID in the shape file appears in at least one scenario's `journey`.
 
 `ctx` gives: `slack`, `gmail`, `llm` (stand-ins: `.calls(filter)`, `.faults.inject(method, spec)`, platform helpers), `apps` (instances with `url`, `kill()`, `restart()`), `db` (read-only), `secrets`, `step(name)`, `ok(name, cond, evidence)`, `expect(name, actual, expected)`, `waitFor(predicate, timeoutMs, label)`, `logs(filter)`, `uid(prefix)`, `llmMode`.
 

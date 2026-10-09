@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled } from './
 
 export const meta = {
   name: 'two users click different options on two instances: one send',
-  journey: 'UJ step 3 with two actors: Ana sends option 1 while Ben sends option 3',
+  journey: 'J3.two-actors UJ step 3 with two actors: Ana sends option 1 while Ben sends option 3',
   concerns: ['UJ-07', 'CONC-09', 'CONC-12'],
 };
 

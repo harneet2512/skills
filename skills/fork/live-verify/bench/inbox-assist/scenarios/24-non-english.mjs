@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption } from './_fixtures
 
 export const meta = {
   name: 'non-English email round-trips through drafting and sending',
-  journey: 'UJ steps 2-3 for a Japanese customer',
+  journey: 'J2.other-language J3.other-language UJ steps 2-3 for a Japanese customer',
   concerns: ['DI-11', 'UJ-04', 'SEC-07'],
 };
 

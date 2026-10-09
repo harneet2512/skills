@@ -2,7 +2,7 @@ import { installTenant, SENDER, waitPosted, settled } from './_fixtures.mjs';
 
 export const meta = {
   name: 'long thread is truncated to the token budget, newest kept',
-  journey: 'UJ step 2 on a 12-message thread with long bodies',
+  journey: 'J2.long-thread UJ step 2 on a 12-message thread with long bodies',
   concerns: ['AI-09', 'AI-10', 'COST-01'],
 };
 

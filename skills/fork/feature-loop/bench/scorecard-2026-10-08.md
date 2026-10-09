@@ -84,6 +84,21 @@ What holds it back from 8 or 9:
 - **Tier 2 (a real sandbox Slack workspace, nightly) is documented, not built.**
 - **Time cost.** The attack stage took 1.5 to 9 minutes per attacker in parallel, and the live suite takes about 49 s per run. Acceptable for normal and large changes, which is why small changes skip both.
 
+## Addendum, 2026-10-09: enforcement
+
+The rules were rewritten so each step ends on a checkable **Done when** line, prohibitions became target behavior, and seven gates (`feature-loop/gates.md`) are checked by `scripts/check-gates.sh` and by a plugin hook before `git push` and PR creation.
+
+| Check | Result |
+|---|---|
+| Wording in the 9 fork skills | 76 Done when lines (from 0); matches for never, do not, don't and not fell from about 120 to 3 |
+| Gate tests (`test-gates.sh`) | 67 of 67 pass |
+| Gates on the reference product (`bench/gates-demo.sh`) | G1, G2, G3, G5, G6, G7 green; each one turns red on its own when its file is broken; the hook blocks a push while any gate is red |
+| G4 evals on the reference product | **red**: the drafting eval's lower bound is 58.5% against a 60% gate. The gate refuses the push until the eval passes or a reason is logged |
+| Envelope rerun, 16 blind runs | 16 of 16 pass G2; recall 100%; agreement on pack items 89% (see `behavioral-envelope/bench/stress-2026-10-09.md`) |
+| Planted bugs after the rewrite (`mutant-results-v3.md`) | unchanged: 12 of 13 by live scenarios, 13 of 13 with unit tests |
+
+**Rating after the addendum: 8 of 10.** The step that made the difference is mechanical: a red gate stops the push, and the one real failure in the product (the eval) is exactly what it stopped. What keeps it below 9 is unchanged from the list above, minus the enforcement gap: design-to-near-zero is still unmeasured on a new feature, judges are under-labelled, slop-check is noisy, and tier 2 is not built. The hook also accepts a logged bypass, so a determined agent can still push past a red gate; it cannot do so silently.
+
 ## How to rerun
 
 ```

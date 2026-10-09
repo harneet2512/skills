@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled } from './
 
 export const meta = {
   name: 'forged Slack signature and bad push token are rejected',
-  journey: 'Attack: someone posts fake clicks, events and pushes to the public endpoints',
+  journey: 'J3.hostile-forged J7.hostile-forged Attack: someone posts fake clicks, events and pushes to the public endpoints',
   concerns: ['SEC-01', 'SEC-03'],
 };
 

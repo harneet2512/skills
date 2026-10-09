@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, sendCalls
 
 export const meta = {
   name: 'instance killed mid-send: another instance sends exactly once',
-  journey: 'UJ step 3 during a crash: the worker holding the send job dies',
+  journey: 'J3.crash UJ step 3 during a crash: the worker holding the send job dies',
   concerns: ['REL-10', 'REL-12', 'CONC-05', 'CONC-06', 'LAT-03'],
 };
 

@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled } from './
 
 export const meta = {
   name: 'double click across instances sends once',
-  journey: 'UJ step 3 twice: the same user double-clicks Send, each click hits a different instance',
+  journey: 'J3.twice UJ step 3 twice: the same user double-clicks Send, each click hits a different instance',
   concerns: ['CONC-03', 'CONC-09', 'UJ-06'],
 };
 

@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, sendOption, settled, okPosts, 
 
 export const meta = {
   name: 'our own sent reply comes back through history: no loop',
-  journey: 'UJ step 4: after sending, Gmail reports our reply as a new message',
+  journey: 'J6.own-reply UJ step 4: after sending, Gmail reports our reply as a new message',
   concerns: ['COST-03', 'UJ-12', 'CONC-04'],
 };
 

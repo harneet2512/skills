@@ -2,7 +2,7 @@ import { installTenant, receiveEmail, waitPosted, settled, slackEvent, admin } f
 
 export const meta = {
   name: 'uninstall stops the Gmail watch, revokes Google access and deletes the data after the grace period',
-  journey: 'UJ last step: workspace admin uninstalls; customer data does not outlive the contract',
+  journey: 'J7.happy UJ last step: workspace admin uninstalls; customer data does not outlive the contract',
   concerns: ['TEN-11', 'COMP-02', 'SEC-10'],
 };
 

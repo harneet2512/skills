@@ -49,7 +49,8 @@ check_plan() {
 check_plan readme-typo.txt      "core"                                          "ui-visual outbound money llm data api"
 check_plan button-color.txt     "core ui-visual"                                "outbound money llm data api"
 check_plan ghost-sequences.txt  "core outbound jobs-time llm data inbound-events" "money ui-visual"
-check_plan seat-billing.txt     "core money data api inbound-events"            "ui-visual llm"
+check_plan seat-billing.txt     "core money data api inbound-events personal-data" "ui-visual llm"
+check_plan column-rename.txt    "core data infra-config"                        "ui-visual llm money"
 check_plan quant-orders.txt     "core money data api jobs-time"                 "ui-visual outbound"
 check_plan password-reset.txt   "core identity-access outbound api data"        "money llm"
 
