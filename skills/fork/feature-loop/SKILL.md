@@ -26,7 +26,7 @@ Say the size and why in one line. Escalate the moment evidence says so.
 
 2. **Understand the system.** Call the Skill tool with `deep-engineering`. Its section 1 builds the system model from repo evidence. Its section 3 calls `behavioral-envelope` with the shape file's properties.
 
-3. **Design from concerns.** Still in `deep-engineering`: build the journey x topic matrix from `concern-topics` (each journey step against each applicable topic's design questions, answered with a mechanism), write the safety argument for every step that touches shared state, research every pattern you are about to choose (how its failure modes are documented, what the library or provider guarantees), and look for the design that makes a class of problem impossible instead of guarded. For any model-generated output, call the Skill tool with `evals` for the eval plan (success criteria, cases, graders, gate) now, not after the prompt exists. Output: the engineering contract with mechanisms, enforcement points, proofs and build order.
+3. **Design from concerns.** Still in `deep-engineering`: build the journey x topic matrix from `concern-topics` (each journey step against each applicable topic's design questions, answered with a mechanism), write the safety argument for every step that touches shared state, research every pattern you are about to choose (how its failure modes are documented, what the library or provider guarantees), and look for the design that makes a class of problem impossible instead of guarded. Call the Skill tool with `evals` for the eval plan (success criteria, cases, graders, gate) only when the envelope's script selected the `llm` or `retrieval` pack (the change produces, ranks or depends on model output); every other change skips evals entirely. When it applies, the plan is written now, not after the prompt exists. Output: the engineering contract with mechanisms, enforcement points, proofs and build order.
 
 4. **Plan.** Call the Skill tool with `to-spec` (contract as input), then `to-tickets`. Foundations (the mechanisms several slices depend on, and every mechanism behind a Critical item) are the first tickets. Each ticket names its journey cases, Live items and topic categories.
 
@@ -35,7 +35,7 @@ Say the size and why in one line. Escalate the moment evidence says so.
 6. **Prove.** Inside each work package and once more for the whole feature:
    - types, lint, unit and integration tests;
    - `concern-topics/scripts/slop-check.sh --diff <base>`;
-   - `evals` for every model-generated output, with the gate from the eval plan;
+   - `evals`, with the gate from the eval plan, only when the envelope's script selected the `llm` or `retrieval` pack (the change produces, ranks or depends on model output); every other change skips evals entirely;
    - `live-verify` for every journey case and every Live item with a live proof, two instances, faults injected, in the cloud. The user never reads a Slack message to know it worked.
 
 7. **Attack.** Call the Skill tool with `adversarial-review`. CONFIRMED findings are fixed with their reproduction kept; each one is also recorded as an escape from stage 3 or 5.

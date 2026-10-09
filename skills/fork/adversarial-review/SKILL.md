@@ -33,7 +33,7 @@ One reviewer gets the contract's mechanisms table and the journey x topic matrix
 
 ## 4. Topic attackers
 
-Pick topics with the table in `concern-topics`. Spawn one attacker per topic, in parallel, each with: the diff, the topic file path, the envelope's Live items for that topic, and this brief:
+Pick topics with the table in `concern-topics`, then cap them by size so the pass does not cost more than the change is worth: **Normal** work gets attackers only for the (at most three) topics holding the envelope's Critical or High Live items; **Large** work gets every selected topic. Spawn one attacker per chosen topic, in parallel, each with: the diff, the topic file path, the envelope's Live items for that topic, and this brief:
 
 > You are attacking this change on <topic>. Read <topic file>. For each category whose "Spot it in code" matches the diff, try to break it using the topic's attack recipes. For each suspected flaw, write a reproduction: a failing test at a public seam, or a live-verify scenario that fails against the current code. Run it. Report each flaw as CONFIRMED (the reproduction fails now; include it) or PLAUSIBLE (you could not reproduce; say what stopped you). Include file:line, the category ID, the concrete failure a user would see, and the fix. Do not report style. Under 500 words plus reproductions.
 

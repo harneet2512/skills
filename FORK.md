@@ -170,6 +170,8 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 | `wp-loop/SKILL.md`, step 6 | The builder's brief names the topic categories in play and the attack tests are written first |
 | `wp-loop/SKILL.md`, new step 6b | slop-check, the eval gate and live verification before the PR |
 | `wp-loop/SKILL.md`, step 10 | Normal and Major work runs `adversarial-review` instead of `code-review` alone |
+| `feature-loop`, `deep-engineering`, `wp-loop` | `evals` runs only when `detect-packs.sh` selected the `llm` or `retrieval` pack; every other change skips it |
+| `adversarial-review`, section 4 | Normal work attacks at most the three topics holding Critical or High Live items; Large work attacks every selected topic |
 
 ### Measured, not assumed
 
