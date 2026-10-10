@@ -36,6 +36,9 @@ jobs:
       - name: Feature-loop gates and hooks
         run: bash skills/fork/feature-loop/scripts/test-gates.sh
 
+      - name: Codex review wrapper and receipt verifier
+        run: node --test skills/fork/feature-loop/scripts/test-codex-review.mjs skills/fork/feature-loop/scripts/test-receipts.mjs
+
       - name: Behavioral-envelope pack detection
         run: bash skills/fork/behavioral-envelope/scripts/test-detect.sh
 

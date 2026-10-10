@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Check the feature-loop gates (G1 to G8 in ../gates.md) for the feature named in .scratch/gates.json.
+# Check the feature-loop gates (G1 to G9 in ../gates.md) for the feature named in .scratch/gates.json.
 #
 # Usage (run from the target repo's root):
 #   check-gates.sh                    every gate that applies to the feature's size (the close phase)
 #   check-gates.sh G2 G6              only these gates
-#   check-gates.sh --phase build      G1 G2 G8: what must hold before the first push or PR (during Build)
+#   check-gates.sh --phase build      G1 G2 G8 (and G9 when codex_review is on): what must hold before the first push or PR
 #   check-gates.sh --phase merge      G1 to G6 and G8: what must hold before the merge
 #   check-gates.sh --phase close      every gate, G7 (the metrics line, written after the merge) included
 #   (a phase and gate IDs together check the gates that are in both)
@@ -31,8 +31,8 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || { echo "check-gates: --phase needs build, merge or close" >&2; exit 2; }
       phase="$2"; shift 2
       case "$phase" in build|merge|close) ;; *) echo "check-gates: unknown phase: $phase (expected build, merge or close)" >&2; exit 2 ;; esac ;;
-    [Gg][1-8]) gates+=("G${1:1}"); shift ;;
-    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G8, or --phase build|merge|close)" >&2; usage >&2; exit 2 ;;
+    [Gg][0-9]|[Gg][0-9][0-9]) gates+=("G${1:1}"); shift ;;
+    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G9, or --phase build|merge|close)" >&2; usage >&2; exit 2 ;;
   esac
 done
 

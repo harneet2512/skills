@@ -132,7 +132,7 @@ gate_push() { # <root> <dir> <flag> <reason>
   {
     if [ "$code" -eq 1 ]; then
       echo "feature-loop gates are red, so this push or PR was blocked (repo: $root)."
-      printf '%s\n' "$out" | grep -E '^G[1-8] red:'
+      printf '%s\n' "$out" | grep -E '^G[0-9]+ red:'
     else
       echo "feature-loop gates could not run (exit $code), so this push or PR was blocked (repo: $root):"
       printf '%s\n' "$out"
@@ -288,7 +288,7 @@ gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
   out="$(cd "$wt" && "$here/check-gates.sh" --phase merge 2>&1)"; code=$?
   if [ "$code" -eq 1 ]; then
     problems+=("the feature-loop gates are red:")
-    while IFS= read -r line; do problems+=("  $line"); done < <(printf '%s\n' "$out" | grep -E '^G[1-8] red:')
+    while IFS= read -r line; do problems+=("  $line"); done < <(printf '%s\n' "$out" | grep -E '^G[0-9]+ red:')
   elif [ "$code" -ne 0 ]; then
     problems+=("the feature-loop gates could not run (exit $code): $(printf '%s' "$out" | head -n 1)")
   fi
