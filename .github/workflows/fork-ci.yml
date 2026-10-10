@@ -50,3 +50,28 @@ jobs:
 
       - name: Live-verify inbox-assist bench
         run: node --test skills/fork/live-verify/bench/inbox-assist/test/*.mjs
+
+  # The maintainer runs the loop on Windows, so the shell-heavy checks also run under Git Bash there.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Feature-loop gates and hooks
+        run: bash skills/fork/feature-loop/scripts/test-gates.sh
+
+      - name: Behavioral-envelope pack detection
+        run: bash skills/fork/behavioral-envelope/scripts/test-detect.sh
+
+      - name: Concern-topics slop check
+        run: bash skills/fork/concern-topics/scripts/test-slop.sh
