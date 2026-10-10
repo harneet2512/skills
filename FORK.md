@@ -28,6 +28,7 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `README.md`, `skills/engineering/README.md`, `skills/fork/README.md` | list those skills (and `wp-loop`) as user-invoked | list them as model-invoked |
 | `docs/engineering/retro.md` | "the skill stays human-in-the-loop and user-invoked" | stays human-in-the-loop; notes that the fork makes it model-invoked so `feature-loop` can run it, and that it still only proposes |
 | `scripts/check-invocation.mjs`, `scripts/test-invocation.sh`, `scripts/fixtures/invocation/` | do not exist | invocation lint and its tests (section 5) |
+| `.agents/adr/0003-codex-review-gates-in-feature-loop.md` | does not exist | ADR for Codex as cross-vendor reviewer through gates G9 and G10 (section 6) |
 | `FORK.md` | does not exist | this file |
 
 Every other file is identical to upstream. Three upstream `SKILL.md` files changed in fork.5, frontmatter only (bodies unchanged); their original `description:` lines were:
@@ -235,6 +236,14 @@ The topic files follow the structure of Trail of Bits' `sharp-edges` skill (CC B
 **Upstream's reason for keeping `retro` user-invoked** is that deciding what deserves a permanent check takes judgement (`docs/engineering/retro.md`). The fork keeps that: `retro` still only proposes, and `feature-loop` stage 9 stops for the user to pick which proposals become checks.
 
 **Principle (from Lauren Tan's pstack talk):** put each rule at the strongest layer that can hold it. Skill text can be skipped, so hooks and CI hold the loop.
+
+## 6. Cross-vendor review gates (in progress, HAR-161)
+
+**Why:** every reviewer in the loop is Claude, so the author and the reviewers share blind spots. HAR-161 adds Codex as an independent, read-only reviewer at two points: the plan (Gate A) and the full diff before the PR (Gate B).
+
+**Decision:** [ADR 0003](./.agents/adr/0003-codex-review-gates-in-feature-loop.md). It extends `feature-loop` instead of adding a second orchestrator: two new receipt gates, G9 (plan review) and G10 (diff review), checked by `check-gates.mjs` and enforced by the existing PR-create and merge hooks. Only test-backed findings block. The ADR also maps every HAR-161 requirement to the ticket that delivers it (HAR-163 to HAR-167).
+
+No skill or script changes yet: this section grows as each ticket lands.
 
 ## Install
 
