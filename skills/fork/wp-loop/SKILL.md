@@ -27,7 +27,7 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
 
 ## Steps
 
-1. **Read the issue in full**, plus its parent or any spec it cites, and write the checklist. If the domain terms are still fuzzy, call the Skill tool twice, for `grilling` and `domain-modeling`, and resolve them with the user before going on.
+1. **Read the issue in full**, plus its parent or any spec it cites, and write the checklist. If the domain terms are still fuzzy, call the Skill tool twice, for `grilling` and `domain-modeling`, and resolve them with the user before going on. When an approved plan (`.scratch/plan/<file>.md`, see `feature-loop`) already settles them in its Decisions section, do not grill again.
    **Done when:** every requirement and acceptance criterion in the issue and its cited specs is a checklist line.
 
 2. **Contract.** **Requires:** the step 1 checklist. Call the Skill tool with `deep-engineering`. Resolve its blocking open questions with the user. A shared-contract change (API schema, DB schema, wire format) lands first, as its own PR.
@@ -36,7 +36,7 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
 3. **Spec.** **Requires:** the checklist and the contract. When they say what to build, they are the spec for every later gate. When they leave gaps on work larger than Tiny, call the Skill tool with `to-spec`, passing the contract as input, then resume from that spec.
    **Done when:** the spec says what to build for every checklist line.
 
-4. **Confirm seams.** **Requires:** the contract's *Verification required* section. Show the user each proposed seam with a line on what it catches; `tdd` and the builder need confirmed seams.
+4. **Confirm seams.** **Requires:** the contract's *Verification required* section. Show the user each proposed seam with a line on what it catches; `tdd` and the builder need confirmed seams. When an approved plan's Tickets and seams section already holds the seams, they are confirmed: skip this step and record it as done from the plan.
    **Done when:** the user has confirmed every seam.
 
 5. **Branch** from the latest default branch as `wp<issue>-<slug>`. Parallel work packages get separate worktrees.

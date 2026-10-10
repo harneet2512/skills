@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds nine skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.6`
+- **Fork version:** `1.3.1-fork.7`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -18,8 +18,8 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.6`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.6` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.7`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.7` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -27,6 +27,7 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/engineering/to-spec/`, `to-tickets/`, `retro/` (SKILL.md frontmatter and `agents/openai.yaml`) | user-invoked (`disable-model-invocation: true`, `allow_implicit_invocation: false`) | **model-invoked**, with model-facing descriptions, so `feature-loop` can call them (fork.5, section 5). The skill bodies are unchanged. |
 | `README.md`, `skills/engineering/README.md`, `skills/fork/README.md` | list those skills (and `wp-loop`) as user-invoked | list them as model-invoked |
 | `docs/engineering/retro.md` | "the skill stays human-in-the-loop and user-invoked" | stays human-in-the-loop; notes that the fork makes it model-invoked so `feature-loop` can run it, and that it still only proposes |
+| `skills/fork/feature-loop/plan-template.md`, `design-challenge.md`, `PRACTICE-RUN.md`, `scripts/plan-check.mjs` | do not exist | plan-first workflow files (fork.7, section 8) |
 | `scripts/check-invocation.mjs`, `scripts/test-invocation.sh`, `scripts/fixtures/invocation/` | do not exist | invocation lint and its tests (section 5) |
 | `.agents/adr/0003-codex-review-gates-in-feature-loop.md` | does not exist | ADR for Codex as cross-vendor reviewer through gates G9 and G10 (section 6) |
 | `FORK.md` | does not exist | this file |
@@ -276,6 +277,34 @@ The reviews were not wasted (they found real defects), but they came in the wron
 **Tests:** `test-gates.sh` grows from 264 to 318 cases: G3 at small size (missing, stale, failing, happy path without coverage) and the merge hook refusing small work with no live run, the waiver and its refusals, every new field's validation (impossible dates, leap days, unknown names), the time box (none, running, overdue, met, waived, zones, a run from before the loop, an empty run, closed loop, argument misuse) and the SessionStart line. Five deliberate breakages of the new rules each turned the suite red.
 
 **Reviewed:** a fresh-context reviewer on the strongest model read the first version. Its two HIGH findings (an old run from another feature met the time box; a waived live run was always overdue) and its MEDIUM ones (misspelt fields ignored, impossible dates accepted, a design challenge for small work that has no contract, no live rerun after fix commits) are fixed above, each with a test where it is code.
+
+## 8. Plan first (fork.7)
+
+**Why:** HAR-170 Phase 2. The intended workflow is the user's brief, then `grilling`, then plan mode (files to create or change, and the skill at each stage, approved once), then `feature-loop` following the approved plan. In fork.6 the loop re-asked what the plan had already settled (grilling in stage 1, `shape` and `wp-loop` step 1; seam checks in `to-spec` and `wp-loop` step 4; the `to-tickets` quiz; sizing; the stage 0 dependency request) and ran the design challenge after the plan was already agreed, which needed a second approval. This change was authored after the HAR-170 A/B measurement of fork.6 (pinned to `7bf21dff`) and must not merge before its results are in.
+
+| Change | Where | Rule it enforces |
+|---|---|---|
+| Plan template | `feature-loop/plan-template.md` | Twelve required sections plus `Open questions` and `Changes`: decisions, size and why, external dependencies, files to create or change, skeleton ticket, tickets and seams, skill per stage, verification, failure modes, time box, concerns, design challenge |
+| Plan location | `feature-loop` "The approved plan" | Target repos set `"plansDirectory": ".scratch/plan"` in `.claude/settings.json`; Claude Code picks the file name, so the loop uses the newest plan file or the one the user names |
+| Start from the plan | `feature-loop` stages 0 to 4, `wp-loop` steps 1 and 4, `shape` section 1 | A stage the plan covers is written from it and recorded as `done, from approved plan` with `inferred: .scratch/plan/<file>.md#<Section>`; the user is asked only about sections `check-gates.sh --plan` names as missing or empty |
+| Ledger check | `check-gates.mjs` G8, `gates.md` | A `done, from approved plan` row must cite a plan file that exists and a section with content |
+| Plan check | `check-gates.sh --plan [FILE]`, `scripts/plan-check.mjs` | Lists missing or empty sections (blank, comments only, TBD, TODO, `?`, `<placeholder>`) and `Changed:` lines without `because`; needs no `gates.json` |
+| Plan-mode design challenge | `feature-loop/design-challenge.md`, `feature-loop` stage 2 | The adversarial review of the design runs as a read-only subagent on the draft plan before approval; stage 2 does not run it again; no second approval |
+| Concerns while planning | `feature-loop` "The approved plan" | `detect-packs.sh --plan` runs during planning and its packs go under `## Concerns` |
+| Grilling cap | `feature-loop` "The approved plan" | 3 rounds or 20 minutes, then the open questions with recommended defaults for one yes-or-edit answer |
+| Deviations written back | `feature-loop` stage 4, `plan-check.mjs` | `- Changed: <what> because <why>` appended to the plan file in the same commit as the code; the PR shows the plan diff; a line without a reason is red |
+
+Upstream skill bodies (`to-spec`, `to-tickets`) are not edited. `feature-loop` tells them, when a plan exists, that the seams and the breakdown are already confirmed.
+
+**Do subagents run during plan mode? (checked 2026-10-10)**
+- Source: the Claude Code sub-agents page, https://code.claude.com/docs/en/sub-agents. It describes the built-in Plan subagent as "a research agent used during plan mode to gather context before presenting a plan", with read-only tools (Write and Edit denied), and says "when you're in plan mode and Claude needs to understand your codebase, it delegates research to the Plan subagent so that exploration output stays in a separate context window while the main conversation remains read-only".
+- Source: the permission modes page, https://code.claude.com/docs/en/permission-modes ("Analyze before you edit with plan mode"). Plan mode lets Claude read files, run shell commands to explore and write a plan without editing source; `Ctrl+G` opens the plan in an editor; approving the plan exits plan mode and starts editing; plan files live in `~/.claude/plans/` or the `plansDirectory` setting.
+- Permission inheritance (sub-agents page): a subagent with no `permissionMode` inherits the main conversation's mode, and in `plan` mode a subagent's own `permissionMode` setting applies; that field is ignored for plugin subagents. A subagent's `tools` list restricts it, and the page shows read-only examples (`tools: Read, Grep, Glob`).
+- Conclusion: yes, subagents run during plan mode, and the built-in Plan subagent is read-only by definition. The pages do not state in so many words that a subagent of another type launched by the lead during plan mode is allowed; it follows from the inheritance rule but has not been run here. So the design challenge uses the built-in Plan subagent (or any subagent with no Write, Edit or Bash tool), and the practice run (`feature-loop/PRACTICE-RUN.md`) records whether it ran. If a session blocks it, `design-challenge.md` gives the fallback: the same brief in a separate fresh session in plan mode against the plan file, pasted back under `## Design challenge`; never skipped, never run by the context that wrote the plan.
+
+**Tests:** `test-gates.sh` gains cases for the plan: a loop with an approved plan marks those stages done instead of re-running them (G8 green, the SessionStart summary resumes at the first stage the plan did not cover, the Stop hook is not held), G8 red for a plan row that cites a missing section, a missing file, no section or only an assumption, a plan section that is only `TBD`, `--plan` for a complete plan, a missing section, an empty section, `Changed:` lines with and without a reason, the unfilled template (red in all 12 sections), and its usage errors.
+
+**Not done in this change:** the practice run on a toy repo (HAR-170 "Done when"). `feature-loop/PRACTICE-RUN.md` holds the exact steps and the ledger it must show; it runs in a cloud session after the A/B.
 
 ## Install
 
