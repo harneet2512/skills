@@ -1,10 +1,12 @@
 ---
 name: feature-loop
-description: "Take one feature from request to merged and shipped, end to end: Matt's main flow (understand, spec, tracer-bullet tickets, TDD build, review, retro) with this fork's upgrades at every step: journey shape, engineering contract, behavioral envelope, concern topics, evals, live verification, adversarial review, gates enforced by hooks, and one PR per feature."
+description: "Take one feature from request to merged and shipped, end to end, optimized for quality and speed together: Matt's main flow (understand, spec, tracer-bullet tickets, TDD build, review, retro) with this fork's upgrades at every step: journey shape, engineering contract, behavioral envelope, concern topics, evals, a walking skeleton proven live first, adversarial plan and code review, an optional time box, gates enforced by hooks, and one PR per feature."
 disable-model-invocation: true
 ---
 
 Take one feature from request to shipped, without stopping except for decisions only the user can make.
+
+**Quality and speed together.** The product runs live early (a walking skeleton before the rest of the build), every later change is checked against that live run, and the depth of each stage scales with risk, not with the size of the feature's name. Review finds what the live run cannot; it never replaces it.
 
 **The flow:**
 - **The spine is Matt's main flow:** understand, `to-spec`, `to-tickets`, build each ticket with `tdd` and `code-review`, then `retro`.
@@ -19,15 +21,23 @@ The issue tracker should have been provided to you. If not, tell the user to run
 
 ## Size it first
 
+Size by **risk**: what breaks, for whom, and whether it can be undone. The kind of feature does not decide the size; an AI feature is sized like any other.
+
 | Size | When | Stages |
 |---|---|---|
-| **Small** | One component, no new state, no new integration (copy, a color, a validation rule) | 2 (envelope only), then the single-issue path: call the Skill tool with `wp-loop`; then 9 |
-| **Normal** | A user-visible behavior with state, an API, a job or an integration | All stages |
-| **Large** | A new subsystem, a new external integration, tenancy, money, an AI feature | All stages, plus the design challenge in stage 2 |
+| **Small** | One component, no new state, no new integration, nothing irreversible (copy, a color, a validation rule) | 2 (envelope only), then the single-issue path: call the Skill tool with `wp-loop` (which runs the live happy path); then 9 |
+| **Normal** | A user-visible behavior with state, an API, a job or an integration; an AI feature whose output a person sees before anything acts on it | All stages |
+| **Large** | An irreversible external effect (sending, paying, deleting), money, tenancy, auth or identity, a new subsystem, or an AI feature that acts with no person in between | All stages, plus the design challenge in stage 2 |
 
-Say the size and why in one line, and write `.scratch/gates.json` as gates.md specifies: `{ "slug": "<slug>", "size": "<size>", "base": "<branch>" }`. Add `"merge_check"` when CI does not run as GitHub checks on the PR (see gates.md). When evidence says the work is bigger, escalate: rewrite `size` and run the stages it adds.
+Say the size and why in one line, and write `.scratch/gates.json` as gates.md specifies: `{ "slug": "<slug>", "size": "<size>", "base": "<branch>" }`.
+- Add `"demo_by"` (an ISO time with a zone) whenever the user names a deadline, a demo or a time-boxed trial; ask for it in one line when the work is clearly time-boxed and no time was given.
+- Add `"evals": "full"` only when the user asks for a full eval suite; the default is `smoke` (see `evals`, "Tiers").
+- Add `"max_builders"` when the machine or the user's rate limits call for fewer or more than 3.
+- Add `"merge_check"` when CI does not run as GitHub checks on the PR.
 
-**Done when:** `.scratch/gates.json` holds `slug`, `size` (`small`, `normal` or `large`) and `base`.
+When evidence says the work is bigger, escalate: rewrite `size` and run the stages it adds.
+
+**Done when:** `.scratch/gates.json` holds `slug`, `size` (`small`, `normal` or `large`), `base`, and `demo_by` when the work is time-boxed.
 
 ## Roles
 
@@ -36,6 +46,21 @@ Say the size and why in one line, and write `.scratch/gates.json` as gates.md sp
 - **Reviewers and the design challenge.** Subagents on the strongest model (Claude Code: `model: "opus"`), each with a fresh context, never the builder that wrote the code.
 
 Set the model explicitly on every subagent call.
+
+## Speed rules
+
+These hold at every stage. They exist because a loop that reviews and re-reviews a product nobody has run is slow and still ships surprises.
+
+- **Time box.** With `demo_by` set, run `<this skill>/scripts/check-gates.sh --timebox` before each stage. When it exits 1 (overdue with no passing live run), start no review, eval or hardening work: get the happy path passing in `live-verify`, or set the stage to `blocked: <what stops the live run>` and tell the user.
+- **Walking skeleton first.** The first ticket is the thinnest path through the whole journey, real at every layer it touches, with one passing `live-verify` happy-path scenario (stage 4). Every later slice merges only with that scenario still passing.
+- **Report the first live run.** When the skeleton passes live, tell the user in a few lines with the evidence (the run's `report.md`; a screen recording when there is a UI), before building further.
+- **Builders.** At most `max_builders` (default 3) at once, each in its own worktree with no file overlap. A builder commits and pushes at least every 30 minutes. A process is stopped by the PID that started it, never by image name (`taskkill /IM`, `pkill node`), which kills other people's work.
+- **Review budget.**
+  - The design challenge (stage 2) is one round.
+  - Each slice gets `code-review` only. `adversarial-review` runs once per feature, in stage 6, after the live run passes.
+  - One fix round per review: CRITICAL and HIGH are fixed and re-verified once; MEDIUM and LOW are filed as follow-up issues and do not block.
+  - A second BLOCK on the same slice, or a fix that fails its re-verification, becomes `blocked: <the finding>` for the user. It does not start another loop.
+- **Checks.** A slice runs its targeted tests (the packages it touched and their direct dependents). The full suite runs once on the integration head before the PR and again at the merge gate, never while reviewers or attackers are running tests on the same machine. A suite that is slow because it is forced serial (`-p 1`, `--runInBand`, a single worker) is a finding to fix, not a cost to accept.
 
 ## Visibility and the evidence ledger
 
@@ -91,8 +116,11 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 
 ## Stages
 
-0. **Baseline.** Once per product: read the tenancy model, auth, deploy path, observability and flags. Note each missing enterprise need (tenant scoping, audit log, SSO hook, staged rollout). The first feature that depends on one builds it as a foundation ticket.
-   **Done when:** each of the five is located or marked missing, and each missing one this feature depends on is a ticket.
+0. **Baseline.**
+   - Once per product: read the tenancy model, auth, deploy path, observability and flags. Note each missing enterprise need (tenant scoping, audit log, SSO hook, staged rollout). The first feature that depends on one builds it as a foundation ticket.
+   - Every feature: list each external dependency the live run needs (API keys, sandbox accounts, test workspaces, inboxes, model providers) and check that each is present, by name only, never by printing a secret. Ask the user for every missing one in a single message, now. For each, name the local stand-in the live run uses until it arrives (a `live-verify` stand-in, a local inbox, a local model endpoint), so a missing key never blocks the skeleton.
+
+   **Done when:** each of the five is located or marked missing, each missing one this feature depends on is a ticket, and every external dependency is present or has a named stand-in and an open request to the user.
 
 1. **Understand** (Matt: `grill-with-docs`; fork: `shape`).
    - When any requirement is a guess, call the Skill tool twice, for `grilling` and `domain-modeling`, so the answers land in the glossary and ADRs.
@@ -104,7 +132,7 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 
 2. **Design** (fork). **Requires:** the shape file.
    - Call the Skill tool with `deep-engineering`. It builds the system model from repo evidence and calls `behavioral-envelope` (gate G2), `concern-topics` (journey × topic matrix and safety arguments) and, when the envelope's `**Packs:**` line names `llm` or `retrieval`, `evals` (the eval plan, before any prompt exists). It ends with the engineering contract.
-   - **Large:** before the spec, a reviewer subagent on the strongest model, with a fresh context, attacks the contract. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and say what to cut. Fold every CONFIRMED finding into the contract, with its resolution, and say which ones changed the design.
+   - **Design challenge (adversarial plan review).** For Large work, and for any size whose envelope has a Critical Live item: before the spec, one reviewer subagent on the strongest model, with a fresh context, attacks the contract. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and list what to cut to reach a working live demo sooner without losing a Critical item. One round: fold every CONFIRMED finding into the contract with its resolution, say which ones changed the design, and take the cuts the user would accept (ask in one line when unsure).
 
    **Done when:**
    - the contract gives every Live item a mechanism, an enforcement point and a proof, plus the build order;
@@ -115,32 +143,33 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 
 3. **Plan** (Matt: `to-spec`, `to-tickets`). **Requires:** the contract.
    - Call the Skill tool with `to-spec`, with the contract as input. Then call the Skill tool with `to-tickets`.
-   - Tickets are tracer-bullet vertical slices with blocking edges. The prefactor and the shared-contract change come first. Each ticket names its journey cases, Live items, topic categories and seams (from the contract's Verification required).
+   - Tickets are tracer-bullet vertical slices with blocking edges. **Ticket 1 is the walking skeleton**: the thinnest path through the whole journey from the shape file, real at every layer it touches, ending in one `live-verify` happy-path scenario. The prefactor and the shared-contract change come before it only when the skeleton cannot run without them. Each ticket names its journey cases, Live items, topic categories and seams (from the contract's Verification required).
    - `to-tickets`' quiz is the one planned stop: the user approves the breakdown and confirms the seams in the same step. Then the tickets are published as sub-issues of the feature's issue.
 
    **Done when:** the tickets are published, every Critical item's mechanism is in a ticket before any slice that relies on it, and the seams are confirmed.
 
 4. **Build** (Matt: `implement-spec`, `tdd`, `code-review`; fork: attack tests, topic patterns, slice review). **Requires:** the published tickets.
    - Create the integration branch from the latest default branch: `<issue>-<slug>`, or the repo's own branch convention. Open a draft PR after the first slice merges.
-   - For each ticket on the frontier, in parallel where blocking edges allow:
+   - **The skeleton first.** Build ticket 1 alone, run its happy-path scenario with `live-verify`, and report it to the user (Speed rules). Nothing else is built until it passes, or until it is `blocked:` on something only the user can give.
+   - Then for each ticket on the frontier, in parallel where blocking edges allow, up to `max_builders` at once:
      1. **Implement.** A builder subagent in its own worktree off the integration branch calls the Skill tool with `tdd` at the ticket's confirmed seams. It writes each attack test (duplicate delivery, concurrent writer, timeout after success) before the code it attacks. It reads its topic categories' *Build it right* before writing matching code, commits and pushes as it goes, and merges the integration branch tip into its own branch before reporting done.
      2. **Review the slice.** The lead calls the Skill tool with `code-review` on the slice's diff against the integration branch, with the ticket, the contract and the envelope's Live items as the spec. Both axes go to reviewer subagents on the strongest model, with severities assigned within each axis.
      3. **Fix.** CRITICAL and HIGH findings go back to the builder. The lead re-runs each one's targeted test and reads the changed lines. Each MEDIUM is fixed or filed as a follow-up issue.
-     4. **Merge** the slice into the integration branch and push. The commit hook runs `slop-check` on every commit.
+     4. **Merge** the slice into the integration branch, rerun its targeted tests and the skeleton's happy-path scenario on the integration head, and push. The commit hook runs `slop-check` on every commit.
 
    - When every ticket is merged, remove the builder worktrees.
 
-   **Done when:** every ticket is merged into the integration branch with its slice review resolved, each attack test went red before its code landed, the full suite is green on the integration branch, and no builder worktree is left.
+   **Done when:** the skeleton's happy-path scenario passed before any other ticket started, every ticket is merged into the integration branch with its slice review resolved, each attack test went red before its code landed, the happy-path scenario still passes on the integration head, the full suite is green on the integration branch, and no builder worktree is left.
 
 5. **Prove** (fork). On the integration branch head:
    - CI is green;
    - `concern-topics/scripts/slop-check.sh --diff <base>` is clean, or its findings are justified (gate G6);
-   - when evals apply, call the Skill tool with `evals` and run the plan's gate (gate G4);
+   - when evals apply, call the Skill tool with `evals` at the tier `gates.json` names (`smoke` unless it says `full`) and run the plan's gate (gate G4);
    - call the Skill tool with `live-verify` for every journey case and every Live item with a live proof, with two instances and faults injected (gate G3).
 
    **Done when:** G3, G4 (when evals apply) and G6 are green, and CI is green on the head.
 
-6. **Attack** (fork). Call the Skill tool with `adversarial-review` over the whole integration branch. Each CONFIRMED finding is fixed as a commit on the same PR, with its reproduction kept, and recorded as an escape from stage 2 or 4.
+6. **Attack** (fork). **Requires:** gate G3 green (`check-gates.sh G3`). A product that has not passed its live run is not attacked yet: its first failures are cheaper to find by running it. Call the Skill tool with `adversarial-review` over the whole integration branch, once. Each CONFIRMED finding is fixed as a commit on the same PR, with its reproduction kept, and recorded as an escape from stage 2 or 4.
    **Done when:** `.scratch/review/<slug>.md` has no CONFIRMED CRITICAL or HIGH row with resolution `open` or empty (gate G5).
 
 7. **Merge gate** (fork: `wp-loop`).
@@ -222,4 +251,5 @@ All of them apply only to a repo whose main worktree has `.scratch/gates.json` w
 
 - Every stage the size table lists runs to its **Done when**. Every stage's done is backed by measured or inferred evidence in the ledger.
 - Concerns are design inputs: a concern first found in stage 6 is an escape from stage 2.
-- Size for an enterprise product with real customers now and 10x its load. Anything bigger waits for evidence.
+- Design for real customers now. Concerns that only matter at 10x the load go in the envelope as Later items unless the shape file names that load.
+- Depth scales with risk; speed comes from running the product early, never from skipping a gate.

@@ -20,7 +20,7 @@ If the user passes an issue reference, fetch it from the issue tracker and state
 ## Roles
 
 - **Lead**: this session. Owns the contract, seam confirmation, the review, every gate, fix verification and the merge.
-- **Builder**: a subagent that writes code. Use a cheaper model (Claude Code: `model: "sonnet"`, or `"haiku"` for mechanical edits). A builder has no channel to the user, so it works only at seams the lead already confirmed.
+- **Builder**: a subagent that writes code, at most `max_builders` from `.scratch/gates.json` (default 3) at once. It commits and pushes at least every 30 minutes and stops only processes it started, by PID. Use a cheaper model (Claude Code: `model: "sonnet"`, or `"haiku"` for mechanical edits). A builder has no channel to the user, so it works only at seams the lead already confirmed.
 - **Reviewers**: the two axis subagents that `code-review` spawns. Brief them to use the strongest model available (Claude Code: `model: "opus"`). They start from fresh contexts, so each reviews code written by someone else.
 
 Set the model explicitly on every subagent call. The lead calls `code-review` itself: subagents usually cannot spawn subagents of their own, and `code-review` needs two.
@@ -48,9 +48,9 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
 6b. **Prove beyond unit tests.** **Requires:** `.scratch/envelope/<slug>.md`, plus `.scratch/shape/<slug>.md` when the work touches a journey; if one is missing, stop and name the stage that writes it (`behavioral-envelope`, `shape`). Before the PR:
    - run `concern-topics/scripts/slop-check.sh --diff <default branch>` and fix each finding or justify it under `## Justified` in `.scratch/review/<slug>.md`;
    - when the envelope's `**Packs:**` line names `llm` or `retrieval`, run its `evals` suite with the gate from the eval plan;
-   - for every normal and large change, run `live-verify` with two instances, with a scenario for each new journey case or Live item that has a live proof.
+   - run `live-verify` at every size. Small work runs its **happy path**: at least one scenario that drives the changed behavior through the running app. A change with nothing to run (docs, a comment, a config value no process reads) sets `"live": "none: <reason>"` in `.scratch/gates.json` instead, and says so in the results comment. Normal and large work run with two instances, with a scenario for each new journey case or Live item that has a live proof.
 
-   **Done when:** gates G6, G3 (every normal and large change; small skips it) and G4 (when `**Packs:**` names `llm` or `retrieval`) are green: `check-gates.sh G3 G4 G6` exits 0, or, without `.scratch/gates.json`, their conditions in gates.md (the gates `check-gates.sh` prints, each red line naming the file to fix) hold by inspection.
+   **Done when:** gates G6, G3 (every size; small may waive it with a stated reason) and G4 (when `**Packs:**` names `llm` or `retrieval`) are green: `check-gates.sh G3 G4 G6` exits 0, or, without `.scratch/gates.json`, their conditions in gates.md (the gates `check-gates.sh` prints, each red line naming the file to fix) hold by inspection.
 
 7. **Commit with traceability.** Before each commit, check the diff against the issue checklist; record deviations in the commit body and later in the results comment.
    **Done when:** every commit in `git log <default branch>..HEAD` carries `Refs: #<issue>` and names its deviations from the checklist in its body.
@@ -64,7 +64,7 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
 10. **Review.** **Requires:** `.scratch/envelope/<slug>.md`. First call the Skill tool with `behavioral-envelope` and run only its "Re-check against the diff" section; answer every concern pack it flags before review starts. For Tiny work, call the Skill tool with `code-review`, with the default branch as the fixed point and the issue checklist, the contract and the envelope's Live items as the spec; put the strongest model and [review-checks.md](review-checks.md) in both axis briefs. For Normal and Major work, call the Skill tool with `adversarial-review`: it runs `code-review` with that same spec and briefs, adds the design-applied, topic attacker, code craft and blast radius axes, and counts only reproduced findings. Severities are assigned within each axis.
     **Done when:** every finding carries CRITICAL, HIGH, MEDIUM or LOW, `file:line` and a concrete fix, and for Normal and Major work `.scratch/review/<slug>.md` has its `## Findings` table (the file gate G5 reads).
 
-11. **Fix round.** Every CRITICAL or HIGH finding goes back to the builder first. The lead then **verifies each fix personally**: re-run the targeted test for each HIGH and read the changed lines. LOW is the builder's call. Fixes push a new head, so repeat step 9.
+11. **Fix round.** Every CRITICAL or HIGH finding goes back to the builder first. The lead then **verifies each fix personally**: re-run the targeted test for each HIGH and read the changed lines. LOW is the builder's call. Fixes push a new head, so repeat step 9. There is **one** fix round: a fix that fails its re-verification, or a new CRITICAL or HIGH from re-verifying, goes to the user as a decision (fix again, cut scope, or ship behind a flag) instead of starting another round.
     **Done when:** gate G5 is green, the lead has re-run each HIGH's targeted test, every MEDIUM is fixed or filed as a follow-up issue, and `gh pr checks <pr>` exits 0 on the new head.
 
 12. **Merge gate.** **Requires:** whenever `.scratch/gates.json` exists, a 0 exit from `check-gates.sh --phase merge` on this head; run it first and fix each red gate it prints until it exits 0. Follow [merge-gate.md](merge-gate.md): bring the branch up to date, renumber migrations and ADRs, wait for CI on that head, check it, and merge exactly the commit you checked.

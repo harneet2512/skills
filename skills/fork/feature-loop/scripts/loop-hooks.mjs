@@ -2,7 +2,8 @@
 // dependencies. Both read the hook payload from stdin and look at `.scratch/gates.json` and `.scratch/loop-status.md`.
 //
 //   node loop-hooks.mjs stop           exit 2 with a reason when a stage is `running` with no result, else exit 0
-//   node loop-hooks.mjs session-start  print a summary for the model's context when the loop is running; exit 0
+//   node loop-hooks.mjs session-start  print a summary for the model's context when the loop is running, with the
+//                                      time box when gates.json sets demo_by; exit 0
 //
 // loop-status.md holds a table with the header `| Stage | Skill | Status | Gate | Evidence | Output | Finished |`,
 // read by column name. A Status is `pending`, `running`, `done`, `skipped: <why>` or `blocked: <decision needed>`.
@@ -10,6 +11,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { clean, tables } from './md-table.mjs';
+import { timebox } from './timebox.mjs';
 
 const mode = process.argv[2];
 let raw = '';
@@ -81,8 +83,11 @@ function sessionStart() {
   const size = typeof run?.size === 'string' ? run.size : '';
   if (!slug) finish(0);
   const head = `feature-loop is running for "${slug}" (size ${size || 'unknown'})`;
+  // The time box line, when gates.json sets demo_by (an invalid one is check-gates' business, never the session's).
+  let tb = '';
+  try { const t = timebox(run, root); if (t.state !== 'none') tb = `${t.line}\n`; } catch { /* invalid demo_by */ }
   const stages = readStages(root);
-  if (!stages) finish(0, `${head}; no .scratch/loop-status.md yet. Record each stage there as you go (see skills/fork/feature-loop).\n`);
+  if (!stages) finish(0, `${head}; no .scratch/loop-status.md yet. Record each stage there as you go (see skills/fork/feature-loop).\n${tb}`);
   const open = stages.filter((s) => statusKind(s.status) !== 'done');
   const next = stages.find((s) => !['done', 'skipped'].includes(statusKind(s.status)));
   const out = [`${head}.`];
@@ -90,7 +95,7 @@ function sessionStart() {
     out.push('Stages not done:', ...open.map((s) => `- ${label(s)}: ${s.status || 'no status'}`));
   }
   out.push(next ? `Resume at: stage ${label(next)} (${next.status || 'no status'})` : 'Every stage is done or skipped.');
-  finish(0, out.join('\n') + '\n');
+  finish(0, out.join('\n') + '\n' + tb);
 }
 
 try {

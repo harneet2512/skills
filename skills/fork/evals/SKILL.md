@@ -19,6 +19,21 @@ This is the operational depth behind `AI-01` (evals are the test) and `AI-02` (n
 | **Ship** | Online evals: sampled production traces graded by the same graders, guardrail metrics, drift alerts, a human review queue. | Dashboard and alert entries |
 | **Learn** | Every production failure becomes a case before it is fixed. Capability cases that reach near 100% graduate to the regression suite. | New rows in `cases.jsonl` |
 
+## Tiers
+
+`.scratch/gates.json` names the tier in `"evals"`: `smoke` (the default) or `full`. Both use the same harness, the same G4 gate and the same rules on graders; the smoke tier is smaller so a working feature can merge with honest, measured evidence the same day, and the full tier grows from it.
+
+| | Smoke (default) | Full |
+|---|---|---|
+| Traces read (section 2) | at least 10, by the lead, with the failure notes kept | section 2's 30 or more, until no new category appears |
+| Cases (section 3) | 10 to 20: the main journey, one tempted claim, one untrusted-text case when the model reads outside text, one hand-off case | section 3 in full |
+| Graders (section 4) | code graders first; at most one judge, only for a failure mode code cannot grade, with its TPR and TNR on at least 20 labels and the word "rough" next to them | every failure mode, judges calibrated on 100 or more labels |
+| Trials (section 5) | K = 3, mean with its 95% CI and n | section 5 in full |
+| Gate (section 6) | hard floors on the critical code graders (injection, foreign recipients, invented money) and an absolute `pass>=` floor the user agreed | section 6 in full, with the paired delta against a baseline |
+| Online (section 7) | the plan names what production sampling will be; it is not built yet | section 7 in full |
+
+At the smoke tier, the smoke column replaces the numbers in the **Done when** lines of sections 2 to 7. Every gate in the smoke plan must be one the current code and data can actually evaluate: a gate that can only pass once production data exists belongs to the full tier, not to this merge. Moving to `full` is the user's call and a new eval plan, not a fix round.
+
 ## 1. Success criteria first
 
 **Requires:** `.scratch/envelope/<slug>.md`; if it is missing, call the Skill tool with `behavioral-envelope` first: its Live LLM items are what the eval plan proves, and each names its eval proof.

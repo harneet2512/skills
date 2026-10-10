@@ -12,7 +12,16 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 { "slug": "reply-options", "size": "normal", "base": "main" }
 ```
 
-`size` is `small`, `normal` or `large`. An optional `"merge_check"` is the command the merge hook runs instead of `gh pr checks`, for projects whose CI runs elsewhere: `{sha}` and `{pr}` are filled in, and exit 0 means CI is green on exactly that sha (for example `{ "merge_check": "scripts/ci-status.sh {sha}" }`). Without this file the gates do not apply, so the hook stays silent on work that is not running the loop.
+`size` is `small`, `normal` or `large`. Optional fields, each validated strictly (a bad value is a usage error, exit 2, never a rule silently turned off):
+
+| Field | Value | What it does |
+|---|---|---|
+| `demo_by` | an ISO 8601 time with a zone, for example `"2026-10-12T17:00:00-04:00"` | The time box: by then the happy path must have passed a live run. `check-gates.sh --timebox` prints minutes left, `met`, or `OVERDUE` (exit 1), and the SessionStart summary carries the same line |
+| `evals` | `"smoke"` (default) or `"full"` | How big the eval plan is when the `llm` or `retrieval` pack applies (see `evals`, "Tiers"). G4 checks the same way at both tiers |
+| `max_builders` | a whole number from 1 to 8 (default 3) | The most builder subagents running at once |
+| `live` | `"none: <reason>"` | Small work only: waives the live run (G3 becomes n/a and prints the reason). Normal and large work may not waive it |
+
+An optional `"merge_check"` is the command the merge hook runs instead of `gh pr checks`, for projects whose CI runs elsewhere: `{sha}` and `{pr}` are filled in, and exit 0 means CI is green on exactly that sha (for example `{ "merge_check": "scripts/ci-status.sh {sha}" }`). Without this file the gates do not apply, so the hook stays silent on work that is not running the loop.
 
 `base` is also the branch a push may not target while the loop is active (see "Running them"). The optional `"status": "closed"` ends the loop: set it when the feature is merged and its metrics line is written (the close phase has passed). A closed loop is invisible to every hook and to `check-gates.sh`: they print nothing (`check-gates.sh` says "loop closed" and exits 0), the SessionStart summary is empty, and Stop no longer holds the session. Any other `status`, or none, means the loop is active.
 
@@ -24,7 +33,7 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 |---|---|---|
 | G1 shape | normal, large | `.scratch/shape/<slug>.md` exists and lists at least one journey case ID of the form `J<n>.<case>` (for example `J3.two-actors`) |
 | G2 envelope | all | `.scratch/envelope/<slug>.md` exists; its `**Packs:**` line is filled; its `## Live` table has at least one row on a normal or large change (a small change may leave it empty); every row has non-empty Severity, Mechanism, Enforced at and Proof cells, none of them `TBD`, `TODO` or `?` |
-| G3 live | normal, large | the newest `.scratch/live/<run>/report.json` is newer than the last commit, every scenario in it has `result: "pass"`, and every journey case ID from the shape file appears in at least one scenario's `journey` field |
+| G3 live | all (small may waive it with `"live": "none: <reason>"`) | the newest `.scratch/live/<run>/report.json` is newer than the last commit, it has at least one scenario, and every scenario in it has `result: "pass"`; on normal and large work, every journey case ID from the shape file also appears in at least one scenario's `journey` field (small work proves its happy path only) |
 | G4 evals | any size whose envelope `**Packs:**` line names `llm` or `retrieval` | `.scratch/evals/<slug>/results.json` exists, is newer than the last commit, and every entry in its `gates` array has `ok: true` |
 | G5 review | normal, large | `.scratch/review/<slug>.md` exists; no row in its `## Findings` table is `CONFIRMED` with severity `CRITICAL` or `HIGH` and resolution `open` or empty |
 | G6 craft | all | `concern-topics/scripts/slop-check.sh --diff <base> --justified .scratch/review/<slug>.md` reports nothing: every finding's `file:line` is listed under `## Justified` with a reason (the commit hook runs the same code with `--staged`, so the two never disagree about a review file) |
@@ -56,6 +65,7 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 <feature-loop>/scripts/check-gates.sh --phase build    # G1 G2 G8
 <feature-loop>/scripts/check-gates.sh --phase merge    # G1 to G6 and G8
 <feature-loop>/scripts/check-gates.sh --phase close    # all eight, as with no phase
+<feature-loop>/scripts/check-gates.sh --timebox        # only the time box; exit 1 when demo_by passed with no passing live run
 ```
 
 Each red gate prints one line: the gate ID, what is missing, and the file to fix. Every gate is still subject to its size (the "Applies to" column), and a phase together with gate IDs checks the gates in both.

@@ -3,22 +3,26 @@
 //
 //   node check-gates.mjs --root <dir> [--work <dir>] --last-commit <unix seconds> --slop <slop-check.sh>
 //                        [--phase build|merge|close] [G1 ... G8]
+//   node check-gates.mjs --root <dir> --timebox
 //
 // --root holds .scratch/; --work is the git worktree whose code G6 scans (default: --root). A phase narrows the
 // gates to those due at that point of the loop; gate IDs narrow them further.
+// --timebox prints only the time box (demo_by against the newest passing live run): exit 0 when it is met, still
+// running or not set, 1 when it is overdue.
 //
 // Exit: 0 every evaluated gate green (or n/a), 1 any red, 2 the run file is invalid.
-import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { clean, blank, section, firstTable, tables } from './md-table.mjs';
+import { newestLiveReport, parseDemoBy, timebox } from './timebox.mjs';
 
 const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
 const NORMAL_UP = new Set(['normal', 'large']);
 const APPLIES = {
   G1: (size) => NORMAL_UP.has(size),
   G2: () => true,
-  G3: (size) => NORMAL_UP.has(size),
+  G3: () => true, // every size runs live; small proves the happy path only, and may waive it in gates.json, below
   G4: () => true, // decided by the envelope's Packs line, below
   G5: (size) => NORMAL_UP.has(size),
   G6: () => true,
@@ -35,7 +39,7 @@ const CASE_RE = /\bJ[0-9]+\.[a-z][a-z0-9-]*\b/g;
 
 // ---- arguments
 const args = process.argv.slice(2);
-let root = process.cwd(), work = '', lastCommit = 0, slop = '', phase = '';
+let root = process.cwd(), work = '', lastCommit = 0, slop = '', phase = '', timeboxOnly = false;
 const wanted = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -44,6 +48,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--phase') { phase = args[++i]; if (!PHASES[phase]) { console.error(`check-gates: unknown phase: ${phase}`); process.exit(2); } }
   else if (a === '--last-commit') lastCommit = Number(args[++i]) || 0;
   else if (a === '--slop') slop = args[++i];
+  else if (a === '--timebox') timeboxOnly = true;
   else if (/^G[1-8]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
@@ -71,6 +76,26 @@ if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug) || slug.includes('..')) {
 if (!['small', 'normal', 'large'].includes(size)) {
   console.error('gates: .scratch/gates.json: "size" must be small, normal or large');
   process.exit(2);
+}
+// Optional fields (gates.md, "The run file"). Each is checked strictly: a typo must not silently turn a rule off.
+try { parseDemoBy(run); } catch (e) { die(`gates: .scratch/gates.json: ${e.message}`); }
+if (run.evals !== undefined && !['smoke', 'full'].includes(run.evals)) die('gates: .scratch/gates.json: "evals" must be smoke or full');
+if (run.max_builders !== undefined && !(Number.isInteger(run.max_builders) && run.max_builders >= 1 && run.max_builders <= 8)) {
+  die('gates: .scratch/gates.json: "max_builders" must be a whole number from 1 to 8');
+}
+// A live waiver is "none: <reason>", and only small work may waive the live run.
+let liveWaiver = '';
+if (run.live !== undefined) {
+  const m = typeof run.live === 'string' ? /^none:\s*(\S.*)$/.exec(run.live) : null;
+  if (!m) die('gates: .scratch/gates.json: "live" must be "none: <reason>" (leave it out to run live-verify)');
+  if (size !== 'small') die('gates: .scratch/gates.json: "live": "none: ..." is only allowed on small work; normal and large always run live-verify');
+  liveWaiver = m[1].trim();
+}
+
+if (timeboxOnly) {
+  const tb = timebox(run, root);
+  console.log(tb.line);
+  process.exit(tb.state === 'overdue' ? 1 : 0);
 }
 
 const P = {
@@ -166,21 +191,9 @@ function G2() {
   return problems.length ? red(problems.join('; '), P.envelope) : green();
 }
 
-function newestReport() {
-  let best = null;
-  let dirs = [];
-  try { dirs = readdirSync(abs(P.live), { withFileTypes: true }).filter((d) => d.isDirectory()); } catch { return null; }
-  for (const d of dirs) {
-    const rel = `${P.live}/${d.name}/report.json`;
-    if (!existsSync(abs(rel))) continue;
-    const t = statSync(abs(rel)).mtimeMs;
-    if (!best || t > best.t || (t === best.t && rel > best.rel)) best = { rel, t };
-  }
-  return best && best.rel;
-}
-
 function G3() {
-  const rel = newestReport();
+  if (liveWaiver) return na(`live run waived in .scratch/gates.json: ${liveWaiver}`);
+  const rel = newestLiveReport(root)?.rel ?? null;
   if (!rel) return red('no live run', `${P.live}/<run>/report.json`);
   const problems = [];
   if (!newerThanCommit(rel)) problems.push('newest live run is older than the last commit, rerun live-verify');
@@ -192,9 +205,10 @@ function G3() {
     const failing = scen.filter((s) => s?.result !== 'pass').map((s) => `${s?.name ?? '(unnamed)'} [${s?.result ?? 'no result'}]`);
     if (failing.length) problems.push(`${failing.length} scenario${failing.length > 1 ? 's' : ''} not passing: ${listShort(failing, 3)}`);
   }
-  const cases = shapeCases();
+  // Small work proves its happy path; journey coverage is for normal and large, which have a shape file (G1).
+  const cases = NORMAL_UP.has(size) ? shapeCases() : [];
   if (cases === null) problems.push(`journey coverage unknown, shape file ${P.shape} missing`);
-  else if (scen) {
+  else if (scen && cases.length) {
     const covered = new Set(scen.flatMap((s) => caseIds([].concat(s?.journey ?? []).join(' '))));
     const missing = cases.filter((c) => !covered.has(c));
     if (missing.length) problems.push(`journey cases in no scenario: ${listShort(missing)}`);
