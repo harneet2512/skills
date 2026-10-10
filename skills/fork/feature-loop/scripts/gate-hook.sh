@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Claude Code PreToolUse hook (matcher: ^(Bash|PowerShell|mcp__.*)$), registered in the plugin's hooks/hooks.json. It gates four moments,
-# each only where a feature loop is active: .scratch/gates.json in the project (or in the main worktree of the
+# Claude Code PreToolUse hook (matcher: ^(Bash|PowerShell|mcp__.*)$), registered in the plugin's hooks/hooks.json. It gates
+# four moments, each only where a feature loop is active: .scratch/gates.json in the project (or in the main worktree of the
 # repository, when the command runs in a linked builder worktree) without "status": "closed". Work that is not
 # running the feature loop is never blocked.
 #
@@ -18,12 +18,14 @@
 #               checks` plus the PR head equal to the sha, or the "merge_check" command in .scratch/gates.json
 #               ({sha} and {pr} are filled in). G7, the metrics line, is the close gate and is not asked here.
 #
-# Other tools meet the same gates. A PowerShell call that ships (git push, gh pr create/new/ready/merge, a gh api write
-# to pulls, merges, contents or git/refs, a create, merge, ready or auto-merge mutation) is refused outright while a
-# loop is active, with a pointer to the Bash tool, where the classifier above applies. MCP tools are judged by the name
-# after the last `__`: create_pull_request is a PR creation, merge_pull_request a merge, push_files,
-# create_or_update_file, delete_file and update_pull_request_branch a push (the first three also refuse the base
-# branch); any other MCP tool passes. hook-command.mjs does the reading.
+# Other tools. A PowerShell call whose command contains the word git or gh is refused while a loop is active, with a
+# pointer to the Bash tool, where the classifier above applies (PowerShell commands are not classified; `git status`
+# is refused too). MCP tools are judged by write intent in the name after the last `__`: create_pull_request is a PR
+# creation (build gates); a name with merge in it is refused outright, because the GitHub MCP server cannot pin the head
+# sha (merge with `gh pr merge --match-head-commit` in Bash); push, create_or_update_file, delete_file, update_ref,
+# create_ref, branch writes and update_pull_request_branch are pushes (build gates, and the branch writes refuse the base
+# branch); update_pull_request with draft false is gated like a push for now (HAR-164 adds G10 there). Read tools and
+# other tools pass. hook-command.mjs does the reading.
 #
 # A red gate blocks the command: exit 2 with the reasons on stderr, which Claude Code shows to the model.
 # It fails closed: when a loop is active and node is missing, hook-command.mjs fails, the hook input is not JSON,
@@ -33,7 +35,9 @@
 # Deliberate bypass: FEATURE_LOOP_GATES=off together with a non-empty FEATURE_LOOP_BYPASS_REASON, set in the
 # environment or as assignments in the command itself. The bypass is appended to .scratch/loop-metrics.md as
 # "<date> <slug> gates bypassed: <reason>" (with " (commit)", " (merge)" or " (push to base)" after the reason for
-# those gates). FEATURE_LOOP_GATES=off without a reason is ignored. It needs node (to read the command), so it
+# those gates; " (PowerShell)" or " (MCP)" for those tools, after a comma if there is a gate note). For a PowerShell or
+# MCP call only the environment counts (set before Claude starts): a command prefix is not read for those tools.
+# FEATURE_LOOP_GATES=off without a reason is ignored. It needs node (to read the command), so it
 # cannot unblock a hook that failed closed because node is missing.
 set -uo pipefail
 
@@ -43,8 +47,19 @@ slop="$here/../../concern-topics/scripts/slop-check.sh"
 . "$here/loop-root.sh"
 input="$(cat)"
 
-# Fast path: most tool calls cannot ship, commit or merge, so do not start node for them.
-printf '%s' "$input" | grep -qiE 'push|pulls|pull_request|PullRequest|graphql|commit|merge|_file|refs|contents|(^|[^[:alnum:]_])pr([^[:alnum:]_]|$)' || exit 0
+# The tool of the call, read with sed like the cwd below (the first "tool_name" of the payload).
+tool_name="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*:[[:space:]]*"\(.*\)"$/\1/')"
+# PowerShell and MCP calls cannot take a bypass from a command prefix: only the environment counts.
+env_only=""
+case "$tool_name" in PowerShell) env_only=PowerShell ;; mcp__*) env_only=MCP ;; esac
+
+# Fast path: most tool calls cannot ship, commit or merge, so do not start node for them. A Bash call is looked at for
+# the words below, a PowerShell call for git or gh (backticks removed), an MCP call always goes to node.
+case "$tool_name" in
+  mcp__*) ;;
+  PowerShell) printf '%s' "$input" | tr -d '`' | grep -qiE 'git|gh' || exit 0 ;;
+  *) printf '%s' "$input" | grep -qE 'push|pulls|PullRequest|graphql|commit|merge|(^|[^[:alnum:]_])pr([^[:alnum:]_]|$)' || exit 0 ;;
+esac
 
 # ---- the loop at the session's directory, found without node
 
@@ -113,6 +128,7 @@ bypass() {
   [ "$flag" = off ] && [ -n "$(printf '%s' "$why" | tr -d '[:space:]')" ] || return 1
   slug="$(json_field "$root" slug)" || exit 2
   slug="${slug:-unknown}"
+  [ -n "$env_only" ] && what="${what:+$what, }$env_only"
   [ -n "$what" ] && note=" ($what)"
   if ! printf '%s %s gates bypassed: %s%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$slug" "$why" "$note" >> "$root/.scratch/loop-metrics.md"; then
     echo "feature-loop gates: bypass not allowed, because it could not be recorded in $root/.scratch/loop-metrics.md" >&2
@@ -123,7 +139,11 @@ bypass() {
 
 bypass_hint() { # <flag>
   if [ "$1" = off ]; then echo "FEATURE_LOOP_GATES=off was set without FEATURE_LOOP_BYPASS_REASON, so the gates ran anyway."; fi
-  echo "Bypass on purpose (recorded in .scratch/loop-metrics.md): FEATURE_LOOP_GATES=off FEATURE_LOOP_BYPASS_REASON='<why>' <same command>"
+  if [ -n "$env_only" ]; then
+    echo "Bypass on purpose (recorded in .scratch/loop-metrics.md): set FEATURE_LOOP_GATES=off and FEATURE_LOOP_BYPASS_REASON='<why>' in the environment before Claude starts; a command prefix is not read for $env_only calls."
+  else
+    echo "Bypass on purpose (recorded in .scratch/loop-metrics.md): FEATURE_LOOP_GATES=off FEATURE_LOOP_BYPASS_REASON='<why>' <same command>"
+  fi
 }
 
 blocked=0
@@ -314,14 +334,20 @@ gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
 
 # ---- PowerShell
 
-# gate_powershell <root> <flag> <reason>: a shipping PowerShell command is not classified a second time, it is refused.
-gate_powershell() {
-  local root="$1" flag="$2" why="$3"
-  bypass "$root" "$flag" "$why" PowerShell && return 0
+# gate_deny <root> <flag> <reason> <what>: a call that is refused outright (a PowerShell command with git or gh in it, an
+# MCP merge), not classified further.
+gate_deny() {
+  local root="$1" flag="$2" why="$3" what="$4"
+  bypass "$root" "$flag" "$why" "" && return 0
   blocked=1
   {
-    echo "feature-loop gate: this PowerShell command ships code (push, PR create, ready or merge) while the feature loop is active, so it was blocked (repo: $root)."
-    echo "Fix: use the Bash tool for this command, where the push, PR and merge gates are checked, instead of the PowerShell tool."
+    case "$what" in
+      powershell)
+        echo "feature-loop gate: use the Bash tool for git/gh while the feature loop is active (PowerShell commands are not classified), so this PowerShell command was blocked (repo: $root)." ;;
+      *)
+        echo "feature-loop merge gate: this MCP tool merges a PR and the GitHub MCP server cannot pin the head sha, so it was blocked while the feature loop is active (repo: $root)."
+        echo "Fix: merge with \`gh pr merge <pr> --match-head-commit <sha>\` in the Bash tool, where the merge gate runs." ;;
+    esac
     bypass_hint "$flag"
   } >&2
 }
@@ -345,7 +371,7 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
     pushref)
       [ "$f1" = - ] && f1=""
       gate_push_base "$root" "$adir" "$aflag" "$areason" "$f1" ;;
-    psship) gate_powershell "$root" "$aflag" "$areason" ;;
+    deny) gate_deny "$root" "$aflag" "$areason" "$f1" ;;
     commit)
       [ "$f2" = - ] && f2=""
       gate_commit "$root" "$adir" "$aflag" "$areason" "$f1" "$f2" ;;

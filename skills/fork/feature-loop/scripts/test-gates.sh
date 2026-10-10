@@ -737,10 +737,11 @@ hook_case "a failing chained git add fails closed with its error shown" "$fa" 'g
 hook_case "a failing chained git add names the path" "$fa" 'git add no-such-file && git commit -m x' 2 "no-such-file"
 
 # ======================================================================================================
-# HAR-168: PowerShell and MCP coverage, heredoc bodies are data
+# HAR-168: PowerShell and MCP coverage; heredoc bodies stay classified as commands
 # ======================================================================================================
 
 # tool_case <name> <cwd> <tool_name> <tool_input as JSON> <exit> <stderr needle> [VAR=value...]
+# A case that expects exit 0 and no needle also expects empty stderr.
 tool_case() {
   local name="$1" cwd="$2" tool="$3" input="$4" want="$5" needle="$6"; shift 6
   local payload err code bad=""
@@ -748,6 +749,7 @@ tool_case() {
   err="$(cd "$work" && printf '%s' "$payload" | env "$@" bash "$hook" 2>&1 >/dev/null)"; code=$?
   [ "$code" = "$want" ] || bad="exit $code, want $want"
   if [ -n "$needle" ] && ! printf '%s\n' "$err" | grep -qF -- "$needle"; then bad="${bad:+$bad; }missing: $needle"; fi
+  if [ "$want" = 0 ] && [ -z "$needle" ] && [ -n "$err" ]; then bad="${bad:+$bad; }expected empty stderr"; fi
   total=$((total + 1))
   if [ -z "$bad" ]; then echo "ok   tool: $name"; else echo "FAIL tool: $name: $bad"; printf '%s\n' "$err" | sed 's/^/       | /'; fail=1; fi
 }
@@ -759,53 +761,67 @@ ps_case() {
 # mcp_case <name> <cwd> <tool name> <input JSON> <exit> <stderr needle> [VAR=value...]
 mcp_case() { tool_case "MCP $1" "$2" "$3" "$4" "$5" "$6" "${@:7}"; }
 
-# ---- PowerShell: shipping is refused while a loop is active, and the message points to Bash
+# ---- heredoc bodies are classified as commands (the safe direction); each of these must stay blocked
 
-ps_case "gh pr merge refused, names Bash" "$green_repo" 'gh pr merge 3' 2 "use the Bash tool"
-ps_case "gh pr merge with no loop passes" "$plain_repo" 'gh pr merge 3' 0 ""
+hd_push=$'\ngit push origin feature'
+hook_case "python heredoc with a bare gh pr merge line (a documentation line, say) is blocked as a merge (documented: write the script with the Write tool)" "$mrepo" $'python - <<\x27EOF\x27
+import os
+gh pr merge 3
+EOF' 2 "merge exactly the head you checked" "${gh_env[@]}"
+hook_case "a quoted mention inside a python heredoc is one word, so it passes (same as the base branch)" "$mrepo" $'python - <<\x27EOF\x27
+x = "gh pr merge 3"
+EOF' 0 "" "${gh_env[@]}"
+hook_case "heredoc delimiter with a quote in the middle, then a push" "$red_repo" $'cat <<E"OF"\nhi\nEOF'"$hd_push" 2 "G1 red"
+hook_case "heredoc delimiter with a quote in the middle (single), then a push" "$red_repo" $'cat <<\'E\'OF\nhi\nEOF'"$hd_push" 2 "G1 red"
+hook_case "heredoc delimiter with a colon, then a push" "$red_repo" $'cat <<E:F\nhi\nE:F'"$hd_push" 2 "G1 red"
+hook_case "arithmetic shift in (( )), then a push" "$red_repo" $'(( z = 1<<n ))'"$hd_push" 2 "G1 red"
+hook_case "heredoc piped to a shell on a later line" "$red_repo" $'cat <<\'EOF\' |\ngit push origin feature\nEOF\nbash' 2 "G1 red"
+hook_case "command substitution with a quoted paren in an unquoted body" "$red_repo" $'cat <<EOF\n$( echo ")" ; git push origin feature)\nEOF' 2 "G1 red"
+hook_case "ksh heredoc" "$red_repo" $'ksh <<EOF\ngit push origin feature\nEOF' 2 "G1 red"
+hook_case "pwsh -Command - heredoc" "$red_repo" $'pwsh -Command - <<EOF\ngit push origin feature\nEOF' 2 "G1 red"
+hook_case "bash heredoc stays classified: merge" "$mrepo" $'bash <<\'EOF\'\ngh pr merge 5\nEOF' 2 "merge exactly the head you checked" "${gh_env[@]}"
+hook_case "sh heredoc stays classified: push" "$red_repo" $'sh <<EOF\ngit push origin feature\nEOF' 2 "G1 red"
+hook_case "a push after a heredoc is classified" "$red_repo" $'cat <<\'EOF\'\nx\nEOF\ngit push origin feature' 2 "G1 red"
+
+# ---- PowerShell: deny by default while a loop is active (the word git or gh anywhere)
+
+psmsg="use the Bash tool for git/gh while the feature loop is active (PowerShell commands are not classified)"
 closed_ps=$(new_repo ps-closed); green_normal "$closed_ps"; set_status "$closed_ps" closed
+ps_case "gh pr merge refused, names Bash" "$green_repo" 'gh pr merge 3' 2 "$psmsg"
+ps_case "gh pr merge with no loop passes" "$plain_repo" 'gh pr merge 3' 0 ""
 ps_case "gh pr merge with a closed loop passes" "$closed_ps" 'gh pr merge 3' 0 ""
-ps_case "git push refused" "$green_repo" 'git push origin feature' 2 "use the Bash tool"
+ps_case "git status with no loop passes" "$plain_repo" 'git status' 0 ""
+ps_case "git status is refused while a loop is active (accepted cost)" "$green_repo" 'git status' 2 "$psmsg"
+ps_case "gh pr view refused while a loop is active" "$green_repo" 'gh pr view 3 --json state' 2 "$psmsg"
+ps_case "git push refused" "$green_repo" 'git push origin feature' 2 "$psmsg"
 ps_case "git push refused with red gates too" "$red_repo" 'git push' 2 "PowerShell"
-ps_case "gh pr create refused" "$green_repo" 'gh pr create --draft --title x --body y' 2 "use the Bash tool"
-ps_case "gh pr new refused" "$green_repo" 'gh pr new --fill' 2 "use the Bash tool"
-ps_case "gh pr ready refused" "$green_repo" 'gh pr ready 3' 2 "use the Bash tool"
-ps_case "gh pr merge --auto refused" "$green_repo" 'gh pr merge 3 --auto --squash' 2 "use the Bash tool"
-ps_case "gh api PUT pulls/3/merge refused" "$green_repo" 'gh api -X PUT repos/o/r/pulls/3/merge -f sha=abc1234' 2 "use the Bash tool"
-ps_case "gh api POST pulls refused" "$green_repo" 'gh api repos/o/r/pulls -f title=x -f head=feature -f base=main' 2 "use the Bash tool"
-ps_case "gh api POST merges refused" "$green_repo" 'gh api repos/o/r/merges -f base=main -f head=feature' 2 "use the Bash tool"
-ps_case "gh api POST git/refs refused" "$green_repo" 'gh api repos/o/r/git/refs -f ref=refs/heads/x -f sha=abc1234' 2 "use the Bash tool"
-ps_case "gh api PATCH git/refs refused" "$green_repo" 'gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc1234' 2 "use the Bash tool"
-ps_case "gh api PUT contents refused" "$green_repo" 'gh api -X PUT repos/o/r/contents/README.md -f message=m -f content=Zg==' 2 "use the Bash tool"
-ps_case "graphql createPullRequest refused" "$green_repo" "gh api graphql -f query='mutation { createPullRequest(input: {}) { clientMutationId } }'" 2 "use the Bash tool"
-ps_case "graphql mergePullRequest refused" "$green_repo" "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'" 2 "use the Bash tool"
-ps_case "graphql markPullRequestReadyForReview refused" "$green_repo" "gh api graphql -f query='mutation { markPullRequestReadyForReview(input: {}) { clientMutationId } }'" 2 "use the Bash tool"
-ps_case "graphql enablePullRequestAutoMerge refused" "$green_repo" "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'" 2 "use the Bash tool"
-ps_case "git.exe with a Windows path refused" "$green_repo" '& "C:\Program Files\Git\cmd\git.exe" -C C:\work\repo push origin HEAD' 2 "use the Bash tool"
-ps_case "a push after Set-Location and a semicolon refused" "$green_repo" 'Set-Location C:\work; git push' 2 "use the Bash tool"
-ps_case "a push inside a script block refused" "$green_repo" '& { git push origin feature }' 2 "use the Bash tool"
-ps_case "powershell -Command wrapper refused" "$green_repo" 'powershell -NoProfile -Command "git push origin feature"' 2 "use the Bash tool"
-ps_case "Invoke-Expression refused" "$green_repo" 'Invoke-Expression "gh pr merge 3"' 2 "use the Bash tool"
-ps_case "Start-Process git -ArgumentList push refused" "$green_repo" 'Start-Process git -ArgumentList "push" -Wait' 2 "use the Bash tool"
-ps_case "a backtick line continuation refused" "$green_repo" $'gh pr `\nmerge 3' 2 "use the Bash tool"
-ps_case "mixed-case command refused" "$green_repo" 'GH PR Merge 3' 2 "use the Bash tool"
-ps_case "gh pr view passes" "$green_repo" 'gh pr view 3 --json state' 0 ""
-ps_case "gh pr list passes" "$green_repo" 'gh pr list --state open' 0 ""
-ps_case "gh pr checks passes" "$green_repo" 'gh pr checks 3' 0 ""
-ps_case "gh pr diff passes" "$green_repo" 'gh pr diff 3' 0 ""
-ps_case "git status passes" "$green_repo" 'git status' 0 ""
-ps_case "git log passes" "$green_repo" 'git log --oneline -5' 0 ""
-ps_case "git diff passes" "$green_repo" 'git diff main...HEAD' 0 ""
-ps_case "git push --dry-run passes" "$green_repo" 'git push --dry-run origin feature' 0 ""
-ps_case "gh api GET pulls passes" "$green_repo" 'gh api repos/o/r/pulls/3' 0 ""
-ps_case "gh api graphql query passes" "$green_repo" "gh api graphql -f query='{ viewer { login } }'" 0 ""
-ps_case "text that names a push passes" "$green_repo" 'Write-Host "run git push later and gh pr merge 3"' 0 ""
-ps_case "a commit message that names a merge passes" "$green_repo" 'git commit -m "docs: explain gh pr merge and git push"' 0 ""
-ps_case "a here-string that names a merge passes" "$green_repo" $'git commit -m @\'\nrun gh pr merge 3\n\'@' 0 ""
-ps_case "Get-Content of a file named push passes" "$green_repo" 'Get-Content .\push.txt' 0 ""
-ps_case "a recorded bypass lets a PowerShell push through" "$green_repo" 'git push' 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=ps bypass test"
-pass_if "PowerShell bypass logged" grep -qF "reply-options gates bypassed: ps bypass test" "$green_repo/.scratch/loop-metrics.md"
-ps_case "a bypass without a reason is ignored" "$green_repo" 'git push' 2 "use the Bash tool" FEATURE_LOOP_GATES=off
+ps_case "gh pr create refused" "$green_repo" 'gh pr create --draft --title x --body y' 2 "$psmsg"
+ps_case "gh pr ready refused" "$green_repo" 'gh pr ready 3' 2 "$psmsg"
+ps_case "gh api PUT contents refused" "$green_repo" 'gh api -X PUT repos/o/r/contents/README.md -f message=m -f content=Zg==' 2 "$psmsg"
+ps_case "git.exe with a Windows path refused" "$green_repo" '& "C:\Program Files\Git\cmd\git.exe" -C C:\work\repo push origin HEAD' 2 "$psmsg"
+ps_case "gh.exe refused" "$green_repo" 'gh.exe pr merge 3' 2 "$psmsg"
+ps_case "mixed-case command refused" "$green_repo" 'GH PR Merge 3' 2 "$psmsg"
+ps_case "assignment from gh refused" "$green_repo" '$r = gh pr merge 3' 2 "$psmsg"
+ps_case "Start-Process gh with a string ArgumentList refused" "$green_repo" 'Start-Process gh -ArgumentList "pr merge 3"' 2 "$psmsg"
+ps_case "Start-Process gh with an array ArgumentList refused" "$green_repo" "Start-Process gh -ArgumentList 'pr','merge','3'" 2 "$psmsg"
+ps_case "try { gh } refused" "$green_repo" 'try { gh pr merge 3 } catch {}' 2 "$psmsg"
+ps_case "Invoke-Command script block refused" "$green_repo" 'Invoke-Command -ScriptBlock { git push }' 2 "$psmsg"
+ps_case "ForEach-Object script block refused" "$green_repo" '1 | ForEach-Object { git push }' 2 "$psmsg"
+ps_case "string piped to iex refused" "$green_repo" "'gh pr merge 3' | iex" 2 "$psmsg"
+ps_case "here-string piped to iex refused" "$green_repo" $'@\'\ngh pr merge 3\n\'@ | iex' 2 "$psmsg"
+ps_case "block comment before the command refused" "$green_repo" '<# note #> gh pr merge 3' 2 "$psmsg"
+ps_case "dot-sourced gh refused" "$green_repo" '. gh pr merge 3' 2 "$psmsg"
+ps_case "gh api graphql with a query file refused" "$green_repo" 'gh api graphql -F query=@m.graphql' 2 "$psmsg"
+ps_case "a backtick inside the word refused" "$green_repo" 'git pu`sh origin feature' 2 "$psmsg"
+ps_case "a backtick inside git refused" "$green_repo" 'gi`t push origin feature' 2 "$psmsg"
+ps_case "an unrelated command passes with empty stderr" "$green_repo" 'Get-ChildItem -Recurse src' 0 ""
+ps_case "words that only contain git or gh pass" "$green_repo" 'Write-Host github ghost light' 0 ""
+ps_case "a file named push.txt passes" "$green_repo" 'Get-Content .\push.txt' 0 ""
+ps_case "a recorded bypass from the environment lets a PowerShell push through" "$green_repo" 'git push' 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=ps bypass test"
+pass_if "PowerShell bypass logged with its tool" grep -qF "reply-options gates bypassed: ps bypass test (PowerShell)" "$green_repo/.scratch/loop-metrics.md"
+ps_case "a bypass without a reason is ignored" "$green_repo" 'git push' 2 "$psmsg" FEATURE_LOOP_GATES=off
+ps_case "the refusal says the bypass comes from the environment" "$green_repo" 'git push' 2 "in the environment before Claude starts; a command prefix is not read for PowerShell calls"
+ps_case "a command prefix is not a PowerShell bypass" "$green_repo" 'FEATURE_LOOP_GATES=off FEATURE_LOOP_BYPASS_REASON=x git push' 2 "$psmsg"
 tool_case "PowerShell payload that is not an object fails closed while a loop is active" "$green_repo" PowerShell '"git push"' 2 "could not read the hook input"
 tool_case "PowerShell payload that is not an object only warns with no loop" "$plain_repo" PowerShell '"git push"' 1 "could not read the hook input"
 
@@ -818,69 +834,58 @@ mcp_case "create_pull_request without a loop passes" "$plain_repo" ${gh_mcp}__cr
 mcp_case "create_pull_request of a user-level server is gated too" "$red_repo" mcp__github__create_pull_request '{"title":"t"}' 2 "G1 red"
 mcp_case "create_pull_request with a closed loop passes" "$closed_ps" ${gh_mcp}__create_pull_request '{"title":"t"}' 0 ""
 mcp_case "create_pull_request with a string input fails closed" "$green_repo" ${gh_mcp}__create_pull_request '"nope"' 2 "could not read the hook input"
-mcp_case "create_pull_request bypass with a reason is allowed" "$red_repo" ${gh_mcp}__create_pull_request '{"title":"t"}' 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=mcp bypass test"
-pass_if "MCP bypass logged" grep -qF "reply-options gates bypassed: mcp bypass test" "$red_repo/.scratch/loop-metrics.md"
+mcp_case "create_pull_request bypass from the environment is allowed and logged" "$red_repo" ${gh_mcp}__create_pull_request '{"title":"t"}' 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=mcp bypass test"
+pass_if "MCP bypass logged with its tool" grep -qF "reply-options gates bypassed: mcp bypass test (MCP)" "$red_repo/.scratch/loop-metrics.md"
+mcp_case "the red-gate message says the bypass comes from the environment" "$red_repo" ${gh_mcp}__create_pull_request '{"title":"t"}' 2 "in the environment before Claude starts; a command prefix is not read for MCP calls"
+mcp_case "create_pull_request_review is not a PR creation" "$red_repo" ${gh_mcp}__create_pull_request_review '{"owner":"o","repo":"r","pullNumber":5}' 0 ""
 
-# ---- MCP: merge_pull_request follows the merge rules
+# ---- MCP: anything that merges is refused outright while a loop is active
 
-mcp_case "merge_pull_request without a head sha blocked" "$mrepo" ${gh_mcp}__merge_pull_request '{"owner":"o","repo":"r","pullNumber":5,"merge_method":"squash"}' 2 "merge exactly the head you checked" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-mcp_case "merge_pull_request blocked when the gates are red" "$mred" ${gh_mcp}__merge_pull_request "{\"pullNumber\":5,\"sha\":\"$msha\"}" 2 "G1 red: shape file missing" "${gh_env[@]}" "FAKE_GH_HEAD=$msha" FAKE_GH_REQUIRED=0
-mcp_case "merge_pull_request with the head sha, green gates and CI allowed" "$mrepo" ${gh_mcp}__merge_pull_request "{\"owner\":\"o\",\"repo\":\"r\",\"pullNumber\":5,\"sha\":\"$sha\"}" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-mcp_case "merge_pull_request blocked when CI is red" "$mrepo" ${gh_mcp}__merge_pull_request "{\"pullNumber\":5,\"sha\":\"$sha\"}" 2 "CI is not green" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=1 FAKE_GH_CHECKS=1
-mcp_case "merge_pull_request without a loop passes" "$plain_repo" ${gh_mcp}__merge_pull_request '{"pullNumber":5}' 0 "" "${gh_env[@]}"
-mcp_case "merge_pull_request passes the PR number and repo to gh" "$mrepo" ${gh_mcp}__merge_pull_request "{\"owner\":\"o\",\"repo\":\"r\",\"pullNumber\":5,\"sha\":\"$sha\"}" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0 "FAKE_GH_LOG=$work/mcp-gh.log"
-pass_if "MCP merge looked up PR 5 in o/r" grep -qF "pr view 5 -R o/r" "$work/mcp-gh.log"
+for t in merge_pull_request enable_pull_request_auto_merge auto_merge merge_branch; do
+  mcp_case "$t refused even with green gates and a head sha" "$mrepo" ${gh_mcp}__$t "{\"owner\":\"o\",\"repo\":\"r\",\"pullNumber\":5,\"sha\":\"$sha\"}" 2 "cannot pin the head sha" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
+  mcp_case "$t without a loop passes" "$plain_repo" ${gh_mcp}__$t '{"pullNumber":5}' 0 ""
+  mcp_case "$t with a closed loop passes" "$closed_ps" ${gh_mcp}__$t '{"pullNumber":5}' 0 ""
+done
+mcp_case "merge refusal names the Bash merge command" "$mrepo" ${gh_mcp}__merge_pull_request '{"pullNumber":5}' 2 "gh pr merge <pr> --match-head-commit <sha>"
+mcp_case "merge refusal says the bypass comes from the environment" "$mrepo" ${gh_mcp}__merge_pull_request '{"pullNumber":5}' 2 "in the environment before Claude starts"
+mcp_case "merge bypass from the environment is allowed" "$mrepo" ${gh_mcp}__merge_pull_request '{"pullNumber":5}' 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=mcp merge bypass"
+mcp_case "get_merge_status is a read tool" "$mrepo" ${gh_mcp}__get_merge_status '{"pullNumber":5}' 0 ""
 
 # ---- MCP: writes to a branch are gated like a push
 
 push_in() { printf '{"owner":"o","repo":"r","branch":"%s","message":"m","files":[],"path":"a.md","content":"x"}' "$1"; }
-for t in push_files create_or_update_file delete_file; do
+for t in push_files create_or_update_file delete_file create_branch delete_branch; do
   mcp_case "$t to a feature branch blocked while build gates are red" "$red_repo" ${gh_mcp}__$t "$(push_in feature)" 2 "G1 red: shape file missing"
   mcp_case "$t to a feature branch allowed when green" "$green_repo" ${gh_mcp}__$t "$(push_in feature)" 0 ""
   mcp_case "$t to the base branch refused even when green" "$green_repo" ${gh_mcp}__$t "$(push_in main)" 2 "updates the base branch (main)"
   mcp_case "$t without a branch is refused (the default branch is the base)" "$green_repo" ${gh_mcp}__$t '{"owner":"o","repo":"r"}' 2 "updates the base branch"
   mcp_case "$t without a loop passes" "$plain_repo" ${gh_mcp}__$t "$(push_in main)" 0 ""
 done
+for t in update_ref create_ref; do
+  mcp_case "$t of refs/heads/main refused even when green" "$green_repo" ${gh_mcp}__$t '{"owner":"o","repo":"r","ref":"refs/heads/main","sha":"abc1234"}' 2 "updates the base branch (main)"
+  mcp_case "$t of a feature ref blocked while build gates are red" "$red_repo" ${gh_mcp}__$t '{"owner":"o","repo":"r","ref":"refs/heads/feature","sha":"abc1234"}' 2 "G1 red"
+  mcp_case "$t of a feature ref allowed when green" "$green_repo" ${gh_mcp}__$t '{"owner":"o","repo":"r","ref":"refs/heads/feature","sha":"abc1234"}' 0 ""
+done
 mcp_case "update_pull_request_branch blocked while build gates are red" "$red_repo" ${gh_mcp}__update_pull_request_branch '{"owner":"o","repo":"r","pullNumber":5}' 2 "G1 red: shape file missing"
 mcp_case "update_pull_request_branch allowed when green" "$green_repo" ${gh_mcp}__update_pull_request_branch '{"owner":"o","repo":"r","pullNumber":5}' 0 ""
-mcp_case "push_files base refusal can be bypassed with a recorded reason" "$green_repo" ${gh_mcp}__push_files "$(push_in main)" 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=mcp base bypass"
+mcp_case "push_files base refusal can be bypassed from the environment" "$green_repo" ${gh_mcp}__push_files "$(push_in main)" 0 "" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=mcp base bypass"
+pass_if "MCP base bypass logged with its note and tool" grep -qF "reply-options gates bypassed: mcp base bypass (push to base, MCP)" "$green_repo/.scratch/loop-metrics.md"
+
+# ---- MCP: update_pull_request with draft false makes a PR ready (build gates for now; HAR-164 adds G10)
+
+mcp_case "update_pull_request draft:false blocked while build gates are red" "$red_repo" ${gh_mcp}__update_pull_request '{"pullNumber":5,"draft":false}' 2 "G1 red"
+mcp_case "update_pull_request draft:false allowed when green" "$green_repo" ${gh_mcp}__update_pull_request '{"pullNumber":5,"draft":false}' 0 ""
+mcp_case "update_pull_request that only edits the title passes" "$red_repo" ${gh_mcp}__update_pull_request '{"pullNumber":5,"title":"t"}' 0 ""
+mcp_case "update_pull_request draft:true passes" "$red_repo" ${gh_mcp}__update_pull_request '{"pullNumber":5,"draft":true}' 0 ""
 
 # ---- MCP: other tools are not blocked
 
-for t in get_file_contents list_pull_requests get_pull_request search_code create_issue create_pull_request_review create_branch add_issue_comment; do
+for t in get_file_contents list_pull_requests get_pull_request search_code list_commits create_issue add_issue_comment; do
   mcp_case "$t is not a shipping tool" "$red_repo" ${gh_mcp}__$t '{"owner":"o","repo":"r"}' 0 ""
 done
-mcp_case "a tool that only ends like a shipping tool passes" "$red_repo" mcp__x__not_create_pull_request '{"title":"t"}' 0 ""
 mcp_case "an unrelated server's tool passes" "$red_repo" mcp__linear__save_issue '{"title":"push merge pull_request"}' 0 ""
 tool_case "a tool outside Bash, PowerShell and MCP is not read" "$red_repo" Edit '{"file_path":"/x","new_string":"git push"}' 0 ""
-
-# ---- heredoc bodies fed to a non-shell program are data
-
-heredoc_py=$'python - <<\'EOF\'\nx = "gh pr merge 3"\nEOF'
-hook_case "python heredoc that names gh pr merge is not a merge" "$mrepo" "$heredoc_py" 0 "" "${gh_env[@]}"
-hook_case "python3 heredoc that names git push is not a push" "$red_repo" $'python3 - <<\'EOF\'\nimport os\nos.system("git push")\nEOF' 0 ""
-hook_case "node heredoc that names a merge is not a merge" "$mrepo" $'node <<\'EOF\'\nconsole.log("gh pr merge 3")\nEOF' 0 "" "${gh_env[@]}"
-hook_case "cat > file heredoc that names a push is not a push" "$red_repo" $'cat > notes.md <<\'EOF\'\ngit push origin main\ngh pr merge 3\nEOF' 0 ""
-hook_case "git commit -F - heredoc message that names a merge is not a merge" "$mrepo" $'git commit -F - <<\'EOF\'\nfix: explain\n\ngh pr merge 3 is blocked\nEOF' 0 "" "${gh_env[@]}"
-hook_case "heredoc with an unquoted delimiter and plain text is data" "$red_repo" $'cat <<EOF\ngit push\nEOF' 0 ""
-hook_case "heredoc with <<- and a tab-indented terminator is data" "$red_repo" $'cat <<-EOF\n\tgit push\n\tEOF' 0 ""
-hook_case "double-quoted delimiter is data too" "$red_repo" $'python - <<"EOF"\nx = "git push"\nEOF' 0 ""
-hook_case "a command after a data heredoc is still classified" "$red_repo" $'python - <<\'EOF\'\nx = 1\nEOF\ngit push origin feature' 2 "G1 red"
-hook_case "a command before a data heredoc is still classified" "$red_repo" $'git push origin feature && python - <<\'EOF\'\nx = 1\nEOF' 2 "G1 red"
-hook_case "two heredocs on one line are both data" "$red_repo" $'cat <<A <<B\ngit push\nA\ngh pr merge 3\nB' 0 ""
-hook_case "an unquoted delimiter still runs a command substitution in the body" "$red_repo" $'cat <<EOF\n$(git push origin feature)\nEOF' 2 "G1 red"
-hook_case "a backtick substitution in an unquoted body still runs" "$red_repo" $'cat <<EOF\n`git push origin feature`\nEOF' 2 "G1 red"
-hook_case "a quoted delimiter does not substitute, so it is data" "$red_repo" $'cat <<\'EOF\'\n$(git push origin feature)\nEOF' 0 ""
-hook_case "a shift in arithmetic is not a heredoc" "$red_repo" $'echo $((1<<2))\ngit push origin feature' 2 "G1 red"
-hook_case "<<< here-string is not a heredoc" "$red_repo" $'cat <<< x\ngit push origin feature' 2 "G1 red"
-hook_case "<< inside quotes is not a heredoc" "$red_repo" $'echo "a <<EOF"\ngit push origin feature\nEOF' 2 "G1 red"
-hook_case "bash heredoc stays classified: merge" "$mrepo" $'bash <<\'EOF\'\ngh pr merge 5\nEOF' 2 "merge exactly the head you checked" "${gh_env[@]}"
-hook_case "sh heredoc stays classified: push" "$red_repo" $'sh <<EOF\ngit push origin feature\nEOF' 2 "G1 red"
-hook_case "bash -s heredoc stays classified" "$red_repo" $'bash -s <<\'EOF\'\ngit push origin feature\nEOF' 2 "G1 red"
-hook_case "cat <<EOF | bash stays classified" "$red_repo" $'cat <<\'EOF\' | bash\ngit push origin feature\nEOF' 2 "G1 red"
-hook_case "ssh host bash heredoc stays classified" "$red_repo" $'ssh host bash <<\'EOF\'\ngit push origin feature\nEOF' 2 "G1 red"
-hook_case "eval of a heredoc body stays classified" "$red_repo" $'eval "$(cat <<\'EOF\'\ngit push origin feature\nEOF\n)"' 2 "G1 red"
-hook_case "an unterminated bash heredoc stays classified" "$red_repo" $'bash <<\'EOF\'\ngit push origin feature' 2 "G1 red"
+hook_case "a file name with _file in a Bash command no longer starts node" "$red_repo" 'cat my_file.txt' 0 ""
 echo
 if [ "$fail" -eq 0 ]; then echo "test-gates: all $total passed"; else echo "test-gates: failures above ($total cases)"; fi
 exit "$fail"
