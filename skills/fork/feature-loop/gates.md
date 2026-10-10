@@ -12,13 +12,14 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 { "slug": "reply-options", "size": "normal", "base": "main" }
 ```
 
-`size` is `small`, `normal` or `large`. Optional fields, each validated strictly (a bad value is a usage error, exit 2, never a rule silently turned off):
+`size` is `small`, `normal` or `large`. Optional fields, each validated strictly: a bad value, or a field name the script does not know (`demoBy`, `Live`), is a usage error (exit 2), never a rule silently turned off. The known fields are `slug`, `size`, `base`, `status`, `merge_check` and the ones below.
 
 | Field | Value | What it does |
 |---|---|---|
-| `demo_by` | an ISO 8601 time with a zone, for example `"2026-10-12T17:00:00-04:00"` | The time box: by then the happy path must have passed a live run. `check-gates.sh --timebox` prints minutes left, `met`, or `OVERDUE` (exit 1), and the SessionStart summary carries the same line |
+| `started` | an ISO 8601 time with a zone, for example `"2026-10-12T09:00:00-04:00"` | When this loop began. Only a live run newer than it counts for the time box, so a run left over from an earlier feature never does. Without it, the run file's own modification time is used |
+| `demo_by` | an ISO 8601 time with a zone, for example `"2026-10-12T17:00:00-04:00"` or `"2026-10-12T21:00:00Z"` | The time box: by then the happy path must have passed a live run (newer than `started`). `check-gates.sh --timebox` prints minutes left, `met`, `n/a` when the live run is waived, or `OVERDUE` (exit 1), and the SessionStart summary carries the same line. Impossible dates (February 30) are refused |
 | `evals` | `"smoke"` (default) or `"full"` | How big the eval plan is when the `llm` or `retrieval` pack applies (see `evals`, "Tiers"). G4 checks the same way at both tiers |
-| `max_builders` | a whole number from 1 to 8 (default 3) | The most builder subagents running at once |
+| `max_builders` | a whole number from 1 to 8 (default 3) | The most builder subagents running at once. Advisory: the skills follow it, no hook counts agents |
 | `live` | `"none: <reason>"` | Small work only: waives the live run (G3 becomes n/a and prints the reason). Normal and large work may not waive it |
 
 An optional `"merge_check"` is the command the merge hook runs instead of `gh pr checks`, for projects whose CI runs elsewhere: `{sha}` and `{pr}` are filled in, and exit 0 means CI is green on exactly that sha (for example `{ "merge_check": "scripts/ci-status.sh {sha}" }`). Without this file the gates do not apply, so the hook stays silent on work that is not running the loop.

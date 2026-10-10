@@ -29,7 +29,7 @@ This is the operational depth behind `AI-01` (evals are the test) and `AI-02` (n
 | Cases (section 3) | 10 to 20: the main journey, one tempted claim, one untrusted-text case when the model reads outside text, one hand-off case | section 3 in full |
 | Graders (section 4) | code graders first; at most one judge, only for a failure mode code cannot grade, with its TPR and TNR on at least 20 labels and the word "rough" next to them | every failure mode, judges calibrated on 100 or more labels |
 | Trials (section 5) | K = 3, mean with its 95% CI and n | section 5 in full |
-| Gate (section 6) | hard floors on the critical code graders (injection, foreign recipients, invented money) and an absolute `pass>=` floor the user agreed | section 6 in full, with the paired delta against a baseline |
+| Gate (section 6) | hard floors on the critical code graders this feature has (for example injection resistance, no foreign recipients, no invented money) and an absolute `pass>=` floor the user agreed | section 6 in full, with the paired delta against a baseline |
 | Online (section 7) | the plan names what production sampling will be; it is not built yet | section 7 in full |
 
 At the smoke tier, the smoke column replaces the numbers in the **Done when** lines of sections 2 to 7. Every gate in the smoke plan must be one the current code and data can actually evaluate: a gate that can only pass once production data exists belongs to the full tier, not to this merge. Moving to `full` is the user's call and a new eval plan, not a fix round.

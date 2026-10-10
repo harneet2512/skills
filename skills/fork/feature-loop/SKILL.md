@@ -25,19 +25,19 @@ Size by **risk**: what breaks, for whom, and whether it can be undone. The kind 
 
 | Size | When | Stages |
 |---|---|---|
-| **Small** | One component, no new state, no new integration, nothing irreversible (copy, a color, a validation rule) | 2 (envelope only), then the single-issue path: call the Skill tool with `wp-loop` (which runs the live happy path); then 9 |
+| **Small** | One component, no new state, no new integration, nothing irreversible, and no Critical item in the envelope (copy, a color, a validation rule) | 2 (envelope only), then the single-issue path: call the Skill tool with `wp-loop` (which runs the live happy path); then 9 |
 | **Normal** | A user-visible behavior with state, an API, a job or an integration; an AI feature whose output a person sees before anything acts on it | All stages |
 | **Large** | An irreversible external effect (sending, paying, deleting), money, tenancy, auth or identity, a new subsystem, or an AI feature that acts with no person in between | All stages, plus the design challenge in stage 2 |
 
-Say the size and why in one line, and write `.scratch/gates.json` as gates.md specifies: `{ "slug": "<slug>", "size": "<size>", "base": "<branch>" }`.
-- Add `"demo_by"` (an ISO time with a zone) whenever the user names a deadline, a demo or a time-boxed trial; ask for it in one line when the work is clearly time-boxed and no time was given.
+Say the size and why in one line, and write `.scratch/gates.json` as gates.md specifies: `{ "slug": "<slug>", "size": "<size>", "base": "<branch>", "started": "<now>" }`. `started` (an ISO time with a zone) marks when this loop began, so a live run left over from an earlier feature never counts for this one.
+- Add `"demo_by"` whenever the user names a deadline, a demo or a time-boxed trial; ask for it in one line when the work is clearly time-boxed and no time was given. Write it with the UTC offset in force on the deadline's own date (daylight saving may differ from today's), or in UTC with `Z`.
 - Add `"evals": "full"` only when the user asks for a full eval suite; the default is `smoke` (see `evals`, "Tiers").
 - Add `"max_builders"` when the machine or the user's rate limits call for fewer or more than 3.
 - Add `"merge_check"` when CI does not run as GitHub checks on the PR.
 
 When evidence says the work is bigger, escalate: rewrite `size` and run the stages it adds.
 
-**Done when:** `.scratch/gates.json` holds `slug`, `size` (`small`, `normal` or `large`), `base`, and `demo_by` when the work is time-boxed.
+**Done when:** `.scratch/gates.json` holds `slug`, `size` (`small`, `normal` or `large`), `base`, `started`, and `demo_by` when the work is time-boxed.
 
 ## Roles
 
@@ -57,10 +57,10 @@ These hold at every stage. They exist because a loop that reviews and re-reviews
 - **Builders.** At most `max_builders` (default 3) at once, each in its own worktree with no file overlap. A builder commits and pushes at least every 30 minutes. A process is stopped by the PID that started it, never by image name (`taskkill /IM`, `pkill node`), which kills other people's work.
 - **Review budget.**
   - The design challenge (stage 2) is one round.
-  - Each slice gets `code-review` only. `adversarial-review` runs once per feature, in stage 6, after the live run passes.
+  - Each slice gets `code-review` only, one slice review at a time (its two axes run together), so builders plus reviewers stay near `max_builders` + 2 agents. `adversarial-review` runs once per feature, in stage 6, after the live run passes.
   - One fix round per review: CRITICAL and HIGH are fixed and re-verified once; MEDIUM and LOW are filed as follow-up issues and do not block.
   - A second BLOCK on the same slice, or a fix that fails its re-verification, becomes `blocked: <the finding>` for the user. It does not start another loop.
-- **Checks.** A slice runs its targeted tests (the packages it touched and their direct dependents). The full suite runs once on the integration head before the PR and again at the merge gate, never while reviewers or attackers are running tests on the same machine. A suite that is slow because it is forced serial (`-p 1`, `--runInBand`, a single worker) is a finding to fix, not a cost to accept.
+- **Checks.** A slice runs its targeted tests (the packages it touched and their direct dependents). The full suite runs once on the integration head before the PR leaves draft and again at the merge gate, never while reviewers or attackers are running tests on the same machine. A suite that is slow because it is forced serial (`-p 1`, `--runInBand`, a single worker) is a finding to fix, not a cost to accept.
 
 ## Visibility and the evidence ledger
 
@@ -132,7 +132,7 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 
 2. **Design** (fork). **Requires:** the shape file.
    - Call the Skill tool with `deep-engineering`. It builds the system model from repo evidence and calls `behavioral-envelope` (gate G2), `concern-topics` (journey × topic matrix and safety arguments) and, when the envelope's `**Packs:**` line names `llm` or `retrieval`, `evals` (the eval plan, before any prompt exists). It ends with the engineering contract.
-   - **Design challenge (adversarial plan review).** For Large work, and for any size whose envelope has a Critical Live item: before the spec, one reviewer subagent on the strongest model, with a fresh context, attacks the contract. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and list what to cut to reach a working live demo sooner without losing a Critical item. One round: fold every CONFIRMED finding into the contract with its resolution, say which ones changed the design, and take the cuts the user would accept (ask in one line when unsure).
+   - **Design challenge (adversarial plan review).** For Large work, and for Normal work whose envelope has a Critical Live item (Small work with a Critical item is not Small: escalate it to Normal, so it gets a contract to challenge): before the spec, one reviewer subagent on the strongest model, with a fresh context, attacks the contract. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and list what to cut to reach a working live demo sooner without losing a Critical item. One round: fold every CONFIRMED finding into the contract with its resolution, say which ones changed the design, and take the cuts the user would accept (ask in one line when unsure).
 
    **Done when:**
    - the contract gives every Live item a mechanism, an enforcement point and a proof, plus the build order;
@@ -169,7 +169,7 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 
    **Done when:** G3, G4 (when evals apply) and G6 are green, and CI is green on the head.
 
-6. **Attack** (fork). **Requires:** gate G3 green (`check-gates.sh G3`). A product that has not passed its live run is not attacked yet: its first failures are cheaper to find by running it. Call the Skill tool with `adversarial-review` over the whole integration branch, once. Each CONFIRMED finding is fixed as a commit on the same PR, with its reproduction kept, and recorded as an escape from stage 2 or 4.
+6. **Attack** (fork). **Requires:** gate G3 green (`check-gates.sh G3`). A product that has not passed its live run is not attacked yet: its first failures are cheaper to find by running it. Call the Skill tool with `adversarial-review` over the whole integration branch, once. Its fixes are new commits, so rerun `live-verify` on the new head before stage 7: G3 needs a run newer than the last commit. Each CONFIRMED finding is fixed as a commit on the same PR, with its reproduction kept, and recorded as an escape from stage 2 or 4.
    **Done when:** `.scratch/review/<slug>.md` has no CONFIRMED CRITICAL or HIGH row with resolution `open` or empty (gate G5).
 
 7. **Merge gate** (fork: `wp-loop`).

@@ -268,11 +268,14 @@ The reviews were not wasted (they found real defects), but they came in the wron
 | G3 at every size | `check-gates.mjs`, `gates.md`, `wp-loop` step 6b | small work proves its happy path live (no journey coverage); normal and large unchanged; only small may waive it, with `"live": "none: <reason>"` |
 | Happy-path mode | `live-verify` | one scenario, one instance, stand-ins for the systems on the path; used for the skeleton, after each slice and for small work |
 | Eval tiers | `evals` "Tiers", `gates.json` `"evals"` | `smoke` by default (10 to 20 cases, code graders first, at most one rough judge, gates the current code can evaluate); `full` when asked |
-| Time box | `gates.json` `"demo_by"`, `scripts/timebox.mjs`, `check-gates.sh --timebox`, SessionStart summary | once the deadline passes without a passing live run, the loop stops starting review, eval or hardening work |
-| Strict run-file fields | `check-gates.mjs` | `demo_by`, `evals`, `max_builders` and `live` are validated; a bad value is exit 2, never a rule silently off |
+| Time box | `gates.json` `"started"` and `"demo_by"`, `scripts/timebox.mjs`, `check-gates.sh --timebox`, SessionStart summary | once the deadline passes without a passing live run from this loop (newer than `started`), the loop stops starting review, eval or hardening work; a waived live run has no time box |
+| Strict run-file fields | `check-gates.mjs` | `started`, `demo_by`, `evals`, `max_builders` and `live` are validated, impossible dates are refused, and an unknown field name is refused; each is exit 2, never a rule silently off |
 | One fix round | `wp-loop` step 11 | a fix that fails re-verification goes to the user, not into another round |
+| Live rerun after new commits | `wp-loop` step 11, `merge-gate.md` step 1, `feature-loop` stage 6 | fix commits and the default-branch merge are followed by a `live-verify` run, because G3 needs a run newer than the last commit |
 
-**Tests:** `test-gates.sh` grows from 264 to 302 cases: G3 at small size (missing, stale, failing, happy path without coverage), the waiver and its refusals, every new field's validation, the time box (none, running, overdue, met, zones, closed loop) and the SessionStart line. Three deliberate breakages of the new rules each turned the suite red.
+**Tests:** `test-gates.sh` grows from 264 to 318 cases: G3 at small size (missing, stale, failing, happy path without coverage) and the merge hook refusing small work with no live run, the waiver and its refusals, every new field's validation (impossible dates, leap days, unknown names), the time box (none, running, overdue, met, waived, zones, a run from before the loop, an empty run, closed loop, argument misuse) and the SessionStart line. Five deliberate breakages of the new rules each turned the suite red.
+
+**Reviewed:** a fresh-context reviewer on the strongest model read the first version. Its two HIGH findings (an old run from another feature met the time box; a waived live run was always overdue) and its MEDIUM ones (misspelt fields ignored, impossible dates accepted, a design challenge for small work that has no contract, no live rerun after fix commits) are fixed above, each with a test where it is code.
 
 ## Install
 

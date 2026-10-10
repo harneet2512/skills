@@ -15,7 +15,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { clean, blank, section, firstTable, tables } from './md-table.mjs';
-import { newestLiveReport, parseDemoBy, timebox } from './timebox.mjs';
+import { newestLiveReport, parseDemoBy, parseStarted, timebox } from './timebox.mjs';
 
 const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
 const NORMAL_UP = new Set(['normal', 'large']);
@@ -77,8 +77,12 @@ if (!['small', 'normal', 'large'].includes(size)) {
   console.error('gates: .scratch/gates.json: "size" must be small, normal or large');
   process.exit(2);
 }
-// Optional fields (gates.md, "The run file"). Each is checked strictly: a typo must not silently turn a rule off.
-try { parseDemoBy(run); } catch (e) { die(`gates: .scratch/gates.json: ${e.message}`); }
+// Optional fields (gates.md, "The run file"). Each is checked strictly, and so are the names: a misspelt field
+// ("demoBy", "Live") would otherwise turn its rule off without a word.
+const KNOWN = ['slug', 'size', 'base', 'status', 'merge_check', 'started', 'demo_by', 'evals', 'max_builders', 'live'];
+const unknown = Object.keys(run).filter((k) => !KNOWN.includes(k));
+if (unknown.length) die(`gates: .scratch/gates.json: unknown field${unknown.length > 1 ? 's' : ''} ${unknown.map((k) => JSON.stringify(k)).join(', ')} (known: ${KNOWN.join(', ')})`);
+try { parseDemoBy(run); parseStarted(run); } catch (e) { die(`gates: .scratch/gates.json: ${e.message}`); }
 if (run.evals !== undefined && !['smoke', 'full'].includes(run.evals)) die('gates: .scratch/gates.json: "evals" must be smoke or full');
 if (run.max_builders !== undefined && !(Number.isInteger(run.max_builders) && run.max_builders >= 1 && run.max_builders <= 8)) {
   die('gates: .scratch/gates.json: "max_builders" must be a whole number from 1 to 8');

@@ -54,6 +54,9 @@ fi
 command -v node >/dev/null 2>&1 || { echo "check-gates: node not found on PATH (Node 22 is required)" >&2; exit 2; }
 
 if [ -n "$timebox" ]; then
+  if [ -n "$phase" ] || [ "${#gates[@]}" -gt 0 ]; then
+    echo "check-gates: --timebox checks only the time box; run it without --phase or gate IDs" >&2; exit 2
+  fi
   exec node "$here/check-gates.mjs" --root "$root" --timebox
 fi
 

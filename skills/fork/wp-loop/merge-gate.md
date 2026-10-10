@@ -2,7 +2,7 @@
 
 Run these steps in order. Any push to the branch sends you back to step 2: CI on an old head says nothing about the new one.
 
-1. **Bring the branch up to date.** Merge the latest default branch into it. Renumber sequentially numbered files (migrations, ADRs) to the default branch's highest number plus one. Push. A branch that was green before the default branch moved is not green on the merge result.
+1. **Bring the branch up to date.** Merge the latest default branch into it. Renumber sequentially numbered files (migrations, ADRs) to the default branch's highest number plus one. When the merge brought new commits, rerun `live-verify` on the result (the happy path is enough for small work): gate G3, which the merge hook checks, needs a live run newer than the last commit. Push. A branch that was green before the default branch moved is not green on the merge result.
 
 2. **Wait for CI on the new head.** Same polling as the loop's CI step.
 

@@ -314,18 +314,29 @@ for mb in 0 9 2.5 '"3"'; do
   expect "max_builders $mb is refused" "$d" 2 '"max_builders" must be a whole number from 1 to 8' 0
 done
 
-for bad in '"tomorrow"' '"2026-10-12"' '"2026-10-12T17:00:00"' '"2026-13-12T17:00:00Z"' 5; do
+for bad in '"tomorrow"' '"2026-10-12"' '"2026-10-12T17:00:00"' '"2026-13-12T17:00:00Z"' '"2026-02-30T10:00:00Z"' '"2026-10-12T24:00:00Z"' '"2026-10-12T17:00:00+15:00"' 5; do
   d=$(new_repo "demo-bad-$RANDOM"); gates_json_with "$d" small "\"demo_by\": $bad"
   expect "demo_by $bad is refused" "$d" 2 '"demo_by" must be an ISO 8601 time with a zone' 0
 done
+
+d=$(new_repo started-bad); gates_json_with "$d" small '"started": "2026-02-29T10:00:00Z"'
+expect "started is validated like demo_by (2026 has no February 29)" "$d" 2 '"started" must be an ISO 8601 time with a zone' 0
+d=$(new_repo started-ok); gates_json_with "$d" small '"started": "2028-02-29T10:00:00Z"'; put "$d" envelope.md ".scratch/envelope/$SLUG.md"
+expect "a real leap day is accepted" "$d" 0 "G2 green" 0 G2
+d=$(new_repo unknown-key); gates_json_with "$d" small '"demoBy": "2026-10-12T17:00:00Z", "Live": "none: x"'
+expect "a misspelt field is refused, not ignored" "$d" 2 'unknown fields "demoBy", "Live"' 0
+d=$(new_repo known-keys); gates_json_with "$d" small '"merge_check": "true", "evals": "smoke", "max_builders": 2, "started": "2026-10-12T09:00:00-04:00", "demo_by": "2026-10-12T17:00:00-04:00", "live": "none: docs"'
+put "$d" envelope.md ".scratch/envelope/$SLUG.md"
+expect "every known field together is accepted" "$d" 0 "G3 n/a: live run waived" 0 G3
 
 # ---- check-gates.sh --timebox
 
 # tb_case <name> <dir> <exit> <needle> [VAR=value...]
 tb_case() {
   local name="$1" dir="$2" want="$3" needle="$4"; shift 4
-  local out code bad=""
-  out="$(cd "$dir" && env "$@" "$check" --timebox 2>&1)"; code=$?
+  local out code bad="" envs=() extra=()
+  for a in "$@"; do case "$a" in *=*) envs+=("$a") ;; *) extra+=("$a") ;; esac; done
+  out="$(cd "$dir" && env ${envs[@]+"${envs[@]}"} "$check" --timebox ${extra[@]+"${extra[@]}"} 2>&1)"; code=$?
   [ "$code" = "$want" ] || bad="exit $code, want $want"
   printf '%s\n' "$out" | grep -qF -- "$needle" || bad="${bad:+$bad; }missing: $needle"
   total=$((total + 1))
@@ -334,7 +345,7 @@ tb_case() {
 DUE='2026-10-12T17:00:00-04:00'
 d=$(new_repo tb-none); gates_json "$d" small
 tb_case "no demo_by: nothing to enforce" "$d" 0 'time box: none'
-d=$(new_repo tb-run); gates_json_with "$d" small "\"demo_by\": \"$DUE\""
+d=$(new_repo tb-run); gates_json_with "$d" small "\"started\": \"2020-01-01T00:00:00Z\", \"demo_by\": \"$DUE\""
 tb_case "before the deadline with no live run: running, with minutes left" "$d" 0 'time box: 60 min left' FEATURE_LOOP_NOW=2026-10-12T16:00:00-04:00
 tb_case "past the deadline with no live run: overdue, exit 1" "$d" 1 'time box: OVERDUE by 30 min' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
 tb_case "overdue says what to do" "$d" 1 'Stop starting review, eval or hardening work' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
@@ -342,6 +353,21 @@ put_live "$d" report-fail.json
 tb_case "a failing live run does not meet the time box" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
 put_live "$d" report-pass.json run2
 tb_case "a passing live run meets the time box, even late" "$d" 0 'time box: met, a passing live run is recorded (.scratch/live/run2/report.json)' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+printf '{ "runId": "e", "scenarios": [] }\n' > "$d/.scratch/live/run2/report.json"; touch -d "@$(( $(date +%s) + 60 ))" "$d/.scratch/live/run2/report.json"
+tb_case "a newest live run with no scenarios does not meet the time box" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+
+d=$(new_repo tb-before-start); gates_json_with "$d" small "\"started\": \"2099-01-01T00:00:00Z\", \"demo_by\": \"$DUE\""; put_live "$d" report-pass.json
+tb_case "a passing run from before the loop started does not count" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+d=$(new_repo tb-mtime); gates_json_with "$d" small "\"demo_by\": \"$DUE\""
+put "$d" report-pass.json .scratch/live/old/report.json; touch -d "@$(( $(date +%s) - 3600 ))" "$d/.scratch/live/old/report.json"
+tb_case "without started, a run older than gates.json does not count" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+put "$d" report-pass.json .scratch/live/new/report.json; touch -d "@$(( $(date +%s) + 60 ))" "$d/.scratch/live/new/report.json"
+tb_case "without started, a run newer than gates.json counts" "$d" 0 'time box: met' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+d=$(new_repo tb-waived); gates_json_with "$d" small "\"live\": \"none: docs only\", \"demo_by\": \"$DUE\""
+tb_case "a waived live run has no time box" "$d" 0 'time box: n/a, the live run is waived in .scratch/gates.json (docs only)' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+tb_case "--timebox refuses gate IDs" "$d" 2 '--timebox checks only the time box' G3
+tb_case "--timebox refuses a phase" "$d" 2 '--timebox checks only the time box' --phase merge
+
 d=$(new_repo tb-zone); gates_json_with "$d" small '"demo_by": "2026-10-12T21:00:00Z"'
 tb_case "zones compare as instants" "$d" 1 'OVERDUE by 30 min' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
 d=$(new_repo tb-closed); mkdir -p "$d/.scratch"; printf '{ "slug": "%s", "size": "small", "base": "main", "status": "closed", "demo_by": "2020-01-01T00:00:00Z" }\n' "$SLUG" > "$d/.scratch/gates.json"
@@ -451,6 +477,12 @@ gh_env=("PATH=$bin:$PATH")
 mrepo=$(new_repo merge-green); green_normal "$mrepo"
 sha=$(git -C "$mrepo" rev-parse HEAD); short=${sha:0:9}
 mlog="$work/gh.log"
+
+srepo_m=$(new_repo merge-small-nolive); gates_json "$srepo_m" small; put "$srepo_m" envelope.md ".scratch/envelope/$SLUG.md"
+ssha=$(git -C "$srepo_m" rev-parse HEAD)
+hook_case "merge of small work with no live run is blocked by G3" "$srepo_m" "gh pr merge 5 --match-head-commit $ssha" 2 "G3 red: no live run" "${gh_env[@]}" "FAKE_GH_HEAD=$ssha" FAKE_GH_REQUIRED=0
+put_live "$srepo_m" report-pass.json
+hook_case "merge of small work with a passing live run is allowed" "$srepo_m" "gh pr merge 5 --match-head-commit $ssha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$ssha" FAKE_GH_REQUIRED=0
 
 hook_case "merge without --match-head-commit blocked" "$mrepo" "gh pr merge 5 --squash" 2 "merge exactly the head you checked: --match-head-commit <sha>" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
 hook_case "merge with sha, green gates and green CI allowed" "$mrepo" "gh pr merge 5 --squash --match-head-commit $sha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
