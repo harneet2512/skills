@@ -735,14 +735,10 @@ pass_if "parity: a missing review file blocks both" test "$g/$c" = "1/2"
 # A repo with the G1 G2 G8 files in place, the opt-in flag on, and a contract + spec snapshot for the plan hash.
 g9_repo() {
   local d; d=$(new_repo "$1"); green_normal "$d"
-  printf '{ "slug": "%s", "size": "normal", "base": "main", "codex_review": true }
-' "$SLUG" > "$d/.scratch/gates.json"
+  printf '{ "slug": "%s", "size": "normal", "base": "main", "codex_review": true }\n' "$SLUG" > "$d/.scratch/gates.json"
   mkdir -p "$d/.scratch/contract" "$d/.scratch/spec"
-  printf '# Contract
-plan
-' > "$d/.scratch/contract/$SLUG.md"; printf '# Spec
-snapshot
-' > "$d/.scratch/spec/$SLUG.md"
+  printf '# Contract\nplan\n' > "$d/.scratch/contract/$SLUG.md"
+  printf '# Spec\nsnapshot\n' > "$d/.scratch/spec/$SLUG.md"
   printf '%s' "$d"
 }
 # g9_receipt <dir> <pass|fail|paused> : write a receipt for the plan as it is now, through receipts.mjs.
@@ -754,7 +750,7 @@ g9_receipt() {
     const plan = r.planHash(root, slug, "normal");
     const done = kind === "pass" || kind === "fail";
     const finding = { id: "F1", severity: "blocking", title: "Retry never ends", location: "src/a.js:3", failure_scenario: "Upstream returns 500 forever and the queue never drains.", recommendation: "Cap retries." };
-    r.writeReceipt(root, slug, { version: 1, gate: "G9", slug, completed: done, verdict: kind, round: 1, rounds_used: done ? 1 : 0, plan_hash: plan.hash,
+    r.writeReceipt(root, slug, { version: 1, gate: "G9", slug, completed: done, verdict: kind, round: 1, rounds_used: done ? 1 : 0, rounds_by_hash: { [plan.hash]: { rounds: done ? 1 : 0, open: [] } }, plan_hash: plan.hash,
       model: "mock", cli_version: "0.162.1", isolation: "stdin-no-tools", started_at: "2026-10-10T01:00:00.000Z", finished_at: "2026-10-10T01:01:00.000Z",
       summary: "mock", findings: kind === "fail" ? [finding] : [], ...(done ? {} : { cause: "You have hit your usage limit" }) });
   ' "$here/receipts.mjs" "$1" "$SLUG" "$2"
@@ -769,9 +765,7 @@ expect "phase build includes G9" "$d" 1 "G9 red: no Gate A receipt" 1 --phase bu
 g9_receipt "$d" pass
 expect "G9 green with a current passing receipt" "$d" 0 "G9 green" 0 G9
 expect "phase build all green with a current receipt" "$d" 0 "gates: green for reply-options (size normal): 3 green, 0 red, 1 n/a" 0 --phase build
-printf '# Contract
-changed after the review
-' > "$d/.scratch/contract/$SLUG.md"
+printf '# Contract\nchanged after the review\n' > "$d/.scratch/contract/$SLUG.md"
 expect "G9 red when the plan changed after the review" "$d" 1 "G9 red: the plan changed since the Codex review" 1 G9
 g9_receipt "$d" fail
 expect "G9 red for a failing verdict" "$d" 1 "G9 red: Gate A has 1 blocking finding (F1)" 1 G9

@@ -1,14 +1,15 @@
 // Tests for receipts.mjs (the receipt verifier) and for G9 in check-gates.mjs.
 // Run: node --test skills/fork/feature-loop/scripts/test-receipts.mjs
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SLUG, put } from './fixtures/codex/support.mjs';
+import { SLUG, makeDir, put, removeMade } from './fixtures/codex/support.mjs';
 import { MAX_ROUNDS, evaluatePlanReceipt, planHash, readReceipt, receiptRel, validateReceipt, validLocation, writeReceipt } from './receipts.mjs';
+
+after(removeMade);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const checker = join(here, 'check-gates.mjs');
@@ -16,7 +17,7 @@ const FINDING = { id: 'F1', severity: 'blocking', title: 'Retry loop never ends'
 
 // A directory holding only .scratch/: gates.json, contract and spec.
 function loopDir({ flag = true, size = 'normal', spec = true } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'rc-test-'));
+  const root = makeDir('rc-test-');
   put(root, '.scratch/gates.json', JSON.stringify({ slug: SLUG, size, base: 'main', ...(flag === 'absent' ? {} : { codex_review: flag }) }));
   put(root, `.scratch/contract/${SLUG}.md`, '# Contract\nA\n');
   if (spec) put(root, `.scratch/spec/${SLUG}.md`, '# Spec\nB\n');
@@ -26,12 +27,14 @@ function loopDir({ flag = true, size = 'normal', spec = true } = {}) {
 function receipt(root, over = {}, size = 'normal') {
   const completed = over.completed ?? true;
   const verdict = over.verdict ?? 'pass';
-  return {
+  const rec = {
     version: 1, gate: 'G9', slug: SLUG, completed, verdict, round: 1, rounds_used: completed ? 1 : 0,
     plan_hash: planHash(root, SLUG, size).hash, model: 'gpt-test', cli_version: '0.162.1', isolation: 'stdin-no-tools',
     started_at: '2026-10-10T01:00:00.000Z', finished_at: '2026-10-10T01:02:00.000Z', summary: 'ok', findings: [],
     ...(completed ? {} : { cause: 'timeout: killed' }), ...over,
   };
+  // The per-plan round counts always agree with rounds_used unless a test says otherwise.
+  return { rounds_by_hash: { [rec.plan_hash]: { rounds: rec.rounds_used, open: [] } }, ...rec };
 }
 
 const g9 = (root, ...extra) => {
@@ -77,6 +80,11 @@ const BAD = [
   ['blocking without a failure scenario', { verdict: 'fail', findings: [{ ...FINDING, failure_scenario: ' ' }] }, /without a failure_scenario/],
   ['absolute finding location', { findings: [{ ...FINDING, severity: 'advisory', location: '/etc/passwd' }] }, /relative path/],
   ['escaping finding location', { findings: [{ ...FINDING, severity: 'advisory', location: '../secret' }] }, /relative path/],
+  ['control character in a title', { findings: [{ ...FINDING, severity: 'advisory', title: 'a\nb' }] }, /title/],
+  ['escape sequence in a location', { findings: [{ ...FINDING, severity: 'advisory', location: 'a\u001b[2J' }] }, /location/],
+  ['control character in a cause', { completed: false, verdict: 'blocked', cause: 'x\ny' }, /cause/],
+  ['rounds_by_hash disagrees with rounds_used', { rounds_by_hash: {} }, /rounds_by_hash/],
+  ['rounds_by_hash with a bad key', { rounds_by_hash: { nope: { rounds: 1, open: [] } } }, /rounds_by_hash/],
   ['bad plan hash', { plan_hash: 'abc' }, /plan_hash/],
   ['zero round', { round: 0 }, /round/],
   ['unknown isolation', { isolation: 'none' }, /isolation/],
@@ -196,4 +204,10 @@ test('a gate ID outside the table is still an unknown argument (exit 2)', () => 
   const r = g9(loopDir(), 'G11');
   assert.equal(r.code, 2);
   assert.match(r.out, /unknown argument: G11/);
+});
+
+test('gates.md describes the close phase as every gate, G9 included', () => {
+  const md = readFileSync(join(here, '..', 'gates.md'), 'utf8');
+  const row = md.split(/\r?\n/).find((l) => l.startsWith('| `close`'));
+  assert.ok(row && /G1 to G9/.test(row) && !/G1 to G8/.test(row), row);
 });

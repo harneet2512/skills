@@ -11,13 +11,15 @@ import { dirname, join } from 'node:path';
 
 export const RECEIPT_VERSION = 1;
 export const MAX_ROUNDS = 2; // Codex rounds per plan hash (invariant I9)
-export const ISOLATION_MODES = ['stdin-no-tools', 'profile'];
+export const ISOLATION_MODES = ['stdin-no-tools'];
 export const VERDICTS = ['pass', 'fail', 'blocked', 'paused'];
 const COMPLETED_VERDICTS = ['pass', 'fail'];
-const SEVERITIES = ['blocking', 'advisory'];
+export const SEVERITIES = ['blocking', 'advisory'];
 const MAX_RECEIPT_BYTES = 1024 * 1024;
-const MAX_FINDINGS = 50;
-const LIMITS = { model: 100, cli_version: 50, summary: 4000, cause: 1000, title: 300, location: 300, failure_scenario: 2000, recommendation: 2000 };
+export const MAX_FINDINGS = 50;
+export const MAX_HISTORY = 20; // plan hashes whose round counts a receipt remembers
+export const MAX_OPEN_LISTED = 10;
+export const LIMITS = { model: 100, cli_version: 50, summary: 4000, cause: 1000, title: 300, location: 300, failure_scenario: 2000, recommendation: 2000, open: 300 };
 const HASH_RE = /^sha256:[0-9a-f]{64}$/;
 const SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
@@ -55,12 +57,18 @@ export function planHash(root, slug, size) {
 // ---- validation. Every field is checked: a receipt is read by a gate, and the file is only as good as its writer.
 
 const isStr = (v, max) => typeof v === 'string' && v.length <= max;
+// C0, DEL, C1 and the Unicode line separators: nothing a terminal or a log line should receive from a model.
+const CONTROL_RE = /[\p{Cc}\p{Zl}\p{Zp}]/u;
+export const hasControlChars = (v) => typeof v === 'string' && CONTROL_RE.test(v);
+// Whitespace collapsed to single spaces and control characters dropped: one safe line.
+export const cleanText = (v) => String(v ?? '').replace(/[\p{Cc}\p{Zl}\p{Zp}\s]+/gu, ' ').trim();
+const isLine = (v, max) => isStr(v, max) && !hasControlChars(v);
 const isCount = (v) => Number.isInteger(v) && v >= 0 && v <= 1000;
 
 // A location is '' (no file) or a relative path with an optional :line or :line-line suffix.
 export function validLocation(loc) {
   if (loc === '') return true;
-  if (!isStr(loc, LIMITS.location)) return false;
+  if (!isLine(loc, LIMITS.location)) return false;
   const path = loc.replace(/:\d+(-\d+)?$/, '');
   if (!path || path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:/.test(path)) return false;
   if (path.includes('\0') || path.includes('\\')) return false;
@@ -73,10 +81,10 @@ function findingProblems(f, i) {
   const out = [];
   if (!SEVERITIES.includes(f.severity)) out.push(`${at}.severity must be blocking or advisory`);
   if (!isStr(f.id, 40) || !f.id) out.push(`${at}.id must be a short non-empty string`);
-  if (!isStr(f.title, LIMITS.title) || !f.title) out.push(`${at}.title must be a non-empty string`);
+  if (!isLine(f.title, LIMITS.title) || !f.title) out.push(`${at}.title must be a non-empty single line`);
   if (!validLocation(f.location)) out.push(`${at}.location must be empty or a relative path`);
-  if (!isStr(f.failure_scenario, LIMITS.failure_scenario)) out.push(`${at}.failure_scenario must be a string`);
-  if (!isStr(f.recommendation, LIMITS.recommendation)) out.push(`${at}.recommendation must be a string`);
+  if (!isLine(f.failure_scenario, LIMITS.failure_scenario)) out.push(`${at}.failure_scenario must be a string`);
+  if (!isLine(f.recommendation, LIMITS.recommendation)) out.push(`${at}.recommendation must be a string`);
   // A finding blocks only with a concrete failure scenario (spec amendment A1).
   if (f.severity === 'blocking' && !(typeof f.failure_scenario === 'string' && f.failure_scenario.trim())) {
     out.push(`${at} is blocking without a failure_scenario`);
@@ -92,10 +100,24 @@ function stateProblems(r) {
   if (typeof r.completed !== 'boolean') return ['completed must be true or false'];
   if (!VERDICTS.includes(r.verdict)) return ['verdict must be pass, fail, blocked or paused'];
   if (r.completed !== COMPLETED_VERDICTS.includes(r.verdict)) out.push(`completed is ${r.completed} but verdict is ${r.verdict}`);
-  if (!r.completed && !(isStr(r.cause, LIMITS.cause) && r.cause)) out.push('an incomplete receipt needs a cause');
+  if (!r.completed && !(isLine(r.cause, LIMITS.cause) && r.cause)) out.push('an incomplete receipt needs a cause on a single line');
   const blocking = Array.isArray(r.findings) ? r.findings.filter((f) => f?.severity === 'blocking').length : 0;
   if (r.verdict === 'pass' && blocking) out.push('verdict pass with blocking findings');
   if (r.verdict === 'fail' && !blocking) out.push('verdict fail without a blocking finding');
+  return out;
+}
+
+// rounds_by_hash: how many Codex rounds each plan hash has had, with its open blocking findings, so returning to an
+// earlier plan does not reset its cap. The entry for this receipt's own plan agrees with rounds_used.
+function historyProblems(r) {
+  const h = r.rounds_by_hash;
+  if (typeof h !== 'object' || h === null || Array.isArray(h) || Object.keys(h).length > MAX_HISTORY) return ['rounds_by_hash must be an object of at most 20 plan hashes'];
+  const out = [];
+  for (const [hash, e] of Object.entries(h)) {
+    const ok = HASH_RE.test(hash) && isCount(e?.rounds) && Array.isArray(e.open) && e.open.length <= MAX_OPEN_LISTED && e.open.every((o) => isLine(o, LIMITS.open));
+    if (!ok) out.push(`rounds_by_hash entry ${hash.slice(0, 20)} is malformed`);
+  }
+  if ((h[r.plan_hash]?.rounds ?? 0) !== r.rounds_used) out.push('rounds_by_hash disagrees with rounds_used for this plan');
   return out;
 }
 
@@ -109,8 +131,9 @@ export function validateReceipt(r) {
   if (!Number.isInteger(r.round) || r.round < 1 || r.round > 100) out.push('round must be a positive integer');
   if (!isCount(r.rounds_used)) out.push('rounds_used must be a non-negative integer');
   if (!ISOLATION_MODES.includes(r.isolation)) out.push(`isolation must be one of ${ISOLATION_MODES.join(', ')}`);
-  for (const k of ['model', 'cli_version']) if (!isStr(r[k], LIMITS[k]) || !r[k]) out.push(`${k} must be a non-empty string`);
-  if (!isStr(r.summary, LIMITS.summary)) out.push('summary must be a string');
+  for (const k of ['model', 'cli_version']) if (!isLine(r[k], LIMITS[k]) || !r[k]) out.push(`${k} must be a non-empty string`);
+  if (!isLine(r.summary, LIMITS.summary)) out.push('summary must be a single line');
+  out.push(...historyProblems(r));
   if (!Array.isArray(r.findings) || r.findings.length > MAX_FINDINGS) out.push(`findings must be an array of at most ${MAX_FINDINGS}`);
   else r.findings.forEach((f, i) => out.push(...findingProblems(f, i)));
   out.push(...stampProblems(r), ...stateProblems(r));

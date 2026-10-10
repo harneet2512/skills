@@ -47,7 +47,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--phase') { phase = args[++i]; if (!PHASES[phase]) { console.error(`check-gates: unknown phase: ${phase}`); process.exit(2); } }
   else if (a === '--last-commit') lastCommit = Number(args[++i]) || 0;
   else if (a === '--slop') slop = args[++i];
-  else if (/^G[0-9]+$/.test(a) && ALL.includes(a)) { if (!wanted.includes(a)) wanted.push(a); }
+  else if (ALL.includes(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
 work = work || root;
