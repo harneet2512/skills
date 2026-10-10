@@ -196,7 +196,7 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 
 ### Gates
 
-Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines eight gates (G1 to G8) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
+Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines nine gates (G1 to G9; G9, the Codex plan review, is part of a run only for a repo with `"codex_review": true`, section 6) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
 
 The plugin enforces the gates with a hook, which is new in this fork (upstream ships no hooks):
 
@@ -241,7 +241,19 @@ The topic files follow the structure of Trail of Bits' `sharp-edges` skill (CC B
 
 **Why:** every reviewer in the loop is Claude, so the author and the reviewers share blind spots. HAR-161 adds Codex as an independent, read-only reviewer at two points: the plan (Gate A) and the full diff before the PR (Gate B).
 
-**Decision:** [ADR 0003](./.agents/adr/0003-codex-review-gates-in-feature-loop.md), which also maps each HAR-161 requirement to the ticket that delivers it. No skill or script changes yet: this section grows as each ticket lands.
+**Decision:** [ADR 0003](./.agents/adr/0003-codex-review-gates-in-feature-loop.md), which also maps each HAR-161 requirement to the ticket that delivers it. This section grows as each ticket lands.
+
+### Gate A: the isolated wrapper, the receipt verifier, G9 (HAR-163)
+
+| File | What it is |
+|---|---|
+| `skills/fork/feature-loop/scripts/codex-review.mjs` | the only code that starts Codex: `codex-review.mjs gate-a` reviews the plan (`.scratch/contract/<slug>.md` plus `.scratch/spec/<slug>.md`) and writes the receipt. Refuses unless `.scratch/gates.json` has `"codex_review": true`. Codex binary injectable (`--codex-bin` or `CODEX_REVIEW_BIN`) |
+| `skills/fork/feature-loop/scripts/receipts.mjs` | the only code that reads a receipt: schema, plan hash, round cap, atomic write |
+| `skills/fork/feature-loop/scripts/check-gates.mjs`, `check-gates.sh`, `gate-hook.sh` | new gate G9 (joins the `build` phase; part of a run only with the flag); gate ID patterns widened from `G[1-8]` to `G[0-9]+` so a red G9 or G10 line reaches the hook's message |
+| `skills/fork/feature-loop/scripts/test-codex-review.mjs`, `test-receipts.mjs`, `fixtures/codex/` | `node --test` suites against a mock Codex binary; `test-gates.sh` gains G9 cases and the hook case. Its case "unknown gate G9" became "unknown gate G11" because G9 is now a gate |
+| `.github/workflows/fork-ci.yml` | new step runs the two node suites |
+
+**Isolation, as measured on Codex CLI 0.162.1, Windows 11 (2026-10-10).** The planned permission profile (`default_permissions` plus `[permissions.<name>.filesystem]`, no `-s`) cannot be proven here: Codex refuses to start with it ("windows unelevated restricted-token sandbox cannot enforce split filesystem read restrictions directly; refusing to run unsandboxed"). So the default mode is the decided fallback, `stdin-no-tools`: the plan is the prompt on stdin and `--disable shell_tool unified_exec view_image code_mode_host` removes every tool that can touch a file (`code_mode_host` carries `apply_patch`; with it on, the model still had `functions.exec`). With `sandbox_mode="read-only"` as well, a model asked to read and to patch two sentinel files outside the export (one in a temp dir, one in the home directory) and one file inside it got "code-mode host is disabled" for every attempt, and the sentinels were unchanged. `--isolation profile` stays available and untested live (its argv is tested against the mock). `--disable apps` is the verified form for apps; `mcp_servers={}` is a no-op, but with `--ignore-user-config` and no `.codex/` in the export no MCP server is configured. The receipt records the isolation mode.
 
 ## Install
 

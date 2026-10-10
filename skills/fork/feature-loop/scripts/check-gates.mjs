@@ -2,18 +2,20 @@
 // repo root, read the last commit time and validated the gate names. Node 22, no dependencies.
 //
 //   node check-gates.mjs --root <dir> [--work <dir>] --last-commit <unix seconds> --slop <slop-check.sh>
-//                        [--phase build|merge|close] [G1 ... G8]
+//                        [--phase build|merge|close] [G1 ... G9]
 //
 // --root holds .scratch/; --work is the git worktree whose code G6 scans (default: --root). A phase narrows the
-// gates to those due at that point of the loop; gate IDs narrow them further.
+// gates to those due at that point of the loop; gate IDs narrow them further. G9 (the Codex plan review) is part of a
+// run only when .scratch/gates.json has "codex_review": true; asked for by name without it, it prints n/a and why.
 //
 // Exit: 0 every evaluated gate green (or n/a), 1 any red, 2 the run file is invalid.
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { clean, blank, section, firstTable, tables } from './md-table.mjs';
+import { evaluatePlanReceipt, receiptRel } from './receipts.mjs';
 
-const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
+const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9'];
 const NORMAL_UP = new Set(['normal', 'large']);
 const APPLIES = {
   G1: (size) => NORMAL_UP.has(size),
@@ -24,10 +26,11 @@ const APPLIES = {
   G6: () => true,
   G7: (size) => NORMAL_UP.has(size),
   G8: () => true, // decided by whether .scratch/loop-status.md exists, below
+  G9: () => true, // decided by the codex_review flag in .scratch/gates.json, below
 };
 // Which gates are due when: build = before the first push or PR, merge = before the merge, close = all of them.
 const PHASES = {
-  build: ['G1', 'G2', 'G8'],
+  build: ['G1', 'G2', 'G8', 'G9'],
   merge: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G8'],
   close: ALL,
 };
@@ -44,11 +47,10 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--phase') { phase = args[++i]; if (!PHASES[phase]) { console.error(`check-gates: unknown phase: ${phase}`); process.exit(2); } }
   else if (a === '--last-commit') lastCommit = Number(args[++i]) || 0;
   else if (a === '--slop') slop = args[++i];
-  else if (/^G[1-8]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
+  else if (/^G[0-9]+$/.test(a) && ALL.includes(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
 work = work || root;
-const selected = ALL.filter((g) => (!phase || PHASES[phase].includes(g)) && (!wanted.length || wanted.includes(g)));
 
 // ---- the run file
 const runPath = join(root, '.scratch', 'gates.json');
@@ -60,6 +62,9 @@ if (run?.status === 'closed') {
   console.log('gates: loop closed (.scratch/gates.json says "status": "closed"), nothing to check');
   process.exit(0);
 }
+// Opt-in: without the flag G9 is left out of the default run, so a repo that never opted in sees no change.
+const codexReview = run?.codex_review === true;
+const selected = ALL.filter((g) => (!phase || PHASES[phase].includes(g)) && (!wanted.length || wanted.includes(g)) && (g !== 'G9' || codexReview || wanted.includes('G9')));
 const slug = typeof run?.slug === 'string' ? run.slug : '';
 const size = typeof run?.size === 'string' ? run.size : '';
 const base = typeof run?.base === 'string' && run.base ? run.base : '';
@@ -314,7 +319,14 @@ function G8() {
   return problems.length ? red(problems.join('; '), P.status) : green();
 }
 
-const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8 };
+// The plan review: a completed, passing Codex receipt for exactly this contract + spec (receipts.mjs owns the rules).
+function G9() {
+  if (!codexReview) return na('codex_review is not enabled in .scratch/gates.json (set "codex_review": true to opt in)');
+  const r = evaluatePlanReceipt(root, slug, size);
+  return r.ok ? green() : red(r.reason, receiptRel(slug));
+}
+
+const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8, G9 };
 const SIZE_NOTE = 'applies to normal and large only';
 const counts = { green: 0, red: 0, na: 0 };
 for (const g of selected) {

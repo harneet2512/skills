@@ -12,7 +12,7 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 { "slug": "reply-options", "size": "normal", "base": "main" }
 ```
 
-`size` is `small`, `normal` or `large`. An optional `"merge_check"` is the command the merge hook runs instead of `gh pr checks`, for projects whose CI runs elsewhere: `{sha}` and `{pr}` are filled in, and exit 0 means CI is green on exactly that sha (for example `{ "merge_check": "scripts/ci-status.sh {sha}" }`). Without this file the gates do not apply, so the hook stays silent on work that is not running the loop.
+`size` is `small`, `normal` or `large`. An optional `"codex_review": true` opts the repo in to the Codex plan review (G9, see "The Codex plan review" below); without it Codex is never invoked and G9 is not part of a run. An optional `"merge_check"` is the command the merge hook runs instead of `gh pr checks`, for projects whose CI runs elsewhere: `{sha}` and `{pr}` are filled in, and exit 0 means CI is green on exactly that sha (for example `{ "merge_check": "scripts/ci-status.sh {sha}" }`). Without this file the gates do not apply, so the hook stays silent on work that is not running the loop.
 
 `base` is also the branch a push may not target while the loop is active (see "Running them"). The optional `"status": "closed"` ends the loop: set it when the feature is merged and its metrics line is written (the close phase has passed). A closed loop is invisible to every hook and to `check-gates.sh`: they print nothing (`check-gates.sh` says "loop closed" and exits 0), the SessionStart summary is empty, and Stop no longer holds the session. Any other `status`, or none, means the loop is active.
 
@@ -30,6 +30,19 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 | G6 craft | all | `concern-topics/scripts/slop-check.sh --diff <base> --justified .scratch/review/<slug>.md` reports nothing: every finding's `file:line` is listed under `## Justified` with a reason (the commit hook runs the same code with `--staged`, so the two never disagree about a review file) |
 | G7 metrics | normal, large | `.scratch/loop-metrics.md` has a line containing `<slug>` (bypass records do not count); and when `.scratch/review/<slug>.md` has any `CONFIRMED` finding, the **last** such line carries `escapes=<n>` and `floors=<m>` with `n` at least the number of `CONFIRMED` rows in the review's Findings table (every confirmed finding is an escape) and `m` at least `n` (each escape raised a floor: a check, pack item, scenario or eval case) |
 | G8 ledger | all, once `.scratch/loop-status.md` exists (n/a before) | every row of the stage table with status `done` has an Evidence cell that starts with `measured:`, `inferred:` or `assumed:`, and not one that is only `assumed:` (a stage cannot be done on an assumption); `running` rows are ignored here, the Stop hook holds them |
+| G9 plan review | all, only when `.scratch/gates.json` has `"codex_review": true` (n/a with that reason when asked for by name without it) | `.scratch/receipts/<slug>/G9.json` is a completed, schema-valid receipt with a passing verdict whose plan hash equals the hash of `.scratch/contract/<slug>.md` plus `.scratch/spec/<slug>.md` (for a small change the contract file alone) |
+
+## The Codex plan review (G9)
+
+For a repo that opted in with `"codex_review": true`, the lead runs `scripts/codex-review.mjs gate-a` once the contract is written and the spec snapshot is saved. It is the only code that starts Codex, and `scripts/receipts.mjs` is the only code that reads its receipt.
+
+- **Consent.** Without the flag the wrapper exits 2 before starting anything. Source leaves the machine only for opted-in repos.
+- **Isolation.** Codex runs with `--ignore-user-config` in a scratch export of the tracked files at the reviewed sha, outside the repo, without `.codex/`, `AGENTS.md` and `CLAUDE.md` at any depth. Default mode `stdin-no-tools`: the plan goes in on stdin and every tool that can touch a file is switched off. Mode `profile` (`--isolation profile`) limits reads to the export with a permission profile; on Windows Codex 0.162.1 refuses to start with one, so it is opt-in. The receipt records the mode.
+- **Failures.** Codex exits 1 for every failure, so the wrapper reads the message on stderr: usage limit, `Quota exceeded` or a 429 retry limit end as `paused` (rerun later, nothing is lost); an unrefreshable token or a 401 end as `blocked: codex login`; a timeout (the whole process tree is killed), a crash or malformed output end as `blocked` with the cause.
+- **Rounds.** At most 2 Codex rounds per plan hash. A third attempt on the same plan prints `blocked:` with the open findings and stops: escalate to the human. Editing the contract or spec starts a new hash. A finding blocks only if it carries a concrete failure scenario; otherwise it is advisory, and the wrapper, not the model's verdict, decides pass or fail.
+- **Receipt.** `.scratch/receipts/<slug>/G9.json`, written to a temp file and renamed, with a schema version, a `completed` flag, the verdict (`pass`, `fail`, `paused`, `blocked`), the round, the plan hash, the model, the Codex CLI version, the isolation mode and timestamps.
+
+The mock-driven tests are `scripts/test-codex-review.mjs` and `scripts/test-receipts.mjs` (`node --test`); no test calls real Codex.
 
 ## The review file
 
@@ -53,9 +66,9 @@ All files live under `.scratch/` in the target repo. `<slug>` is the feature's s
 ```
 <feature-loop>/scripts/check-gates.sh                  # every gate that applies (the close phase), exit 0 green, 1 red, 2 usage
 <feature-loop>/scripts/check-gates.sh G2 G6            # only these
-<feature-loop>/scripts/check-gates.sh --phase build    # G1 G2 G8
+<feature-loop>/scripts/check-gates.sh --phase build    # G1 G2 G8, and G9 when codex_review is on
 <feature-loop>/scripts/check-gates.sh --phase merge    # G1 to G6 and G8
-<feature-loop>/scripts/check-gates.sh --phase close    # all eight, as with no phase
+<feature-loop>/scripts/check-gates.sh --phase close    # every gate, as with no phase
 ```
 
 Each red gate prints one line: the gate ID, what is missing, and the file to fix. Every gate is still subject to its size (the "Applies to" column), and a phase together with gate IDs checks the gates in both.
@@ -66,7 +79,7 @@ The gates are not all due at the same time. Feature-loop pushes slices and opens
 
 | Phase | Gates | Asked by |
 |---|---|---|
-| `build` | G1, G2, G8 | the hook on `git push`, `gh pr create`, `gh api` POST to `.../pulls` and a `createPullRequest` mutation |
+| `build` | G1, G2, G8, G9 | the hook on `git push`, `gh pr create`, `gh api` POST to `.../pulls` and a `createPullRequest` mutation |
 | `merge` | G1, G2, G3, G4, G5, G6, G8 | the hook on a merge (`gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, a `mergePullRequest` mutation) |
 | `close` | G1 to G8, G7 included | you, after the merge, once the metrics line is written; also what `check-gates.sh` runs with no phase |
 

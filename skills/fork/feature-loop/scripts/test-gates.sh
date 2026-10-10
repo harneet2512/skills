@@ -68,7 +68,7 @@ expect() {
   local name="$1" dir="$2" want="$3" needle="$4" reds="$5"; shift 5
   local out code got_reds bad=""
   out="$(cd "$dir" && "$check" "$@" 2>&1)"; code=$?
-  got_reds="$(printf '%s\n' "$out" | grep -cE '^G[1-8] red:')"
+  got_reds="$(printf '%s\n' "$out" | grep -cE '^G[0-9]+ red:')"
   [ "$code" = "$want" ] || bad="exit $code, want $want"
   if [ -n "$needle" ] && ! printf '%s\n' "$out" | grep -qF -- "$needle"; then bad="${bad:+$bad; }missing: $needle"; fi
   if [ "$reds" != - ] && [ "$got_reds" != "$reds" ]; then bad="${bad:+$bad; }red lines $got_reds, want $reds"; fi
@@ -259,7 +259,7 @@ expect "filter: G2 G6 ignore a red G1" "$d" 0 "gates: green for reply-options (s
 out="$(cd "$d" && "$check" G2 G6)"
 pass_if "filter: prints only the named gates" test "$(printf '%s\n' "$out" | grep -cE '^G[1-8] ')" = 2
 expect "filter: lowercase g1 accepted" "$d" 1 "G1 red: shape file missing" 1 g1
-expect "usage: unknown gate G9" "$d" 2 "unknown argument: G9" 0 G9
+expect "usage: unknown gate G11" "$d" 2 "unknown argument: G11" 0 G11
 expect "usage: unknown flag" "$d" 2 "unknown argument: --bogus" 0 --bogus
 expect "usage: --help" "$d" 0 "Usage (run from the target repo's root)" 0 --help
 
@@ -729,6 +729,64 @@ parity_case "an empty review file justifies nothing" block ''
 rm -f "$par/.scratch/review/$SLUG.md"
 (cd "$par" && "$check" G6 >/dev/null 2>&1); g=$?; c="$(hook_code "$par" "git commit -m x")"
 pass_if "parity: a missing review file blocks both" test "$g/$c" = "1/2"
+
+# ---- G9: the Codex plan review (opt-in with "codex_review": true)
+
+# A repo with the G1 G2 G8 files in place, the opt-in flag on, and a contract + spec snapshot for the plan hash.
+g9_repo() {
+  local d; d=$(new_repo "$1"); green_normal "$d"
+  printf '{ "slug": "%s", "size": "normal", "base": "main", "codex_review": true }
+' "$SLUG" > "$d/.scratch/gates.json"
+  mkdir -p "$d/.scratch/contract" "$d/.scratch/spec"
+  printf '# Contract
+plan
+' > "$d/.scratch/contract/$SLUG.md"; printf '# Spec
+snapshot
+' > "$d/.scratch/spec/$SLUG.md"
+  printf '%s' "$d"
+}
+# g9_receipt <dir> <pass|fail|paused> : write a receipt for the plan as it is now, through receipts.mjs.
+g9_receipt() {
+  node --input-type=module -e '
+    import { pathToFileURL } from "node:url";
+    const r = await import(pathToFileURL(process.argv[1]).href);
+    const [root, slug, kind] = process.argv.slice(2);
+    const plan = r.planHash(root, slug, "normal");
+    const done = kind === "pass" || kind === "fail";
+    const finding = { id: "F1", severity: "blocking", title: "Retry never ends", location: "src/a.js:3", failure_scenario: "Upstream returns 500 forever and the queue never drains.", recommendation: "Cap retries." };
+    r.writeReceipt(root, slug, { version: 1, gate: "G9", slug, completed: done, verdict: kind, round: 1, rounds_used: done ? 1 : 0, plan_hash: plan.hash,
+      model: "mock", cli_version: "0.162.1", isolation: "stdin-no-tools", started_at: "2026-10-10T01:00:00.000Z", finished_at: "2026-10-10T01:01:00.000Z",
+      summary: "mock", findings: kind === "fail" ? [finding] : [], ...(done ? {} : { cause: "You have hit your usage limit" }) });
+  ' "$here/receipts.mjs" "$1" "$SLUG" "$2"
+}
+
+d=$(new_repo g9-off); green_normal "$d"
+expect "G9 without the flag: n/a with the reason" "$d" 0 "G9 n/a: codex_review is not enabled in .scratch/gates.json" 0 G9
+
+d=$(g9_repo g9-none)
+expect "G9 without a receipt is red" "$d" 1 "G9 red: no Gate A receipt, run codex-review.mjs gate-a (.scratch/receipts/$SLUG/G9.json)" 1 G9
+expect "phase build includes G9" "$d" 1 "G9 red: no Gate A receipt" 1 --phase build
+g9_receipt "$d" pass
+expect "G9 green with a current passing receipt" "$d" 0 "G9 green" 0 G9
+expect "phase build all green with a current receipt" "$d" 0 "gates: green for reply-options (size normal): 3 green, 0 red, 1 n/a" 0 --phase build
+printf '# Contract
+changed after the review
+' > "$d/.scratch/contract/$SLUG.md"
+expect "G9 red when the plan changed after the review" "$d" 1 "G9 red: the plan changed since the Codex review" 1 G9
+g9_receipt "$d" fail
+expect "G9 red for a failing verdict" "$d" 1 "G9 red: Gate A has 1 blocking finding (F1)" 1 G9
+g9_receipt "$d" paused
+expect "G9 red for an incomplete receipt, with its cause" "$d" 1 "G9 red: Gate A is paused: You have hit your usage limit" 1 G9
+printf '{"version":1,"gate":"G9","slu' > "$d/.scratch/receipts/$SLUG/G9.json"
+expect "G9 red for a truncated receipt" "$d" 1 "G9 red: receipt is not valid JSON" 1 G9
+g9_receipt "$d" pass
+sed -i 's/"version": 1/"version": 99/' "$d/.scratch/receipts/$SLUG/G9.json"
+expect "G9 red for a wrong receipt version" "$d" 1 "G9 red: receipt fails its schema: receipt version is 99" 1 G9
+
+g9_red=$(g9_repo g9-hook)
+hook_case "push message names G9 when only G9 is red" "$g9_red" "git push -u origin feature" 2 "G9 red: no Gate A receipt"
+g9_receipt "$g9_red" pass
+hook_case "push allowed with a current passing receipt" "$g9_red" "git push -u origin feature" 0 ""
 
 # ---- errors are not hidden
 
