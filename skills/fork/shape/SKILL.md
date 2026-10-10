@@ -15,7 +15,7 @@ In one line each:
 - **Why now**: what is broken or missing today.
 - **Properties**: what must hold for the job to be done (fast, exact, private, sent once, visible, explainable). The behavioral envelope judges against these.
 
-When an approved plan (`.scratch/plan/<file>.md`) has a Decisions section, take intent from it and do not grill again. When any of these is still a guess, call the Skill tool with `grilling` (or `grill-with-docs` when the repo has a glossary) and resolve it with the user.
+When an approved plan (`docs/plans/<file>.md`) has a Decisions section, take intent from it and do not grill again. When any of these is still a guess, call the Skill tool with `grilling` (or `grill-with-docs` when the repo has a glossary) and resolve it with the user.
 
 **Done when:** job, why now and properties each have one line the user stated or confirmed.
 

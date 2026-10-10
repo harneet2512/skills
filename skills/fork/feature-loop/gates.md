@@ -39,7 +39,7 @@ An optional `"merge_check"` is the command the merge hook runs instead of `gh pr
 | G5 review | normal, large | `.scratch/review/<slug>.md` exists; no row in its `## Findings` table is `CONFIRMED` with severity `CRITICAL` or `HIGH` and resolution `open` or empty |
 | G6 craft | all | `concern-topics/scripts/slop-check.sh --diff <base> --justified .scratch/review/<slug>.md` reports nothing: every finding's `file:line` is listed under `## Justified` with a reason (the commit hook runs the same code with `--staged`, so the two never disagree about a review file) |
 | G7 metrics | normal, large | `.scratch/loop-metrics.md` has a line containing `<slug>` (bypass records do not count); and when `.scratch/review/<slug>.md` has any `CONFIRMED` finding, the **last** such line carries `escapes=<n>` and `floors=<m>` with `n` at least the number of `CONFIRMED` rows in the review's Findings table (every confirmed finding is an escape) and `m` at least `n` (each escape raised a floor: a check, pack item, scenario or eval case) |
-| G8 ledger | all, once `.scratch/loop-status.md` exists (n/a before) | every row of the stage table with status `done` has an Evidence cell that starts with `measured:`, `inferred:` or `assumed:`, and not one that is only `assumed:` (a stage cannot be done on an assumption); a row whose status is `done, from approved plan` must also cite a plan section that exists with content, as `inferred: .scratch/plan/<file>.md#<Section>`; `running` rows are ignored here, the Stop hook holds them |
+| G8 ledger | all, once `.scratch/loop-status.md` exists (n/a before) | every row of the stage table with status `done` has an Evidence cell that starts with `measured:`, `inferred:` or `assumed:`, and not one that is only `assumed:` (a stage cannot be done on an assumption); a row whose status is `done, from approved plan` must be stage 0, 1 or 3 (baseline, shape, to-tickets; stage 2 and every build, prove and later stage still run) and its evidence must be `inferred:` followed by one or more `docs/plans/<file>.md#<Section>` citations separated by `;`, each naming a file that exists and a section with content; `running` rows are ignored here, the Stop hook holds them |
 
 ## The review file
 
@@ -60,7 +60,7 @@ An optional `"merge_check"` is the command the merge hook runs instead of `gh pr
 
 ## The approved plan
 
-Plan mode writes the plan to `.scratch/plan/<file>.md` when the target repo's `.claude/settings.json` sets `"plansDirectory": ".scratch/plan"`. It follows [plan-template.md](plan-template.md). `check-gates.sh --plan` is not a gate (the loop can run without a plan): it reports, one line each, every required section (Decisions, Size and why, External dependencies, Files to create or change, Skeleton ticket, Tickets and seams, Skill per stage, Verification, Failure modes, Time box, Concerns, Design challenge) that is missing or empty (blank, comments only, `TBD`, `TODO`, `?` or a `<placeholder>`), and every `Changed:` line under `## Changes` that has no `because <reason>`. Exit 0 complete, 1 red, 2 no plan file. The loop asks the user only about the sections it names. G8 reads the plan too, for the ledger rows marked `done, from approved plan`.
+The plan is a tracked file, so builders commit its `Changed:` lines with the code and the PR shows the plan diff. Plan mode writes it to `docs/plans/<file>.md` when the target repo's `.claude/settings.json` sets `"plansDirectory": "docs/plans"`. It follows [plan-template.md](../plan-first/plan-template.md), written by the model-invoked `plan-first` skill, which holds the planning rules. `check-gates.sh --plan` is not a gate (the loop can run without a plan): it reports, one line each, every required section (Decisions, Size and why, External dependencies, Files to create or change, Skeleton ticket, Tickets and seams, Skill per stage, Verification, Failure modes, Time box, Concerns, Design challenge) that is missing or empty (blank, comments only, `TBD`, `TODO`, `?` or a `<placeholder>`), and every `Changed:` line under `## Changes` that has no `because <reason>`. Exit 0 complete, 1 red, 2 no plan file. The loop asks the user only about the sections it names. G8 reads the plan too, for the ledger rows marked `done, from approved plan`.
 
 ## Running them
 
@@ -71,7 +71,7 @@ Plan mode writes the plan to `.scratch/plan/<file>.md` when the target repo's `.
 <feature-loop>/scripts/check-gates.sh --phase merge    # G1 to G6 and G8
 <feature-loop>/scripts/check-gates.sh --phase close    # all eight, as with no phase
 <feature-loop>/scripts/check-gates.sh --timebox        # only the time box; exit 1 when demo_by passed with no passing live run
-<feature-loop>/scripts/check-gates.sh --plan [FILE]    # only the approved plan (default: the newest .scratch/plan/*.md); needs no gates.json
+<feature-loop>/scripts/check-gates.sh --plan [FILE]    # only the approved plan (default: the newest docs/plans/*.md); needs no gates.json
 ```
 
 Each red gate prints one line: the gate ID, what is missing, and the file to fix. Every gate is still subject to its size (the "Applies to" column), and a phase together with gate IDs checks the gates in both.

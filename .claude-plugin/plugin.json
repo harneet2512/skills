@@ -20,6 +20,7 @@
   ],
   "skills": [
     "./skills/fork/feature-loop",
+    "./skills/fork/plan-first",
     "./skills/fork/shape",
     "./skills/fork/deep-engineering",
     "./skills/fork/behavioral-envelope",

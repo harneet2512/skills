@@ -27,7 +27,7 @@ Set the model explicitly on every subagent call. The lead calls `code-review` it
 
 ## Steps
 
-1. **Read the issue in full**, plus its parent or any spec it cites, and write the checklist. If the domain terms are still fuzzy, call the Skill tool twice, for `grilling` and `domain-modeling`, and resolve them with the user before going on. When an approved plan (`.scratch/plan/<file>.md`, see `feature-loop`) already settles them in its Decisions section, do not grill again.
+1. **Read the issue in full**, plus its parent or any spec it cites, and write the checklist. If the domain terms are still fuzzy, call the Skill tool twice, for `grilling` and `domain-modeling`, and resolve them with the user before going on. When an approved plan (`docs/plans/<file>.md`, see `feature-loop`) already settles them in its Decisions section, do not grill again.
    **Done when:** every requirement and acceptance criterion in the issue and its cited specs is a checklist line.
 
 2. **Contract.** **Requires:** the step 1 checklist. Call the Skill tool with `deep-engineering`. Resolve its blocking open questions with the user. A shared-contract change (API schema, DB schema, wire format) lands first, as its own PR.

@@ -1,9 +1,12 @@
-// Checks an approved plan file (see ../plan-template.md) for the sections the loop reads from it, and for the
-// `Changed: X because Y` deviation lines. Used by check-gates.mjs (--plan-check) and by its G8 ledger rule
-// ("done, from approved plan"). Node 22, no dependencies.
+// Checks an approved plan file (see ../../plan-first/plan-template.md) for the sections the loop reads from it, and
+// for the `Changed: X because Y` deviation lines. Used by check-gates.mjs (--plan-check) and by its G8 ledger rule
+// ("done, from approved plan"). The plan is a tracked file (docs/plans/), so builders commit it with the code.
+// Node 22, no dependencies.
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { section, norm } from './md-table.mjs';
+import { join, resolve, isAbsolute } from 'node:path';
+import { section, norm, isSeparator } from './md-table.mjs';
+
+export const PLAN_DIR = 'docs/plans';
 
 // The sections the loop reads, as the heading text normalized (lower case, words only), with the name shown to people.
 export const PLAN_SECTIONS = [
@@ -22,24 +25,57 @@ export const PLAN_SECTIONS = [
 ];
 const PLACEHOLDER = /^(tbd|todo|\?|<[^>]*>)$/i;
 const CHANGED_RE = /^\s*(?:[-*]\s*)?Changed:\s*(.*)$/i;
+const FENCE_RE = /^\s{0,3}(```|~~~)/;
 
-// Does the section have a line that is not blank, an HTML comment or a placeholder (see PLACEHOLDER)?
+// Only the stages whose input the plan really holds may be "done, from approved plan": 0 baseline, 1 understand
+// (shape) and 3 plan (to-tickets). Stage 2 (the deeper check against the code), the build, the proof and every later
+// stage still run, so they cannot be marked from the plan.
+const FROM_PLAN_STAGES = new Set([0, 1, 3]);
+const FROM_PLAN_SKILLS = new Set(['baseline', 'shape', 'grilling', 'domain-modeling', 'to-spec', 'to-tickets']);
+const STILL_RUNS = new Set(['deep-engineering', 'behavioral-envelope', 'concern-topics', 'evals', 'tdd', 'implement-spec',
+  'code-review', 'live-verify', 'adversarial-review', 'wp-loop', 'pr', 'retro', 'prototype']);
+export function PLAN_STAGES_OK(stage, skill) {
+  const sk = String(skill ?? '').trim().toLowerCase();
+  if (STILL_RUNS.has(sk)) return false;
+  const n = /^\D*?(\d+)/.exec(String(stage ?? '').trim());
+  if (n) return FROM_PLAN_STAGES.has(Number(n[1]));
+  return FROM_PLAN_SKILLS.has(sk);
+}
+
+// Does the section have a line that is not blank, an HTML comment, a placeholder or the frame of an empty table
+// (its header and separator rows)? Lines inside a code fence count as content; the fence markers do not.
 function bodyHasContent(lines) {
   if (!lines) return false;
-  const text = lines.join('\n').replace(/<!--[\s\S]*?-->/g, '');
-  return text.split('\n').some((l) => {
+  const text = lines.join('\n').replace(/<!--[\s\S]*?-->/g, '').split('\n');
+  return text.some((l, i) => {
+    if (FENCE_RE.test(l)) return false;
+    if (l.includes('|') && isSeparator(text[i + 1] ?? '')) return false; // a table's header row
+    if (isSeparator(l)) return false;
     const s = l.trim().replace(/^[-*]\s+/, '').trim();
     return s !== '' && !PLACEHOLDER.test(s) && !/^[-|:\s]+$/.test(s);
   });
 }
 
-export function planSectionHasBody(md, name) {
-  return bodyHasContent(section(md, norm(name)));
+const sectionBody = (md, key) => section(md, key, true);
+export const planSectionHasBody = (md, name) => bodyHasContent(sectionBody(md, norm(name)));
+
+// Evidence for a "done, from approved plan" row: `inferred:` followed by one or more `docs/plans/<file>.md#<Section>`
+// citations separated by `;`. Every citation must name a plan file that exists and a section with content.
+// `readPlan(path)` returns the file's text or null.
+export function planCitationsOk(ev, readPlan) {
+  if (!/^[`*_\s]*inferred:/i.test(ev)) return false;
+  const cites = [...ev.matchAll(/(docs\/plans\/[^\s`#|;]+\.md)#([^`|;]+)/g)];
+  if (!cites.length) return false;
+  return cites.every((m) => {
+    if (m[1].includes('..')) return false;
+    const md = readPlan(m[1]);
+    return md !== null && planSectionHasBody(md, m[2].trim());
+  });
 }
 
-// The newest .scratch/plan/*.md under root, or null.
+// The newest docs/plans/*.md under root, or null.
 function newestPlan(root) {
-  const dir = join(root, '.scratch', 'plan');
+  const dir = join(root, PLAN_DIR);
   if (!existsSync(dir)) return null;
   const files = readdirSync(dir).filter((f) => f.endsWith('.md'))
     .map((f) => ({ f: join(dir, f), t: statSync(join(dir, f)).mtimeMs }))
@@ -47,22 +83,30 @@ function newestPlan(root) {
   return files.length ? files[0].f : null;
 }
 
+// A relative file argument is tried from the current directory, then from the repo root.
+function resolvePlanFile(root, file) {
+  if (!file) return newestPlan(root);
+  if (isAbsolute(file)) return file;
+  const here = resolve(file);
+  return existsSync(here) ? here : join(root, file);
+}
+
 // -> { code, lines }. code 0 complete, 1 sections missing or deviation lines malformed, 2 no plan file.
 export function checkPlan(root, file) {
-  const path = file || newestPlan(root);
+  const path = resolvePlanFile(root, file);
   if (!path || !existsSync(path)) {
-    return { code: 2, lines: [`plan: no plan file (${file || '.scratch/plan/*.md'}); plan mode writes it there when plansDirectory is ".scratch/plan"`] };
+    return { code: 2, lines: [`plan: no plan file (${file || `${PLAN_DIR}/*.md`}); plan mode writes it there when plansDirectory is "${PLAN_DIR}"`] };
   }
   const md = readFileSync(path, 'utf8');
   const lines = [];
   const missing = [];
   for (const [key, label] of PLAN_SECTIONS) {
-    const sec = section(md, key);
+    const sec = sectionBody(md, key);
     if (!sec) { missing.push(label); lines.push(`plan red: missing section "${label}" (${path})`); }
     else if (!bodyHasContent(sec)) { missing.push(label); lines.push(`plan red: empty section "${label}" (${path})`); }
   }
   // Deviation lines live in "## Changes": `Changed: <what> because <why>`.
-  const changes = (section(md, 'changes') ?? []).join('\n').replace(/<!--[\s\S]*?-->/g, '').split('\n');
+  const changes = (sectionBody(md, 'changes') ?? []).join('\n').replace(/<!--[\s\S]*?-->/g, '').split('\n');
   const changed = changes.map((l) => CHANGED_RE.exec(l)).filter(Boolean).map((m) => m[1].trim());
   const noReason = changed.filter((c) => !/\sbecause\s+\S/i.test(c) || /^because\b/i.test(c));
   for (const c of noReason) lines.push(`plan red: Changed line without "because <reason>": ${JSON.stringify(c)} (${path})`);

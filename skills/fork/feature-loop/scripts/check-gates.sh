@@ -8,13 +8,14 @@
 #   check-gates.sh --phase merge      G1 to G6 and G8: what must hold before the merge
 #   check-gates.sh --phase close      every gate, G7 (the metrics line, written after the merge) included
 #   (a phase and gate IDs together check the gates that are in both)
-#   check-gates.sh --plan [FILE]      only the approved plan (default: the newest .scratch/plan/*.md): lists each missing or
+#   check-gates.sh --plan [FILE]      only the approved plan (default: the newest docs/plans/*.md): lists each missing or
 #                                     empty section and each Changed line without a reason; needs no gates.json
 #   check-gates.sh --timebox          only the time box: "demo_by" in gates.json against the newest passing live
 #                                     run; exit 1 when it is overdue (run it at every stage boundary)
 #
 # Prints one line per gate ("G2 green", "G2 red: <what is missing> (<file>)" or "G4 n/a: <why>"), then a summary.
 # Exit: 0 all green, 1 any red, 2 usage error or invalid .scratch/gates.json.
+# With --plan, one line per missing or empty plan section and a summary; exit 0 complete, 1 red, 2 no plan file or usage error.
 # Without .scratch/gates.json the feature loop is not running: it says so and exits 0; so it does for a loop whose
 # gates.json says "status": "closed". Run from a linked git worktree, the run file is the main worktree's, and the
 # code checked (G6, the last commit time) is the worktree's.
@@ -24,7 +25,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=loop-root.sh
 . "$here/loop-root.sh"
 
-usage() { sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 gates=()
 phase=""
@@ -42,7 +43,7 @@ while [ "$#" -gt 0 ]; do
       plan=1; shift
       case "${1:-}" in ""|-*|[Gg][1-8]) ;; *) planfile="$1"; shift ;; esac ;;
     [Gg][1-8]) gates+=("G${1:1}"); shift ;;
-    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G8, --phase build|merge|close, or --timebox)" >&2; usage >&2; exit 2 ;;
+    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G8, --phase build|merge|close, --timebox, or --plan [FILE])" >&2; usage >&2; exit 2 ;;
   esac
 done
 
