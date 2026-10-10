@@ -76,7 +76,9 @@ corpus_from_staged() {
 # hook and the merge gate cannot disagree about a review file. A location may carry a leading ./ in the review file.
 filter_justified() {
   [ -f "$1" ] || { cat; return 0; }
-  awk -F "$TAB" -v jf="$1" '
+  # The path goes in through ENVIRON, not -v: -v expands backslash escapes, so a Windows path (C:\Users\...)
+  # would lose its backslashes, the review file would read as empty, and nothing would count as justified.
+  JF="$1" awk -F "$TAB" '
     function has_loc(line, loc,   from, pos, before, after, bdot) {
       from = 1
       while ((pos = index(substr(line, from), loc)) > 0) {
@@ -100,6 +102,7 @@ filter_justified() {
       return r ~ /[A-Za-z][A-Za-z][A-Za-z]/
     }
     BEGIN {
+      jf = ENVIRON["JF"]
       n = 0; insec = 0; level = 0; fence = 0
       while ((getline l < jf) > 0) {
         if (l ~ /^ ? ? ?(```|~~~)/) { fence = !fence; continue }

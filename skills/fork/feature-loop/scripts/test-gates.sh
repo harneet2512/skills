@@ -726,6 +726,15 @@ parity_case "a deeper heading level is the same section" allow $'# Review\n\n###
 parity_case "a heading with a colon is the same section" allow $'## Justified:\n\n- src/slop.js:2 CRAFT-06.todo: tracked as issue #42\n- src/slop.js:3 CRAFT-06.debug-output: prints on purpose\n'
 parity_case "a location inside a longer path does not count" block $'## Justified\n\n- other/src/slop.js:2 CRAFT-06.todo: not this file\n- other/src/slop.js:3 CRAFT-06.debug-output: not this file\n'
 parity_case "an empty review file justifies nothing" block ''
+# A review path with backslashes (a Windows path such as C:\Users\...) must be read as written: the justified
+# file reaches awk through ENVIRON, because -v would turn \U, \L and \D into escapes and read nothing.
+printf '%s' $'## Justified\n\n- src/slop.js:2 CRAFT-06.todo: tracked as issue #42\n- src/slop.js:3 CRAFT-06.debug-output: the CLI prints on purpose\n' > "$par/.scratch/review/$SLUG.md"
+if command -v cygpath >/dev/null 2>&1; then bsl="$(cygpath -w "$par/.scratch/review/$SLUG.md")"
+else mkdir -p "$par/.scratch/re\Uview"; cp "$par/.scratch/review/$SLUG.md" "$par/.scratch/re\Uview/$SLUG.md"; bsl="$par/.scratch/re\Uview/$SLUG.md"; fi
+left="$(cd "$par" && bash "$here/../../concern-topics/scripts/slop-check.sh" --staged --justified "$bsl" 2>/dev/null)"
+total=$((total + 1))
+if [ -z "$left" ]; then echo "ok   justified file read from a path with backslashes"
+else echo "FAIL justified file read from a path with backslashes: still reported: $left"; fail=1; fi
 rm -f "$par/.scratch/review/$SLUG.md"
 (cd "$par" && "$check" G6 >/dev/null 2>&1); g=$?; c="$(hook_code "$par" "git commit -m x")"
 pass_if "parity: a missing review file blocks both" test "$g/$c" = "1/2"
