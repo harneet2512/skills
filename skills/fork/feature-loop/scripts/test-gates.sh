@@ -910,6 +910,11 @@ mkdir -p "$d/src/deep"; put "$d" plan-complete.md docs/plans/reply-options.md
 expect "--plan: a relative file resolves from the repo root when run from a subdirectory" "$d/src/deep" 0 "plan: complete" - --plan docs/plans/reply-options.md
 expect "--plan: a run from a subdirectory finds the newest plan" "$d/src/deep" 0 "plan: complete" - --plan
 cp "$here/../../plan-first/plan-template.md" "$d/docs/plans/reply-options.md"
+d2=$(new_repo plan-slug); gates_json "$d2" normal
+put "$d2" plan-complete.md "docs/plans/$SLUG.md"; put "$d2" plan-missing.md docs/plans/zz-newer.md; newer "$d2" docs/plans/zz-newer.md
+expect "--plan: picks the plan named for the loop's slug over a newer file" "$d2" 0 "plan: complete" - --plan
+rm "$d2/.scratch/gates.json"
+expect "--plan: without a loop it falls back to the newest plan" "$d2" 1 "plan red" - --plan
 expect "--plan with gate IDs is a usage error" "$d" 2 "--plan checks only the approved plan" - --plan G1
 expect "--plan with --phase is a usage error" "$d" 2 "--plan checks only the approved plan" - --plan --phase build
 

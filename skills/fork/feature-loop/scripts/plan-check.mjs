@@ -73,10 +73,18 @@ export function planCitationsOk(ev, readPlan) {
   });
 }
 
-// The newest docs/plans/*.md under root, or null.
+// The slug of the active loop (.scratch/gates.json), or ''.
+function loopSlug(root) {
+  try { return String(JSON.parse(readFileSync(join(root, '.scratch', 'gates.json'), 'utf8'))?.slug ?? ''); } catch { return ''; }
+}
+
+// The plan for the loop's slug (docs/plans/<slug>.md) when there is one, else the newest docs/plans/*.md under root,
+// or null. Claude Code names plan files itself, so the slug match is a convenience, not a requirement.
 function newestPlan(root) {
   const dir = join(root, PLAN_DIR);
   if (!existsSync(dir)) return null;
+  const slug = loopSlug(root);
+  if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug) && !slug.includes('..') && existsSync(join(dir, `${slug}.md`))) return join(dir, `${slug}.md`);
   const files = readdirSync(dir).filter((f) => f.endsWith('.md'))
     .map((f) => ({ f: join(dir, f), t: statSync(join(dir, f)).mtimeMs }))
     .sort((a, b) => b.t - a.t);

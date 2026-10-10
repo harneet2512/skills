@@ -120,11 +120,11 @@ default_base() {
   return 1
 }
 
-# The envelope itself lives in .scratch/; scanning it would select packs from its own words.
+# The envelope lives in .scratch/ and the tracked plan in docs/plans/; scanning either would select packs from its own words.
 corpus_from_git() {
   local base="$1"
-  git diff --unified=0 --no-color "$base" -- . ':(exclude).scratch' | corpus_from_diff
-  git ls-files --others --exclude-standard -- . ':(exclude).scratch' | while IFS= read -r f; do corpus_from_paths "$f"; done
+  git diff --unified=0 --no-color "$base" -- . ':(exclude).scratch' ':(exclude)docs/plans' | corpus_from_diff
+  git ls-files --others --exclude-standard -- . ':(exclude).scratch' ':(exclude)docs/plans' | while IFS= read -r f; do corpus_from_paths "$f"; done
 }
 
 # Packs that come with another: a change that moves money stores it, a received event arrives at an endpoint.
