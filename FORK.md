@@ -241,9 +241,7 @@ The topic files follow the structure of Trail of Bits' `sharp-edges` skill (CC B
 
 **Why:** every reviewer in the loop is Claude, so the author and the reviewers share blind spots. HAR-161 adds Codex as an independent, read-only reviewer at two points: the plan (Gate A) and the full diff before the PR (Gate B).
 
-**Decision:** [ADR 0003](./.agents/adr/0003-codex-review-gates-in-feature-loop.md). It extends `feature-loop` instead of adding a second orchestrator: two new receipt gates, G9 (plan review) and G10 (diff review), checked by `check-gates.mjs` and enforced by the existing PR-create and merge hooks. Only test-backed findings block. The ADR also maps every HAR-161 requirement to the ticket that delivers it (HAR-163 to HAR-167).
-
-No skill or script changes yet: this section grows as each ticket lands.
+**Decision:** [ADR 0003](./.agents/adr/0003-codex-review-gates-in-feature-loop.md), which also maps each HAR-161 requirement to the ticket that delivers it. No skill or script changes yet: this section grows as each ticket lands.
 
 ## Install
 
