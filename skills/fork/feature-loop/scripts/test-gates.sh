@@ -102,7 +102,8 @@ expect "no gates.json: not running" "$d" 0 "gates: not running the feature loop 
 d=$(new_repo small)
 gates_json "$d" small
 put "$d" envelope.md ".scratch/envelope/$SLUG.md"
-expect "small: all green" "$d" 0 "gates: green for reply-options (size small): 2 green, 0 red, 6 n/a" 0
+put_live "$d" report-pass.json
+expect "small: all green" "$d" 0 "gates: green for reply-options (size small): 3 green, 0 red, 5 n/a" 0
 expect "small: G1 is n/a" "$d" 0 "G1 n/a: applies to normal and large only, size is small" 0
 
 d=$(new_repo normal); green_normal "$d"
@@ -149,7 +150,7 @@ d=$(new_repo g2-empty-large); green_normal "$d" large; empty_live "$d"
 expect "G2 red: empty Live table on a large change" "$d" 1 "G2 red: Live table empty on a normal or large change" 1
 
 d=$(new_repo g2-empty-small); gates_json "$d" small; mkdir -p "$d/.scratch/envelope"; empty_live "$d"
-expect "G2 green: empty Live table on a small change" "$d" 0 "G2 green" 0
+expect "G2 green: empty Live table on a small change" "$d" 0 "G2 green" 0 G2
 
 d=$(new_repo g3-none); green_normal "$d"; rm -r "$d/.scratch/live"
 expect "G3 red: no live run" "$d" 1 "G3 red: no live run (.scratch/live/<run>/report.json)" 1
@@ -178,7 +179,7 @@ older "$d" ".scratch/evals/$SLUG/results.json"
 expect "G4 red: eval results older than the last commit" "$d" 1 "G4 red: eval results are older than the last commit" 1
 
 d=$(new_repo g4-small); gates_json "$d" small; put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"
-expect "G4 applies to small work with the llm pack" "$d" 1 "G4 red: eval results missing" 1
+expect "G4 applies to small work with the llm pack" "$d" 1 "G4 red: eval results missing" 1 G4
 
 d=$(new_repo g5); green_normal "$d"; put "$d" review-open-high.md ".scratch/review/$SLUG.md"
 expect "G5 red: open CONFIRMED HIGH finding" "$d" 1 "G5 red: open CONFIRMED finding: F1 HIGH (.scratch/review/reply-options.md)" 1
@@ -269,6 +270,110 @@ d=$(new_repo bad-slug); mkdir -p "$d/.scratch"; printf '{ "slug": "../etc", "siz
 expect "invalid gates.json: slug with a path" "$d" 2 '"slug" must be a plain name' 0
 d=$(new_repo bad-json); mkdir -p "$d/.scratch"; printf '{ nope' > "$d/.scratch/gates.json"
 expect "invalid gates.json: not JSON" "$d" 2 "invalid .scratch/gates.json" 0
+
+# ---- G3 at every size, the live waiver and the optional run-file fields (fork.6)
+
+# gates_json_with <dir> <size> <extra JSON members, for example '"evals": "smoke"'>
+gates_json_with() { mkdir -p "$1/.scratch"; printf '{ "slug": "%s", "size": "%s", "base": "main", %s }\n' "$SLUG" "$2" "$3" > "$1/.scratch/gates.json"; }
+
+d=$(new_repo g3-small-none); gates_json "$d" small; put "$d" envelope.md ".scratch/envelope/$SLUG.md"
+expect "G3 applies to small work: no live run is red" "$d" 1 "G3 red: no live run" 1 G3
+expect "small merge phase includes G3" "$d" 1 "G3 red: no live run" 1 --phase merge
+put_live "$d" report-missing-case.json
+expect "G3 small: happy path only, no journey coverage needed" "$d" 0 "G3 green" 0 G3
+put_live "$d" report-fail.json run2
+expect "G3 small: a failing scenario is still red" "$d" 1 "1 scenario not passing" 1 G3
+d=$(new_repo g3-small-stale); gates_json "$d" small; put "$d" report-pass.json .scratch/live/run1/report.json; older "$d" .scratch/live/run1/report.json
+expect "G3 small: a live run older than the last commit is red" "$d" 1 "older than the last commit" 1 G3
+d=$(new_repo g3-normal-cov); green_normal "$d"; put_live "$d" report-missing-case.json
+expect "G3 normal: journey coverage still required" "$d" 1 "journey cases in no scenario" 1 G3
+
+d=$(new_repo waiver-small); gates_json_with "$d" small '"live": "none: docs-only change, nothing runs"'
+expect "live waiver on small work: G3 n/a with the reason" "$d" 0 "G3 n/a: live run waived in .scratch/gates.json: docs-only change, nothing runs" 0 G3
+d=$(new_repo waiver-normal); gates_json_with "$d" normal '"live": "none: too slow"'
+expect "live waiver refused on normal work" "$d" 2 '"live": "none: ..." is only allowed on small work' 0
+d=$(new_repo waiver-large); gates_json_with "$d" large '"live": "none: too slow"'
+expect "live waiver refused on large work" "$d" 2 'only allowed on small work' 0
+d=$(new_repo waiver-noreason); gates_json_with "$d" small '"live": "none:"'
+expect "live waiver needs a reason" "$d" 2 '"live" must be "none: <reason>"' 0
+d=$(new_repo waiver-word); gates_json_with "$d" small '"live": "skip"'
+expect "live waiver must start with none:" "$d" 2 '"live" must be "none: <reason>"' 0
+d=$(new_repo waiver-type); gates_json_with "$d" small '"live": false'
+expect "live waiver must be a string" "$d" 2 '"live" must be "none: <reason>"' 0
+
+d=$(new_repo evals-smoke); gates_json_with "$d" small '"evals": "smoke", "max_builders": 3'
+put "$d" envelope.md ".scratch/envelope/$SLUG.md"
+expect "evals smoke and max_builders 3 are valid" "$d" 0 "G2 green" 0 G2
+d=$(new_repo evals-full); gates_json_with "$d" small '"evals": "full"'
+put "$d" envelope.md ".scratch/envelope/$SLUG.md"
+expect "evals full is valid" "$d" 0 "G2 green" 0 G2
+d=$(new_repo evals-bad); gates_json_with "$d" small '"evals": "some"'
+expect "evals must be smoke or full" "$d" 2 '"evals" must be smoke or full' 0
+for mb in 0 9 2.5 '"3"'; do
+  d=$(new_repo "mb-bad-$RANDOM"); gates_json_with "$d" small "\"max_builders\": $mb"
+  expect "max_builders $mb is refused" "$d" 2 '"max_builders" must be a whole number from 1 to 8' 0
+done
+
+for bad in '"tomorrow"' '"2026-10-12"' '"2026-10-12T17:00:00"' '"2026-13-12T17:00:00Z"' '"2026-02-30T10:00:00Z"' '"2026-10-12T24:00:00Z"' '"2026-10-12T17:00:00+15:00"' 5; do
+  d=$(new_repo "demo-bad-$RANDOM"); gates_json_with "$d" small "\"demo_by\": $bad"
+  expect "demo_by $bad is refused" "$d" 2 '"demo_by" must be an ISO 8601 time with a zone' 0
+done
+
+d=$(new_repo started-bad); gates_json_with "$d" small '"started": "2026-02-29T10:00:00Z"'
+expect "started is validated like demo_by (2026 has no February 29)" "$d" 2 '"started" must be an ISO 8601 time with a zone' 0
+d=$(new_repo started-ok); gates_json_with "$d" small '"started": "2028-02-29T10:00:00Z"'; put "$d" envelope.md ".scratch/envelope/$SLUG.md"
+expect "a real leap day is accepted" "$d" 0 "G2 green" 0 G2
+d=$(new_repo unknown-key); gates_json_with "$d" small '"demoBy": "2026-10-12T17:00:00Z", "Live": "none: x"'
+expect "a misspelt field is refused, not ignored" "$d" 2 'unknown fields "demoBy", "Live"' 0
+d=$(new_repo known-keys); gates_json_with "$d" small '"merge_check": "true", "evals": "smoke", "max_builders": 2, "started": "2026-10-12T09:00:00-04:00", "demo_by": "2026-10-12T17:00:00-04:00", "live": "none: docs"'
+put "$d" envelope.md ".scratch/envelope/$SLUG.md"
+expect "every known field together is accepted" "$d" 0 "G3 n/a: live run waived" 0 G3
+
+# ---- check-gates.sh --timebox
+
+# tb_case <name> <dir> <exit> <needle> [VAR=value...]
+tb_case() {
+  local name="$1" dir="$2" want="$3" needle="$4"; shift 4
+  local out code bad="" envs=() extra=()
+  for a in "$@"; do case "$a" in *=*) envs+=("$a") ;; *) extra+=("$a") ;; esac; done
+  out="$(cd "$dir" && env ${envs[@]+"${envs[@]}"} "$check" --timebox ${extra[@]+"${extra[@]}"} 2>&1)"; code=$?
+  [ "$code" = "$want" ] || bad="exit $code, want $want"
+  printf '%s\n' "$out" | grep -qF -- "$needle" || bad="${bad:+$bad; }missing: $needle"
+  total=$((total + 1))
+  if [ -z "$bad" ]; then echo "ok   timebox: $name"; else echo "FAIL timebox: $name: $bad"; printf '%s\n' "$out" | sed 's/^/       | /'; fail=1; fi
+}
+DUE='2026-10-12T17:00:00-04:00'
+d=$(new_repo tb-none); gates_json "$d" small
+tb_case "no demo_by: nothing to enforce" "$d" 0 'time box: none'
+d=$(new_repo tb-run); gates_json_with "$d" small "\"started\": \"2020-01-01T00:00:00Z\", \"demo_by\": \"$DUE\""
+tb_case "before the deadline with no live run: running, with minutes left" "$d" 0 'time box: 60 min left' FEATURE_LOOP_NOW=2026-10-12T16:00:00-04:00
+tb_case "past the deadline with no live run: overdue, exit 1" "$d" 1 'time box: OVERDUE by 30 min' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
+tb_case "overdue says what to do" "$d" 1 'Stop starting review, eval or hardening work' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
+put_live "$d" report-fail.json
+tb_case "a failing live run does not meet the time box" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
+put_live "$d" report-pass.json run2
+tb_case "a passing live run meets the time box, even late" "$d" 0 'time box: met, a passing live run is recorded (.scratch/live/run2/report.json)' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+printf '{ "runId": "e", "scenarios": [] }\n' > "$d/.scratch/live/run2/report.json"; touch -d "@$(( $(date +%s) + 60 ))" "$d/.scratch/live/run2/report.json"
+tb_case "a newest live run with no scenarios does not meet the time box" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+
+d=$(new_repo tb-before-start); gates_json_with "$d" small "\"started\": \"2099-01-01T00:00:00Z\", \"demo_by\": \"$DUE\""; put_live "$d" report-pass.json
+tb_case "a passing run from before the loop started does not count" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+d=$(new_repo tb-mtime); gates_json_with "$d" small "\"demo_by\": \"$DUE\""
+put "$d" report-pass.json .scratch/live/old/report.json; touch -d "@$(( $(date +%s) - 3600 ))" "$d/.scratch/live/old/report.json"
+tb_case "without started, a run older than gates.json does not count" "$d" 1 'OVERDUE' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+put "$d" report-pass.json .scratch/live/new/report.json; touch -d "@$(( $(date +%s) + 60 ))" "$d/.scratch/live/new/report.json"
+tb_case "without started, a run newer than gates.json counts" "$d" 0 'time box: met' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+d=$(new_repo tb-waived); gates_json_with "$d" small "\"live\": \"none: docs only\", \"demo_by\": \"$DUE\""
+tb_case "a waived live run has no time box" "$d" 0 'time box: n/a, the live run is waived in .scratch/gates.json (docs only)' FEATURE_LOOP_NOW=2026-10-12T19:00:00-04:00
+tb_case "--timebox refuses gate IDs" "$d" 2 '--timebox checks only the time box' G3
+tb_case "--timebox refuses a phase" "$d" 2 '--timebox checks only the time box' --phase merge
+
+d=$(new_repo tb-zone); gates_json_with "$d" small '"demo_by": "2026-10-12T21:00:00Z"'
+tb_case "zones compare as instants" "$d" 1 'OVERDUE by 30 min' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
+d=$(new_repo tb-closed); mkdir -p "$d/.scratch"; printf '{ "slug": "%s", "size": "small", "base": "main", "status": "closed", "demo_by": "2020-01-01T00:00:00Z" }\n' "$SLUG" > "$d/.scratch/gates.json"
+tb_case "a closed loop has no time box" "$d" 0 'loop closed'
+d=$(new_repo tb-noloop)
+tb_case "no loop: nothing to check" "$d" 0 'not running the feature loop'
 
 # ---- gate-hook.sh
 
@@ -373,6 +478,12 @@ mrepo=$(new_repo merge-green); green_normal "$mrepo"
 sha=$(git -C "$mrepo" rev-parse HEAD); short=${sha:0:9}
 mlog="$work/gh.log"
 
+srepo_m=$(new_repo merge-small-nolive); gates_json "$srepo_m" small; put "$srepo_m" envelope.md ".scratch/envelope/$SLUG.md"
+ssha=$(git -C "$srepo_m" rev-parse HEAD)
+hook_case "merge of small work with no live run is blocked by G3" "$srepo_m" "gh pr merge 5 --match-head-commit $ssha" 2 "G3 red: no live run" "${gh_env[@]}" "FAKE_GH_HEAD=$ssha" FAKE_GH_REQUIRED=0
+put_live "$srepo_m" report-pass.json
+hook_case "merge of small work with a passing live run is allowed" "$srepo_m" "gh pr merge 5 --match-head-commit $ssha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$ssha" FAKE_GH_REQUIRED=0
+
 hook_case "merge without --match-head-commit blocked" "$mrepo" "gh pr merge 5 --squash" 2 "merge exactly the head you checked: --match-head-commit <sha>" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
 hook_case "merge with sha, green gates and green CI allowed" "$mrepo" "gh pr merge 5 --squash --match-head-commit $sha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
 hook_case "merge with --match-head-commit=<sha> allowed" "$mrepo" "gh pr merge 5 --match-head-commit=$sha --squash" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
@@ -475,6 +586,14 @@ event_case "no loop-status.md yet" session-start-hook.sh "$(start_payload "$trep
 event_case "no gates.json: prints nothing" session-start-hook.sh "$(start_payload "$plain_repo")" 0 out @empty
 bad_repo=$(new_repo start-bad); mkdir -p "$bad_repo/.scratch"; printf '{ nope' > "$bad_repo/.scratch/gates.json"
 event_case "invalid gates.json never fails the session" session-start-hook.sh "$(start_payload "$bad_repo")" 0 out @empty
+tbs=$(new_repo start-timebox); gates_json_with "$tbs" small '"demo_by": "2026-10-12T17:00:00-04:00"'; put "$tbs" loop-status.md .scratch/loop-status.md
+event_case "summary carries the time box when demo_by is set" session-start-hook.sh "$(start_payload "$tbs")" 0 out 'time box: OVERDUE by 30 min' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
+event_case "time box before the deadline" session-start-hook.sh "$(start_payload "$tbs")" 0 out 'time box: 60 min left' FEATURE_LOOP_NOW=2026-10-12T16:00:00-04:00
+rm "$tbs/.scratch/loop-status.md"
+event_case "time box shows with no loop-status.md yet" session-start-hook.sh "$(start_payload "$tbs")" 0 out 'time box: OVERDUE' FEATURE_LOOP_NOW=2026-10-12T17:30:00-04:00
+pass_if "no demo_by: no time box line" test -z "$(printf '%s' "$(start_payload "$trepo")" | bash "$here/session-start-hook.sh" | grep -F 'time box')"
+tbb=$(new_repo start-timebox-bad); gates_json_with "$tbb" small '"demo_by": "soon"'
+event_case "invalid demo_by never fails the session" session-start-hook.sh "$(start_payload "$tbb")" 0 out 'feature-loop is running for "reply-options"' 
 event_case "garbage input never fails the session" session-start-hook.sh "not json" 0 out @empty "CLAUDE_PROJECT_DIR=$outside"
 
 

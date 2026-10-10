@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds nine skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.5`
+- **Fork version:** `1.3.1-fork.6`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -18,8 +18,8 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.5`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.5` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.6`; `repository` this fork; the nine fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.6` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -242,6 +242,40 @@ The topic files follow the structure of Trail of Bits' `sharp-edges` skill (CC B
 **Why:** every reviewer in the loop is Claude, so the author and the reviewers share blind spots. HAR-161 adds Codex as an independent, read-only reviewer at two points: the plan (Gate A) and the full diff before the PR (Gate B).
 
 **Decision:** [ADR 0003](./.agents/adr/0003-codex-review-gates-in-feature-loop.md), which also maps each HAR-161 requirement to the ticket that delivers it. No skill or script changes yet: this section grows as each ticket lands.
+
+## 7. Quality and speed together (fork.6)
+
+**Why:** the first full run of the loop (HAR-150, 2026-10-09 and 10, on a private project) built and reviewed every slice carefully, but the product had still not run end to end after about 22 hours. The session log showed where the time went:
+- The live run was the last stage, and `wp-loop`'s small path skipped it.
+- Review rounds stacked on unrun code: slice review, fix, re-review, then eight attackers.
+- An AI feature was sized Large by category, which turned on every stage.
+- A full eval suite with judge calibration was gated before a working demo.
+- A missing sandbox key surfaced about 9 hours late.
+- Up to nine agents ran at once on one laptop, slowing the full suite that ran on every merge.
+
+The reviews were not wasted (they found real defects), but they came in the wrong order.
+
+**Principle:** run the product early and keep it running; scale depth with risk; keep both adversarial reviews (the plan and the code), bounded.
+
+| Change | Where | Rule it enforces |
+|---|---|---|
+| Size by risk, not by category | `feature-loop` "Size it first" | An AI feature is not Large by itself; Large means an irreversible effect, money, tenancy, auth, a new subsystem, or an AI that acts with no person in between |
+| Speed rules | `feature-loop` new section | time box, skeleton first, report the first live run, at most `max_builders` builders, review budget (one design-challenge round, `code-review` per slice, `adversarial-review` once, one fix round, MEDIUM and LOW filed), targeted tests per slice and the full suite once |
+| External dependencies first | `feature-loop` stage 0 | every key, sandbox and account the live run needs is checked by name on day one, missing ones requested in one message, each with a named stand-in |
+| Walking skeleton | `feature-loop` stages 3 and 4 | ticket 1 is the thinnest end-to-end path with one passing happy-path scenario; nothing else is built until it passes; every slice merges with it still passing |
+| Design challenge kept, scoped | `feature-loop` stage 2 | runs for Large and for any size with a Critical Live item; one round; also lists what to cut |
+| Attack after the live run | `feature-loop` stage 6, `adversarial-review` | needs G3 green; runs once per feature; at most four reviewers at once and never during a full suite run; one fix round, then the user decides |
+| G3 at every size | `check-gates.mjs`, `gates.md`, `wp-loop` step 6b | small work proves its happy path live (no journey coverage); normal and large unchanged; only small may waive it, with `"live": "none: <reason>"` |
+| Happy-path mode | `live-verify` | one scenario, one instance, stand-ins for the systems on the path; used for the skeleton, after each slice and for small work |
+| Eval tiers | `evals` "Tiers", `gates.json` `"evals"` | `smoke` by default (10 to 20 cases, code graders first, at most one rough judge, gates the current code can evaluate); `full` when asked |
+| Time box | `gates.json` `"started"` and `"demo_by"`, `scripts/timebox.mjs`, `check-gates.sh --timebox`, SessionStart summary | once the deadline passes without a passing live run from this loop (newer than `started`), the loop stops starting review, eval or hardening work; a waived live run has no time box |
+| Strict run-file fields | `check-gates.mjs` | `started`, `demo_by`, `evals`, `max_builders` and `live` are validated, impossible dates are refused, and an unknown field name is refused; each is exit 2, never a rule silently off |
+| One fix round | `wp-loop` step 11 | a fix that fails re-verification goes to the user, not into another round |
+| Live rerun after new commits | `wp-loop` step 11, `merge-gate.md` step 1, `feature-loop` stage 6 | fix commits and the default-branch merge are followed by a `live-verify` run, because G3 needs a run newer than the last commit |
+
+**Tests:** `test-gates.sh` grows from 264 to 318 cases: G3 at small size (missing, stale, failing, happy path without coverage) and the merge hook refusing small work with no live run, the waiver and its refusals, every new field's validation (impossible dates, leap days, unknown names), the time box (none, running, overdue, met, waived, zones, a run from before the loop, an empty run, closed loop, argument misuse) and the SessionStart line. Five deliberate breakages of the new rules each turned the suite red.
+
+**Reviewed:** a fresh-context reviewer on the strongest model read the first version. Its two HIGH findings (an old run from another feature met the time box; a waived live run was always overdue) and its MEDIUM ones (misspelt fields ignored, impossible dates accepted, a design challenge for small work that has no contract, no live rerun after fix commits) are fixed above, each with a test where it is code.
 
 ## Install
 

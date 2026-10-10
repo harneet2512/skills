@@ -6,7 +6,7 @@ How they fit: `feature-loop` runs a feature through `shape`, `deep-engineering` 
 
 ## User-invoked
 
-- **[feature-loop](./feature-loop/SKILL.md)**: Take one feature from request to shipped: shape, design from concerns, plan, build, prove (tests, evals, live verification), attack, staged ship, learn.
+- **[feature-loop](./feature-loop/SKILL.md)**: Take one feature from request to shipped, quality and speed together: shape, design from concerns with an adversarial plan review, plan, a walking skeleton proven live first, build, prove (tests, evals, live verification), attack, staged ship, learn, with an optional time box.
 
 ## Model-invoked
 

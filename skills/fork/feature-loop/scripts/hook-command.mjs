@@ -24,6 +24,17 @@
 //       base branch
 // Input that is not a JSON object exits 3 with a message on stderr.
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+// On Windows the command runs in Git Bash, so its paths are POSIX (/c/repo, /tmp/x); node would resolve them
+// against the current drive and check a directory that does not exist. Map them to native paths first.
+function nativePath(p) {
+  if (process.platform !== 'win32' || !p.startsWith('/') || p.startsWith('//')) return p;
+  const drive = /^\/([a-zA-Z])(\/|$)/.exec(p);
+  if (drive) return `${drive[1]}:/${p.slice(3)}`;
+  const r = spawnSync('cygpath', ['-m', p], { encoding: 'utf8' });
+  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : p;
+}
 
 let raw = '';
 for await (const chunk of process.stdin) raw += chunk;
@@ -42,7 +53,7 @@ try {
 if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) unjudgeable('is not a JSON object');
 const input = parsed;
 
-const startDir = (typeof input.cwd === 'string' && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const startDir = nativePath((typeof input.cwd === 'string' && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const command = input?.tool_name === 'Bash' && typeof input?.tool_input?.command === 'string' ? input.tool_input.command : '';
 
 // Shell-ish lexer: segments split on unquoted ; & | newline ( ) ` and $( ; tokens split on unquoted whitespace.
@@ -107,7 +118,7 @@ function gitCall(args, dir) {
   let i = 0, d = dir;
   while (i < args.length && args[i].startsWith('-')) {
     const a = args[i];
-    if (a === '-C' && i + 1 < args.length) d = resolve(d, args[i + 1]);
+    if (a === '-C' && i + 1 < args.length) d = resolve(d, nativePath(args[i + 1]));
     i += GIT_OPTS_WITH_ARG.has(a) ? 2 : 1;
   }
   return { sub: args[i], rest: args.slice(i + 1), dir: d };
@@ -243,7 +254,7 @@ function analyze(cmd, dir, depth) {
     const args = seg.slice(i + 1);
     if (name === '') { for (const [k, v] of Object.entries(local)) setVar(k, v); continue; }
     if (name === 'export') { for (const a of args) { const m = ASSIGN.exec(a); if (m) setVar(m[1], m[2]); } continue; }
-    if (name === 'cd') { if (args[0] && args[0] !== '-' && !args[0].startsWith('$')) dir = resolve(dir, args[0]); continue; }
+    if (name === 'cd') { if (args[0] && args[0] !== '-' && !args[0].startsWith('$')) dir = resolve(dir, nativePath(args[0])); continue; }
     if ((SHELLS.has(name) || name === 'eval') && depth < 3) {
       const ci = name === 'eval' ? 0 : args.findIndex((a) => /^-[a-z]*c[a-z]*$/.test(a));
       const inner = name === 'eval' ? args.join(' ') : ci >= 0 ? args[ci + 1] : undefined;
