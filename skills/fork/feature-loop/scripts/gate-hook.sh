@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code PreToolUse hook (matcher: Bash), registered in the plugin's hooks/hooks.json. It gates four moments,
+# Claude Code PreToolUse hook (matcher: ^(Bash|PowerShell|mcp__.*)$), registered in the plugin's hooks/hooks.json. It gates four moments,
 # each only where a feature loop is active: .scratch/gates.json in the project (or in the main worktree of the
 # repository, when the command runs in a linked builder worktree) without "status": "closed". Work that is not
 # running the feature loop is never blocked.
@@ -17,6 +17,13 @@
 #               check-gates.sh --phase merge green (G1 to G6, G8) and green CI on exactly that sha. CI is `gh pr
 #               checks` plus the PR head equal to the sha, or the "merge_check" command in .scratch/gates.json
 #               ({sha} and {pr} are filled in). G7, the metrics line, is the close gate and is not asked here.
+#
+# Other tools meet the same gates. A PowerShell call that ships (git push, gh pr create/new/ready/merge, a gh api write
+# to pulls, merges, contents or git/refs, a create, merge, ready or auto-merge mutation) is refused outright while a
+# loop is active, with a pointer to the Bash tool, where the classifier above applies. MCP tools are judged by the name
+# after the last `__`: create_pull_request is a PR creation, merge_pull_request a merge, push_files,
+# create_or_update_file, delete_file and update_pull_request_branch a push (the first three also refuse the base
+# branch); any other MCP tool passes. hook-command.mjs does the reading.
 #
 # A red gate blocks the command: exit 2 with the reasons on stderr, which Claude Code shows to the model.
 # It fails closed: when a loop is active and node is missing, hook-command.mjs fails, the hook input is not JSON,
@@ -36,8 +43,8 @@ slop="$here/../../concern-topics/scripts/slop-check.sh"
 . "$here/loop-root.sh"
 input="$(cat)"
 
-# Fast path: most Bash calls cannot ship, commit or merge, so do not start node for them.
-printf '%s' "$input" | grep -qE 'push|pulls|PullRequest|graphql|commit|merge|(^|[^[:alnum:]_])pr([^[:alnum:]_]|$)' || exit 0
+# Fast path: most tool calls cannot ship, commit or merge, so do not start node for them.
+printf '%s' "$input" | grep -qiE 'push|pulls|pull_request|PullRequest|graphql|commit|merge|_file|refs|contents|(^|[^[:alnum:]_])pr([^[:alnum:]_]|$)' || exit 0
 
 # ---- the loop at the session's directory, found without node
 
@@ -305,6 +312,20 @@ gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
   } >&2
 }
 
+# ---- PowerShell
+
+# gate_powershell <root> <flag> <reason>: a shipping PowerShell command is not classified a second time, it is refused.
+gate_powershell() {
+  local root="$1" flag="$2" why="$3"
+  bypass "$root" "$flag" "$why" PowerShell && return 0
+  blocked=1
+  {
+    echo "feature-loop gate: this PowerShell command ships code (push, PR create, ready or merge) while the feature loop is active, so it was blocked (repo: $root)."
+    echo "Fix: use the Bash tool for this command, where the push, PR and merge gates are checked, instead of the PowerShell tool."
+    bypass_hint "$flag"
+  } >&2
+}
+
 # ---- dispatch
 
 if [ "${match:-0}" = 1 ]; then
@@ -324,6 +345,7 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
     pushref)
       [ "$f1" = - ] && f1=""
       gate_push_base "$root" "$adir" "$aflag" "$areason" "$f1" ;;
+    psship) gate_powershell "$root" "$aflag" "$areason" ;;
     commit)
       [ "$f2" = - ] && f2=""
       gate_commit "$root" "$adir" "$aflag" "$areason" "$f1" "$f2" ;;
