@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "codex-review findings",
+  "description": "What the reviewing model returns. Strict structured-output shape: every property required, no extras, null for absent values. The script adds kind, model, codex_version, subject_sha, base, started, finished and exit_code around it; it never writes a resolution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "findings"],
+  "properties": {
+    "summary": { "type": "string", "description": "Two or three sentences: what was attacked and the overall verdict." },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "status", "title", "where", "evidence", "repro"],
+        "properties": {
+          "id": { "type": "string", "description": "Unique within the report, for example F1." },
+          "severity": { "type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"] },
+          "status": { "type": "string", "enum": ["CONFIRMED", "PLAUSIBLE"] },
+          "title": { "type": "string" },
+          "where": { "type": "string", "description": "file:line, or plan section for a plan finding." },
+          "evidence": { "type": "string", "description": "file:line quotes or command output proving the finding; for a code finding, the failing test output." },
+          "repro": { "type": ["string", "null"], "description": "Code mode: repo-relative path of the repro test file, then the command that runs it. Null when there is none." }
+        }
+      }
+    }
+  }
+}
