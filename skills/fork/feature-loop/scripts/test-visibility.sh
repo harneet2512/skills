@@ -192,7 +192,7 @@ p="$(new_repo plan)"
 hook exit-plan "$(payload "$p" PostToolUse ExitPlanMode '{"plan":"x"}' '{}')"
 c="$(ctx_of)"
 check "hand-off: exit code 0" "$([ "$code" = 0 ] && echo 0 || echo 1)"
-for want in "Do NOT implement" "Commit the plan file" "codex-review" "plan mode" "CONFIRMED" "stop 2" "approve plan" "feature-loop"; do
+for want in "Do NOT implement" "Save the plan file" "Never commit it" "codex-review" "plan mode" "CONFIRMED" "stop 2" "approve plan" "wp-loop" "Never create"; do
   check "hand-off context says: $want" "$(has "$c" "$want" && echo 0 || echo 1)"
 done
 check "hand-off tells the owner" "$(has "$(msg_of)" 'handed off to codex plan review' && echo 0 || echo 1)" "$(msg_of)"

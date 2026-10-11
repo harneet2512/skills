@@ -101,7 +101,6 @@ The loop was run on a private project from 2026-10-02, using the upstream skills
 ### Files
 
 - `skills/fork/wp-loop/SKILL.md`: the loop
-- `skills/fork/wp-loop/merge-gate.md`: the merge gate and the degraded-CI procedure
 - `skills/fork/wp-loop/check-comment.md`: the results comment template
 - `skills/fork/wp-loop/review-checks.md`: extra checks for the reviewer
 - `skills/fork/wp-loop/agents/openai.yaml`: Codex metadata (model-invoked since fork.5)
@@ -228,7 +227,7 @@ The topic files follow the structure of Trail of Bits' `sharp-edges` skill (CC B
 |---|---|---|
 | `to-spec`, `to-tickets`, `retro`, `wp-loop` made model-invoked | frontmatter, `agents/openai.yaml`, READMEs | `feature-loop` stays the single user-invoked entry point; every skill it calls is reachable |
 | `feature-loop` rewritten | `skills/fork/feature-loop/SKILL.md` | Matt's main flow (`ask-matt`: understand, `to-spec`, `to-tickets`, build with `tdd` + `code-review`, `retro`) as the spine, with the fork's layer at each step. Adds roles, visibility, the evidence ledger, resume, and one PR per feature: tickets are slices on one integration branch, as Matt's `implement-spec` builds them, each reviewed before it merges. |
-| `wp-loop` | `SKILL.md`, `merge-gate.md` | used whole for small work, and for steps 12–13 on a feature's PR. A fuzzy term calls `grilling` + `domain-modeling` instead of stopping. `merge_check` for CI that is not GitHub checks. |
+| `wp-loop` | `SKILL.md` | used whole for small work, and for steps 12–13 on a feature's PR. A fuzzy term calls `grilling` + `domain-modeling` instead of stopping. `merge_check` for CI that is not GitHub checks. |
 | Hooks | `hooks/hooks.json`, `feature-loop/scripts/` | commit gate (`slop-check --staged`); merge gate (green gates + green CI on the exact head + `--match-head-commit`); Stop (no stage left `running`); SessionStart (prints the ledger) |
 | Gates G7 (floors) and G8 (ledger) | `check-gates.mjs`, `gates.md` | every escape raises a floor; no stage is done on an assumption |
 | Invocation lint | `scripts/check-invocation.mjs` | no skill can call a user-invoked skill again |
@@ -273,7 +272,7 @@ The reviews were not wasted (they found real defects), but they came in the wron
 | Time box | `gates.json` `"started"` and `"demo_by"`, `scripts/timebox.mjs`, `check-gates.sh --timebox`, SessionStart summary | once the deadline passes without a passing live run from this loop (newer than `started`), the loop stops starting review, eval or hardening work; a waived live run has no time box |
 | Strict run-file fields | `check-gates.mjs` | `started`, `demo_by`, `evals`, `max_builders` and `live` are validated, impossible dates are refused, and an unknown field name is refused; each is exit 2, never a rule silently off |
 | One fix round | `wp-loop` step 11 | a fix that fails re-verification goes to the user, not into another round |
-| Live rerun after new commits | `wp-loop` step 11, `merge-gate.md` step 1, `feature-loop` stage 6 | fix commits and the default-branch merge are followed by a `live-verify` run, because G3 needs a run newer than the last commit |
+| Live rerun after new commits | `wp-loop` step 10, `feature-loop` stage 6 | fix commits and the default-branch merge are followed by a `live-verify` run, because G3 needs a run newer than the last commit |
 
 **Tests:** `test-gates.sh` grows from 264 to 318 cases: G3 at small size (missing, stale, failing, happy path without coverage) and the merge hook refusing small work with no live run, the waiver and its refusals, every new field's validation (impossible dates, leap days, unknown names), the time box (none, running, overdue, met, waived, zones, a run from before the loop, an empty run, closed loop, argument misuse) and the SessionStart line. Five deliberate breakages of the new rules each turned the suite red.
 
@@ -426,6 +425,22 @@ An Opus adversarial review of fork.9 found places where the flow broke between i
 **Not fixable here, so documented (A1, A5, A10, A11).** The hooks run as the agent's own OS user, so an agent can run the approval hook itself, route a command through arbitrary indirection, or forge an evidence file. `gates.md`, "Limits: tamper-evident, not tamper-proof", says so, and names the hard guarantee for "the owner merges": GitHub branch protection with a required review, and an agent token without merge rights.
 
 **Housekeeping (C1, C2).** `codex-review` is in `skills/fork/README.md`; the stale `bench/inbox-assist` paths now point at the repo root; the duplicated fork.9 sentence in `hooks/hooks.json` is gone.
+
+## 12. Reviewer-owned issues (the Ghost trial workflow)
+
+**Why:** the reviewer already created one issue per step and merges every PR himself. The loop must never create, edit, comment on or close an issue, never merge, and never put anything in a PR that the issue does not need.
+
+| Change | Where | Rule it enforces |
+|---|---|---|
+| Plan hands off to `wp-loop` | `plan-first` step 5, `feature-loop/scripts/handoff.mjs` and its test | After `approve plan`, `wp-loop` builds the first existing issue in plan order; `feature-loop` (which runs `to-tickets`) is not called |
+| Plan stays local | `plan-first` "The reviewer's rules", step 3 and step 4 | `docs/plans/`, `docs/acceptance/`, `.scratch/`, `.claude/settings.local.json` and an untracked `CLAUDE.md` go in `.git/info/exclude`; the plan is never committed |
+| Tickets are the existing issues | `plan-template.md` | One row per existing issue with its stacked branch base; no new tickets |
+| No new issues | `wp-loop` steps 3 and 10 | No `to-spec` (it publishes an issue); MEDIUM findings go under `## Follow-ups` in the PR body |
+| PR only when all green | `wp-loop` steps 9 to 12 | Review and fixes run before the PR; step 11 runs the repo's own checks, every scenario and acceptance test, and checks the diff holds only the issue's files |
+| No merge, issue untouched | `wp-loop` steps 12 and 13, `check-comment.md`; `merge-gate.md` removed | The PR says `Closes #N`; the results comment goes on the PR only; the reviewer merges |
+| Build never pauses | `wp-loop` step 5 and step 13 | The next issue branches from the previous one when its PR is open, and the plan is checked against what was built before it starts |
+
+`feature-loop` is not part of this workflow; its stage 7 text still names `wp-loop` steps 12 and 13.
 
 ## Install
 

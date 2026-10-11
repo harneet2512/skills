@@ -1,76 +1,71 @@
 ---
 name: wp-loop
-description: "Ship one issue or small change end to end: issue, engineering contract, branch, TDD, PR, green CI, two-axis review, verified fixes, gated merge, results comment. Use when the user asks to take one issue to a merged PR, for small work, or to run the merge gate and results report on a feature's PR."
+description: "Take one existing issue to an open PR the reviewer merges: issue, engineering contract, stacked branch, TDD with attack tests, live scenarios, adversarial review, verified fixes, then the PR only when every test, type check, lint and scenario is green, plus a results comment and a ready-to-post status update. Never merges, and never creates, edits or closes an issue. Use when the user asks to build an issue, or after plan-first's approved plan to build each issue in order."
 ---
 
-Take one **work package** (one issue, one branch, one PR, its own review) from issue to merged, with **proof** at every **gate**: a green run on the exact head, a re-run test, a quoted spec line. A builder's "fixed" is a claim until the lead checks its proof. Reviewer silence and green tests speak for the code; the contract is proven right against the spec.
+Take one **work package** (one existing issue, one branch, one PR, its own review) from issue to an open, all-green PR, with **proof** at every **gate**: a green run on the exact head, a re-run test, a quoted spec line. A builder's "fixed" is a claim until the lead checks its proof. Reviewer silence and green tests speak for the code; the contract is proven right against the spec.
 
 The issue tracker should have been provided to you. If it is missing, tell the user to run `/setup-matt-pocock-skills`.
 
 Size names: Tiny, Normal and Major here are `feature-loop`'s Small, Normal and Large.
 
-**How `feature-loop` uses it:**
-- **Small work:** the whole loop, steps 1 to 13: one issue, one branch, one PR.
-- **A normal or large feature:** only steps 12 (merge gate) and 13 (report), run on the feature's single PR and issue after `feature-loop` has built and reviewed every ticket on its integration branch.
+If the user passes an issue reference, fetch it from the issue tracker and state its title before starting. If the reference is ambiguous, ask. When `plan-first` produced an approved plan (`docs/plans/<file>.md`), work the issues in its `## Tickets and seams` order and do not re-ask what it settled.
 
-**Inside `feature-loop` (fork.9), the owner merges.** No PR (not even a draft) is opened before the owner's `approve pr` (feature-loop stage 7, stop 3), and the lead never merges. Step 5 pushes the branch instead of opening a PR; step 12 runs `check-gates.sh --phase pr`, waits for CI on the pushed head, shows the owner the evidence, and opens the PR after `approve pr`; its **Done when** is the PR open from that head. The gate hook enforces both.
+## The reviewer's rules
 
-Run on its own, it is the whole loop for one issue.
-
-If the user passes an issue reference, fetch it from the issue tracker and state its title before starting. If the reference is ambiguous, ask.
+- **Issues belong to the reviewer.** Read them (`gh issue view`); refer to them by number. Never create, edit, label, assign, comment on or close an issue, and never call `to-spec` or `to-tickets` (both publish new issues). The PR names its issue with `Closes #<issue>`, so the issue closes when the reviewer merges.
+- **The reviewer merges.** Never merge, enable auto-merge, or push to the default branch.
+- **One issue, one PR, opened only when everything is green.** No early or draft PR. Nothing goes in it that the issue does not need: plans, specs, reviews and logs stay in `.scratch/` and `docs/plans/`, which `.git/info/exclude` keeps out of git (`plan-first` writes those lines; add them if missing).
+- **Build never pauses for a PR.** While this PR waits for review, the next issue starts on a branch stacked on this one.
 
 ## Roles
 
-- **Lead**: this session. Owns the contract, seam confirmation, the review, every gate, fix verification and the merge.
-- **Builder**: a subagent that writes code, at most `max_builders` from `.scratch/gates.json` (default 3) at once. It commits and pushes at least every 30 minutes and stops only processes it started, by PID. Use a cheaper model (Claude Code: `model: "sonnet"`, or `"haiku"` for mechanical edits). A builder has no channel to the user, so it works only at seams the lead already confirmed.
-- **Reviewers**: the two axis subagents that `code-review` spawns. Brief them to use the strongest model available (Claude Code: `model: "opus"`). They start from fresh contexts, so each reviews code written by someone else.
+- **Lead**: this session. Owns the contract, seam confirmation, the review, every gate, fix verification and opening the PR. Never merges.
+- **Builder**: a subagent that writes code, at most `max_builders` from `.scratch/gates.json` (default 3) at once. It commits and pushes its branch at least every 30 minutes and stops only processes it started, by PID. Use a cheaper model (Claude Code: `model: "sonnet"`, or `"haiku"` for mechanical edits). A builder has no channel to the user, so it works only at seams the lead already confirmed.
+- **Reviewers**: the axis subagents that `code-review` and `adversarial-review` spawn. Brief them to use the strongest model available (Claude Code: `model: "opus"`). They start from fresh contexts, so each reviews code written by someone else.
 
-Set the model explicitly on every subagent call. The lead calls `code-review` itself: subagents usually cannot spawn subagents of their own, and `code-review` needs two.
+Set the model explicitly on every subagent call. The lead calls `code-review` and `adversarial-review` itself: subagents usually cannot spawn subagents of their own.
 
 ## Steps
 
-1. **Read the issue in full**, plus its parent or any spec it cites, and write the checklist. If the domain terms are still fuzzy, call the Skill tool twice, for `grilling` and `domain-modeling`, and resolve them with the user before going on. When an approved plan (`docs/plans/<file>.md`, see `feature-loop`) already settles them in its Decisions section, do not grill again.
-   **Done when:** every requirement and acceptance criterion in the issue and its cited specs is a checklist line.
+1. **Read the issue in full**, plus any spec or doc it cites, and write the checklist. If the domain terms are still fuzzy, call the Skill tool twice, for `grilling` and `domain-modeling`, and resolve them with the user before going on. When the approved plan already settles them in its Decisions section, do not grill again.
+   **Done when:** every requirement and acceptance criterion in the issue and its cited docs is a checklist line.
 
-2. **Contract.** **Requires:** the step 1 checklist. Call the Skill tool with `deep-engineering`. Resolve its blocking open questions with the user. A shared-contract change (API schema, DB schema, wire format) lands first, as its own PR.
-   **Done when:** the contract has zero open blocking questions, and any shared-contract change is merged in its own PR.
+2. **Contract.** **Requires:** the step 1 checklist. Call the Skill tool with `deep-engineering`. Resolve its blocking open questions with the user. A shared-contract change (API schema, DB schema, wire format) goes first in this issue's own commits; it is never a separate PR.
+   **Done when:** the contract has zero open blocking questions.
 
-3. **Spec.** **Requires:** the checklist and the contract. When they say what to build, they are the spec for every later gate. When they leave gaps on work larger than Tiny, call the Skill tool with `to-spec`, passing the contract as input, then resume from that spec.
+3. **Spec.** **Requires:** the checklist and the contract. When they say what to build, they are the spec for every later gate. When they leave gaps on work larger than Tiny, write the missing decisions to `.scratch/spec/<slug>.md` yourself, from the contract. Do not call `to-spec`: it publishes an issue.
    **Done when:** the spec says what to build for every checklist line.
 
-4. **Confirm seams.** **Requires:** the contract's *Verification required* section. Show the user each proposed seam with a line on what it catches; `tdd` and the builder need confirmed seams. When an approved plan's Tickets and seams section already holds the seams, they are confirmed: skip this step and record it as done from the plan.
+4. **Confirm seams.** **Requires:** the contract's *Verification required* section. Show the user each proposed seam with a line on what it catches; `tdd` and the builder need confirmed seams. When the approved plan's Tickets and seams section already holds the seams, they are confirmed: skip this step and record it as done from the plan.
    **Done when:** the user has confirmed every seam.
 
-5. **Branch** from the latest default branch as `wp<issue>-<slug>`. Parallel work packages get separate worktrees.
-   **Done when:** `git branch --show-current` prints `wp<issue>-<slug>`, branched from the latest default branch head.
+5. **Branch** as `wp<issue>-<slug>`. The base is the previous issue's branch when that issue's PR is not merged yet (stacked), else the latest default branch. Parallel issues that do not depend on each other get separate worktrees.
+   **Done when:** `git branch --show-current` prints `wp<issue>-<slug>`, branched from the head of its base.
 
 6. **Build with TDD.** **Requires:** the confirmed seams. The builder calls the Skill tool with `tdd` at the confirmed seams; for a new seam it stops and reports back, and the lead confirms it with the user. Follow the repo's documented standards; proof paths use real integration tests. Wherever time, replay or historical data is involved, add a **leakage test**: everything computed as of time T reads only data from T or earlier. The brief names the `concern-topics` categories in play (from the contract's journey x topic matrix); the builder reads their *Build it right* and snippets before writing code that matches their *Spot it in code*, and writes each attack test (duplicate delivery, concurrent writer, timeout after success) before the code it attacks.
    **Done when:** every confirmed seam has a test that went red then green, every attack test in the brief exists, and the full suite is green.
 
-6b. **Prove beyond unit tests.** **Requires:** `.scratch/envelope/<slug>.md`, plus `.scratch/shape/<slug>.md` when the work touches a journey; if one is missing, stop and name the stage that writes it (`behavioral-envelope`, `shape`). Before the PR:
-   - run `concern-topics/scripts/slop-check.sh --diff <default branch>` and fix each finding or justify it under `## Justified` in `.scratch/review/<slug>.md`;
+7. **Prove beyond unit tests.** **Requires:** `.scratch/envelope/<slug>.md`, plus `.scratch/shape/<slug>.md` when the work touches a journey; if one is missing, stop and name the stage that writes it (`behavioral-envelope`, `shape`).
+   - run `concern-topics/scripts/slop-check.sh --diff <base>` and fix each finding or justify it under `## Justified` in `.scratch/review/<slug>.md`;
    - when the envelope's `**Packs:**` line names `llm` or `retrieval`, run its `evals` suite with the gate from the eval plan;
-   - run `live-verify` at every size. Small work runs its **happy path**: at least one scenario that drives the changed behavior through the running app. A change with nothing to run (docs, a comment, a config value no process reads) sets `"live": "none: <reason>"` in `.scratch/gates.json` instead, and says so in the results comment. Normal and large work run with two instances, with a scenario for each new journey case or Live item that has a live proof.
+   - run `live-verify` at every size. Tiny work runs its **happy path**: at least one scenario that drives the changed behavior through the running app. Normal and Major work run with two instances, with a scenario for each new journey case, each Live item that has a live proof, and each injected fault the contract names. Save a screenshot of what is newly visible for the status update. A change with nothing to run (docs, a comment, a config value no process reads) says so, with the reason, in the results comment.
+   **Done when:** slop-check is clean or justified, evals pass when they apply, and every live-verify scenario passes on the current head.
 
-   **Done when:** gates G6, G3 (every size; small may waive it with a stated reason) and G4 (when `**Packs:**` names `llm` or `retrieval`) are green: `check-gates.sh G3 G4 G6` exits 0, or, without `.scratch/gates.json`, their conditions in gates.md (the gates `check-gates.sh` prints, each red line naming the file to fix) hold by inspection.
+8. **Commit with traceability.** Before each commit, check the diff against the issue checklist; record deviations in the commit body and later in the results comment.
+   **Done when:** every commit in `git log <base>..HEAD` carries `Refs: #<issue>` and names its deviations from the checklist in its body.
 
-7. **Commit with traceability.** Before each commit, check the diff against the issue checklist; record deviations in the commit body and later in the results comment.
-   **Done when:** every commit in `git log <default branch>..HEAD` carries `Refs: #<issue>` and names its deviations from the checklist in its body.
+9. **Adversarial review.** **Requires:** `.scratch/envelope/<slug>.md`. First call the Skill tool with `behavioral-envelope` and run only its "Re-check against the diff" section; answer every concern pack it flags before review starts. For Tiny work, call the Skill tool with `code-review`, with the base branch as the fixed point and the issue checklist, the contract and the envelope's Live items as the spec; put the strongest model and [review-checks.md](review-checks.md) in both axis briefs. For Normal and Major work, call the Skill tool with `adversarial-review`: it runs `code-review` with that same spec and briefs, adds the design-applied, topic attacker, code craft and blast radius axes, and counts only reproduced findings. When the approved plan names this issue as risky, also call the Skill tool with `codex-review` on the branch. Severities are assigned within each axis.
+   **Done when:** every finding carries CRITICAL, HIGH, MEDIUM or LOW, `file:line` and a concrete fix, and for Normal and Major work `.scratch/review/<slug>.md` has its `## Findings` table.
 
-8. **Open the PR.** Call the Skill tool with `pr` for the body.
-   **Done when:** `gh pr view <pr>` shows the issue number in the title and `Refs #<issue>` in the body (`Closes #<issue>` if the tracker closes work through PRs).
+10. **Fix round.** Every CRITICAL or HIGH finding goes back to the builder first. The lead then **verifies each fix personally**: re-run the targeted test for each HIGH and read the changed lines. LOW is the builder's call. Fixes make a new head, so rerun step 7's `live-verify` on it. There is **one** fix round: a fix that fails its re-verification, or a new CRITICAL or HIGH from re-verifying, goes to the user as a decision (fix again, cut scope, or ship behind a flag) instead of starting another round.
+    **Done when:** every CRITICAL and HIGH is fixed and re-verified, every MEDIUM is fixed or listed for the PR body under `## Follow-ups` (never filed as an issue), and the latest live run is newer than the last commit.
 
-9. **Wait for CI.** `gh pr checks <pr>` exits 0 when everything passed, 1 when something failed, and 8 while checks are pending. Right after a push it can exit 1 with "no checks reported": wait one interval and recheck before calling it red. Poll at most every 5 minutes. In Claude Code run `gh pr checks <pr> --watch --interval 300` in the background, since a watch outlasts most tool timeouts. A red check stops the loop: if the cause is unclear, call the Skill tool with `diagnosing-bugs`.
-   **Done when:** `gh pr checks <pr>` exits 0 on the current head.
+11. **All green, or no PR.** On the current head, run the repo's own check command from its `AGENTS.md`, `README.md` or `package.json` (for example `pnpm test && pnpm typecheck && pnpm lint`), plus every live-verify scenario and every acceptance test the issue covers. When the branch is stacked, run them with all the stacked work present. Then run `git status --short` and `git diff --stat <base>...HEAD`: every changed file must be one the issue needs.
+    **Done when:** every command exits 0 on this head, every scenario and acceptance test passes, and no file outside the issue's work is in the diff. Anything red goes back to step 6 or 10; there is no PR yet.
 
-10. **Review.** **Requires:** `.scratch/envelope/<slug>.md`. First call the Skill tool with `behavioral-envelope` and run only its "Re-check against the diff" section; answer every concern pack it flags before review starts. For Tiny work, call the Skill tool with `code-review`, with the default branch as the fixed point and the issue checklist, the contract and the envelope's Live items as the spec; put the strongest model and [review-checks.md](review-checks.md) in both axis briefs. For Normal and Major work, call the Skill tool with `adversarial-review`: it runs `code-review` with that same spec and briefs, adds the design-applied, topic attacker, code craft and blast radius axes, and counts only reproduced findings. Severities are assigned within each axis.
-    **Done when:** every finding carries CRITICAL, HIGH, MEDIUM or LOW, `file:line` and a concrete fix, and for Normal and Major work `.scratch/review/<slug>.md` has its `## Findings` table (the file gate G5 reads).
+12. **Open the PR.** Call the Skill tool with `pr` for the body. The base is the branch from step 5 (the previous issue's branch when stacked, so the diff shows only this issue's work). The body says `Closes #<issue>`, lists the `## Follow-ups` from step 10, and links the screenshot when there is one. Then watch CI: `gh pr checks <pr> --watch --interval 300` in the background. A red check means fixing on this branch and pushing; if the cause is unclear, call the Skill tool with `diagnosing-bugs`. Never merge.
+    **Done when:** the PR is open from the head step 11 checked, its body says `Closes #<issue>`, and `gh pr checks <pr>` exits 0 (or the repo reports no checks).
 
-11. **Fix round.** Every CRITICAL or HIGH finding goes back to the builder first. The lead then **verifies each fix personally**: re-run the targeted test for each HIGH and read the changed lines. LOW is the builder's call. Fixes push a new head, so repeat step 9, and rerun `live-verify` (the happy path for small work) on it: gate G3 needs a live run newer than the last commit. There is **one** fix round: a fix that fails its re-verification, or a new CRITICAL or HIGH from re-verifying, goes to the user as a decision (fix again, cut scope, or ship behind a flag) instead of starting another round.
-    **Done when:** gate G5 is green, the lead has re-run each HIGH's targeted test, every MEDIUM is fixed or filed as a follow-up issue, and `gh pr checks <pr>` exits 0 on the new head.
-
-12. **Merge gate.** **Requires:** whenever `.scratch/gates.json` exists, a 0 exit from `check-gates.sh --phase merge` on this head; run it first and fix each red gate it prints until it exits 0. Follow [merge-gate.md](merge-gate.md): bring the branch up to date, renumber migrations and ADRs, wait for CI on that head, check it, and merge exactly the commit you checked.
-    **Done when:** `gh pr view <pr> --json state` shows `MERGED`, merged with `--match-head-commit` set to the head SHA that `gh pr checks` exited 0 on.
-
-13. **Report.** Post the results comment from [check-comment.md](check-comment.md) on the PR and on the issue, then close the issue the way the tracker closes work.
-    **Done when:** the results comment is on both the PR and the issue with test counts, coverage of the touched packages and every metric the issue defines, and the issue is closed.
+13. **Report and hand on.** Post the results comment from [check-comment.md](check-comment.md) on the PR only, never on the issue. Give the owner a ready-to-post status update: what is done with the PR link, one line on what it does, the screenshot path, and what is next. Then, before the next issue starts, compare the approved plan with what this issue built and with any review comments on open PRs, and append `- Changed: <what> because <why>` under the plan's `## Changes` when they differ. Start `wp-loop` on the next issue in plan order.
+    **Done when:** the results comment is on the PR with test counts, coverage of the touched packages and every metric the issue defines; the owner has the status update; the plan check is done; and the issue is untouched.

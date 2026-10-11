@@ -30,19 +30,24 @@ needs a passing automated test or a live-verify scenario named after it before t
 
 ## Skeleton ticket
 
-<!-- Ticket 1: the thinnest path through the whole journey, real at every layer it touches, ending in one
-happy-path live-verify scenario. Name the scenario. -->
+<!-- The existing issue (#N) whose PR first runs the thinnest path through the whole journey, real at every layer
+it touches, ending in one happy-path live-verify scenario. Name the issue and the scenario. Never a new ticket. -->
 
 ## Tickets and seams
 
-<!-- A table (Ticket, Blocked by, Journey cases, Live items, Seams) of tracer-bullet tickets with blocking edges. For each: journey cases, Live items, topic categories, and the
-seams where its tests attach (existing seams preferred, the highest possible). Approving the plan confirms these seams. -->
+<!-- A table (Issue, Blocked by, Branch base, Journey cases, Live items, Seams) with one row per EXISTING issue (#N), in
+build order. Never invent or split issues: a big issue is broken into steps inside its own row. Branch base is the
+previous issue's branch when that PR is not merged yet (stacked), else the default branch. For each: journey cases,
+Live items, topic categories, and the seams where its tests attach (existing seams preferred, the highest possible).
+Approving the plan confirms these seams. -->
 
 ## Skill per stage
 
-<!-- The skill that runs at each loop stage, so nobody guesses: stage 1 shape, stage 2 deep-engineering, stage 3
-to-spec then to-tickets, stage 4 tdd with code-review per slice, stage 5 evals and live-verify, stage 6
-codex-review code attack, stage 7 pr gate (owner approves, owner merges), stage 9 retro. Say where this feature differs. -->
+<!-- The skill that runs at each step, so nobody guesses. Once for all issues: grill-me, deep-engineering,
+behavioral-envelope and concern-topics (and shape for a user journey) in plan mode, then codex-review on the plan.
+Per issue, through wp-loop: tdd with attack tests first, live-verify scenarios, behavioral-envelope re-check,
+adversarial-review, codex-review code attack on the risky issues (name them), then the PR only when every test, type
+check, lint and scenario is green. Never to-spec or to-tickets (they publish new issues); the reviewer merges. -->
 
 ## Verification
 

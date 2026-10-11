@@ -1,16 +1,16 @@
 # Results comment
 
-Post this on the PR and on the issue after the merge. Quote the issue's own words for each criterion. An unmet criterion stays unchecked, with the reason.
+Post this on the PR only, once it is open and green; never on the issue (the reviewer owns it). Quote the issue's own words for each criterion. An unmet criterion stays unchecked, with the reason.
 
 ```markdown
 ## Work package check: #<issue>
 
-**PR:** #<pr> | **Merge commit:** <sha> | **CI:** success on <head sha>
+**PR:** #<pr> | **Closes:** #<issue> | **Base:** <base branch> | **CI:** success on <head sha>
 
 ### Acceptance
 
 - [x] <criterion quoted from the issue>: <evidence: test name, output, or screenshot>
-- [ ] <criterion not met>: <why, and the follow-up issue>
+- [ ] <criterion not met>: <why, and the follow-up listed below>
 
 ### Deviations from the issue
 
@@ -30,5 +30,5 @@ Post this on the PR and on the issue after the merge. Quote the issue's own word
 
 ### Follow-ups
 
-- #<issue>: <deferred MEDIUM finding>
+- <deferred MEDIUM finding>: <file:line> (for the reviewer to decide; no issue was filed)
 ```

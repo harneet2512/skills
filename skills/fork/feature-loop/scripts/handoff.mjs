@@ -17,13 +17,13 @@ const gatesSlug = (root) => { try { const s = JSON.parse(readFileSync(join(root,
 
 export const handoffText = (planRel, slug = '') => [
   `feature-loop hand-off: the plan was approved in plan mode${planRel ? ` (${planRel})` : ''}. Do NOT implement anything yet.`,
-  '1. Commit the plan file.',
+  '1. Save the plan file and copy it to .scratch/plan-at-handoff.md. Never commit it: PRs carry only the issue\'s work.',
   '2. Run the `codex-review` skill in plan mode on the plan file, in the foreground (`scripts/codex-review.sh plan <plan-file> --slug ' + (slug || slugOf(planRel))
     + '`). The slug must be the `slug` of .scratch/gates.json, which G10 and G11 read the reports by: use the same one when you start the loop.',
   '3. Fold every CONFIRMED finding into the plan, and write each resolution to `.scratch/review/codex-plan-' + (slug || slugOf(planRel))
     + '.resolutions.md` (`fixed: <commit>` or `rejected: <reason>`).',
   '4. Present the findings and the revised plan to the owner. This is stop 2: STOP and wait.',
-  '5. Only when the owner types "approve plan", invoke the `feature-loop` skill on the plan. Nothing else waits for approval.',
+  '5. Only when the owner types "approve plan", invoke the `wp-loop` skill on the first existing issue in the plan\'s order. Never create, edit or close an issue, and do not invoke `feature-loop`.',
 ].join('\n');
 
 // Returns { message, context }. Records a signed hand-off entry (with the plan's `## Changes` hash as the baseline for
