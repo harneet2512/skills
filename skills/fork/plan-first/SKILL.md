@@ -31,9 +31,12 @@ These hold through planning and through every `wp-loop` run that follows:
     "permissions": { "deny": [
       "Bash(gh pr merge:*)", "Bash(gh pr ready:*)", "Bash(gh issue create:*)", "Bash(gh issue edit:*)",
       "Bash(gh issue comment:*)", "Bash(gh issue close:*)", "Bash(gh issue reopen:*)", "Bash(gh label:*)"
-    ] }
+    ],
+    "ask": [ "Bash(gh pr create:*)", "Bash(gh pr comment:*)", "Bash(gh pr edit:*)", "Bash(gh pr review:*)" ] }
   }
   ```
+
+  The `ask` list makes Claude Code prompt the owner before any PR is opened, commented on or edited, on top of the owner's `approve pr` in `wp-loop`. If a Slack connector is attached, add its send-message tool to `deny`: the loop drafts Slack posts and the owner sends them.
 
   Then ask the owner to restart the session once (`/exit`, then resume) so both settings load before plan mode. Never create `.scratch/gates.json` to get protection: that starts a feature loop and turns on gates this flow does not use.
 
