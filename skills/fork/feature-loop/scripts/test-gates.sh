@@ -37,9 +37,29 @@ new_repo() {
 }
 
 last_ct() { git -C "$1" log -1 --format=%ct; }
-# Put a file's mtime clearly after (newer) or before (older) the last commit.
-newer() { touch -d "@$(( $(last_ct "$1") + 5 ))" "$1/$2"; }
+# fork.9: live reports and eval results are fresh by the commit they name ("head"), not by file time.
+# stamp_head <dir> <file relative to dir> [sha]: set "head" in a JSON file to the sha (default: HEAD of <dir>).
+stamp_head() {
+  node -e 'const fs = require("fs"); const f = process.argv[1]; const j = JSON.parse(fs.readFileSync(f, "utf8")); j.head = process.argv[2]; fs.writeFileSync(f, JSON.stringify(j, null, 2));' "$1/$2" "${3:-$(git -C "$1" rev-parse HEAD)}"
+}
+# Put a file's mtime clearly after the last commit (newer); a report.json or results.json is also stamped with HEAD.
+newer() { # stamp first: rewriting the file after the touch would reset its time to now
+  case "$2" in */report.json|*/results.json) stamp_head "$1" "$2" ;; esac
+  touch -d "@$(( $(last_ct "$1") + 5 ))" "$1/$2"
+}
 older() { touch -d "@$(( $(last_ct "$1") - 100 ))" "$1/$2"; }
+# ONLY_FORK9=1 starts with the assertions off (SKIPPING), to run the fork.9 section alone while developing.
+# TEST_SHARD=<k>/<n> (k from 0) runs only the k-th of every n blocks of 20 assertions; the setup still runs, so n runs in
+# parallel cover the suite on a machine where process starts are slow. A test that reads what an earlier assertion wrote
+# (a bypass record, say) can fail when its block boundary falls between them: rerun that case unsharded.
+SKIPPING="${ONLY_FORK9:+1}"
+ASSERT_N=0
+skip_case() { # succeeds (skip) when this assertion is not for this run
+  [ -n "$SKIPPING" ] && return 0
+  [ -n "${TEST_SHARD:-}" ] || return 1
+  ASSERT_N=$((ASSERT_N + 1))
+  [ $(( (ASSERT_N - 1) / 20 % ${TEST_SHARD#*/} )) -ne "${TEST_SHARD%/*}" ]
+}
 
 gates_json() { mkdir -p "$1/.scratch"; printf '{ "slug": "%s", "size": "%s", "base": "main" }\n' "$SLUG" "$2" > "$1/.scratch/gates.json"; }
 put() { mkdir -p "$(dirname "$1/$3")"; cp "$fx/$2" "$1/$3"; }
@@ -57,6 +77,16 @@ green_normal() {
   put "$d" metrics.md .scratch/loop-metrics.md
 }
 
+# Commit a source change (a new file), which makes evidence recorded on the earlier head stale.
+commit_src_new() { mkdir -p "$1/src" && printf 'export const n = 1;\n' > "$1/src/new.js" && git -C "$1" add -A && git -C "$1" commit -q -m newsrc; }
+# put_review_head <dir>: the review file the code-review stage leaves, naming the head it reviewed (G9 at merge, pr, close).
+put_review_head() {
+  mkdir -p "$1/.scratch/review"
+  printf '# Review\n\n## Findings\n\nHead: %s\n\n| ID | Severity | Status | Resolution |\n|---|---|---|---|\n| F1 | LOW | PLAUSIBLE | open |\n' "$(git -C "$1" rev-parse HEAD)" > "$1/.scratch/review/$SLUG.md"
+}
+# Commit a file that is not source (stage-detect.mjs: .scratch/, docs/plans/, docs/agents/, docs/adr/, GLOSSARY.md).
+commit_doc() { mkdir -p "$1/docs/plans" && printf '# note %s\n' "$RANDOM" > "$1/docs/plans/note.md" && git -C "$1" add -A && git -C "$1" commit -q -m doc; }
+
 # Commit the slop sample on the feature branch.
 add_slop() { mkdir -p "$1/src" && cp "$fx/src/slop.js" "$1/src/slop.js" && git -C "$1" add -A && git -C "$1" commit -q -m slop; }
 
@@ -67,8 +97,9 @@ add_slop() { mkdir -p "$1/src" && cp "$fx/src/slop.js" "$1/src/slop.js" && git -
 expect() {
   local name="$1" dir="$2" want="$3" needle="$4" reds="$5"; shift 5
   local out code got_reds bad=""
+  skip_case && return 0
   out="$(cd "$dir" && "$check" "$@" 2>&1)"; code=$?
-  got_reds="$(printf '%s\n' "$out" | grep -cE '^G[1-9] red:')"
+  got_reds="$(printf '%s\n' "$out" | grep -cE '^(G[0-9]+|PR-[A-Z]+) red:')"
   [ "$code" = "$want" ] || bad="exit $code, want $want"
   if [ -n "$needle" ] && ! printf '%s\n' "$out" | grep -qF -- "$needle"; then bad="${bad:+$bad; }missing: $needle"; fi
   if [ "$reds" != - ] && [ "$got_reds" != "$reds" ]; then bad="${bad:+$bad; }red lines $got_reds, want $reds"; fi
@@ -80,6 +111,7 @@ expect() {
 hook_case() {
   local name="$1" cwd="$2" cmd="$3" want="$4" needle="$5"; shift 5
   local payload err code bad=""
+  skip_case && return 0
   [ -n "${HOOK_NOREADY:-}" ] || ready_repo "$cwd"
   payload="$(node -e 'process.stdout.write(JSON.stringify({ session_id: "s1", transcript_path: "/dev/null", cwd: process.argv[1], hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: process.argv[2], description: "test" } }))' "$cwd" "$cmd")"
   err="$(cd "$work" && printf '%s' "$payload" | env "$@" bash "$hook" 2>&1 >/dev/null)"; code=$?
@@ -91,6 +123,7 @@ hook_case() {
 
 pass_if() { # pass_if <name> <condition command...>
   local name="$1"; shift
+  skip_case && return 0
   total=$((total + 1))
   if "$@"; then echo "ok   $name"; else echo "FAIL $name"; fail=1; fi
 }
@@ -232,8 +265,22 @@ expect "G3 red: no live run" "$d" 1 "G3 red: no live run (.scratch/live/<run>/re
 d=$(new_repo g3-fail); green_normal "$d"; put_live "$d" report-fail.json
 expect "G3 red: failed scenario" "$d" 1 "G3 red: 1 scenario not passing: two reviewers race [fail] (.scratch/live/run1/report.json)" 1
 
-d=$(new_repo g3-old); green_normal "$d"; older "$d" .scratch/live/run1/report.json
-expect "G3 red: live report older than the last commit" "$d" 1 "G3 red: newest live run is older than the last commit, rerun live-verify" 1
+d=$(new_repo g3-old); green_normal "$d"; commit_src_new "$d"
+expect "G3 red: live report is for an older head and source changed since (no mtime involved)" "$d" 1 "G3 red: live run ran on" 1
+expect "G3 red: the message names the changed source" "$d" 1 "source changed since (src/new.js)" 1
+expect "G3 red: and says how to fix it" "$d" 1 "rerun live-verify (the runner records \"head\" in report.json)" 1
+d=$(new_repo g3-nonsource); green_normal "$d"; commit_doc "$d"
+expect "G3 green: HEAD moved only by a non-source file (docs/plans), the report is still fresh" "$d" 0 "G3 green" 0 G3
+d=$(new_repo g3-newfile-older); green_normal "$d"; touch -d "@$(( $(last_ct "$d") - 100 ))" "$d/.scratch/live/run1/report.json"
+expect "G3 green: an old file time does not matter, the head does" "$d" 0 "G3 green" 0 G3
+d=$(new_repo g3-nohead); green_normal "$d"; printf '{ "runId": "r1", "scenarios": [ { "name": "a", "journey": "J1.first-run J2.two-actors", "result": "pass" } ] }\n' > "$d/.scratch/live/run1/report.json"
+expect "G3 red: a report with no head is red" "$d" 1 "G3 red: live run names no commit (head is missing or not a sha)" 1
+d=$(new_repo g3-badhead); green_normal "$d"; stamp_head "$d" .scratch/live/run1/report.json deadbeefdeadbeef
+expect "G3 red: a head that is not a commit of the repo is red" "$d" 1 "which is not a commit of this repository" 1
+d=$(new_repo g3-dirty); green_normal "$d"; printf 'export const y = 2;\n' > "$d/src/edited.js"
+expect "G3 red: uncommitted source edits mean the run was on a different tree" "$d" 1 "source is edited since (uncommitted: src/edited.js)" 1
+d=$(new_repo g3-other-branch); green_normal "$d"; sha0=$(git -C "$d" rev-parse HEAD); git -C "$d" checkout -q -b other main
+expect "G3 red: a head that is not an ancestor of HEAD is red" "$d" 1 "which is not an ancestor of HEAD" 1
 
 d=$(new_repo g3-case); green_normal "$d"; put_live "$d" report-missing-case.json
 expect "G3 red: journey case missing from report" "$d" 1 "G3 red: journey cases in no scenario: J2.two-actors" 1
@@ -249,8 +296,12 @@ d=$(new_repo g4-bad); green_normal "$d"; put "$d" envelope-llm.md ".scratch/enve
 expect "G4 red: eval gate ok:false" "$d" 1 "G4 red: eval gates not ok: pass.lo>=0.8 (.scratch/evals/reply-options/results.json)" 1
 
 d=$(new_repo g4-old); green_normal "$d"; put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"; put_evals "$d" evals-ok.json
-older "$d" ".scratch/evals/$SLUG/results.json"
-expect "G4 red: eval results older than the last commit" "$d" 1 "G4 red: eval results are older than the last commit" 1
+commit_src_new "$d"
+expect "G4 red: eval results are for an older head and source changed since (no mtime involved)" "$d" 1 "G4 red: eval results ran on" 1 G4
+d=$(new_repo g4-nohead); green_normal "$d"; put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"; put "$d" evals-ok.json ".scratch/evals/$SLUG/results.json"
+expect "G4 red: results.json with no head is red" "$d" 1 "G4 red: eval results names no commit" 1
+d=$(new_repo g4-nonsource); green_normal "$d"; put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"; put_evals "$d" evals-ok.json; commit_doc "$d"
+expect "G4 green: HEAD moved only by a non-source file" "$d" 0 "G4 green" 0 G4
 
 d=$(new_repo g4-small); gates_json "$d" small; put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"
 expect "G4 applies to small work with the llm pack" "$d" 1 "G4 red: eval results missing" 1 G4
@@ -334,7 +385,7 @@ expect "filter: G2 G6 ignore a red G1" "$d" 0 "gates: green for reply-options (s
 out="$(cd "$d" && "$check" G2 G6)"
 pass_if "filter: prints only the named gates" test "$(printf '%s\n' "$out" | grep -cE '^G[1-8] ')" = 2
 expect "filter: lowercase g1 accepted" "$d" 1 "G1 red: shape file missing" 1 g1
-expect "usage: unknown gate G10" "$d" 2 "unknown argument: G10" 0 G10
+expect "usage: unknown gate G13" "$d" 2 "unknown argument: G13" 0 G13
 expect "usage: unknown flag" "$d" 2 "unknown argument: --bogus" 0 --bogus
 expect "usage: --help" "$d" 0 "Usage (run from the target repo's root)" 0 --help
 
@@ -357,8 +408,8 @@ put_live "$d" report-missing-case.json
 expect "G3 small: happy path only, no journey coverage needed" "$d" 0 "G3 green" 0 G3
 put_live "$d" report-fail.json run2
 expect "G3 small: a failing scenario is still red" "$d" 1 "1 scenario not passing" 1 G3
-d=$(new_repo g3-small-stale); gates_json "$d" small; put "$d" report-pass.json .scratch/live/run1/report.json; older "$d" .scratch/live/run1/report.json
-expect "G3 small: a live run older than the last commit is red" "$d" 1 "older than the last commit" 1 G3
+d=$(new_repo g3-small-stale); gates_json "$d" small; put_live "$d" report-pass.json; commit_src_new "$d"
+expect "G3 small: a live run on an older head with source changed since is red" "$d" 1 "source changed since" 1 G3
 d=$(new_repo g3-normal-cov); green_normal "$d"; put_live "$d" report-missing-case.json
 expect "G3 normal: journey coverage still required" "$d" 1 "journey cases in no scenario" 1 G3
 
@@ -408,6 +459,7 @@ expect "every known field together is accepted" "$d" 0 "G3 n/a: live run waived"
 # tb_case <name> <dir> <exit> <needle> [VAR=value...]
 tb_case() {
   local name="$1" dir="$2" want="$3" needle="$4"; shift 4
+  skip_case && return 0
   local out code bad="" envs=() extra=()
   for a in "$@"; do case "$a" in *=*) envs+=("$a") ;; *) extra+=("$a") ;; esac; done
   out="$(cd "$dir" && env ${envs[@]+"${envs[@]}"} "$check" --timebox ${extra[@]+"${extra[@]}"} 2>&1)"; code=$?
@@ -542,6 +594,10 @@ case "$1 $2" in
   "pr checks")
     for a in "$@"; do if [ "$a" = --required ]; then exit "${FAKE_GH_REQUIRED:-1}"; fi; done
     echo "build	fail	1m"; exit "${FAKE_GH_CHECKS:-1}" ;;
+  "run list")
+    # fork.9 pr phase: FAKE_GH_RUNS is the JSON `gh run list --commit <sha> --json conclusion,status` prints.
+    if [ -n "${FAKE_GH_RUN_FAIL:-}" ]; then echo "HTTP 502" >&2; exit 1; fi
+    echo "${FAKE_GH_RUNS:-[]}"; exit 0 ;;
 esac
 exit 1
 STUB
@@ -551,56 +607,32 @@ gh_env=("PATH=$bin:$PATH")
 mrepo=$(new_repo merge-green); green_normal "$mrepo"
 sha=$(git -C "$mrepo" rev-parse HEAD); short=${sha:0:9}
 mlog="$work/gh.log"
-
-srepo_m=$(new_repo merge-small-nolive); gates_json "$srepo_m" small; put "$srepo_m" envelope.md ".scratch/envelope/$SLUG.md"
-ssha=$(git -C "$srepo_m" rev-parse HEAD)
-hook_case "merge of small work with no live run is blocked by G3" "$srepo_m" "gh pr merge 5 --match-head-commit $ssha" 2 "G3 red: no live run" "${gh_env[@]}" "FAKE_GH_HEAD=$ssha" FAKE_GH_REQUIRED=0
-put_live "$srepo_m" report-pass.json
-hook_case "merge of small work with a passing live run is allowed" "$srepo_m" "gh pr merge 5 --match-head-commit $ssha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$ssha" FAKE_GH_REQUIRED=0
-
-hook_case "merge without --match-head-commit blocked" "$mrepo" "gh pr merge 5 --squash" 2 "merge exactly the head you checked: --match-head-commit <sha>" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "merge with sha, green gates and green CI allowed" "$mrepo" "gh pr merge 5 --squash --match-head-commit $sha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "merge with --match-head-commit=<sha> allowed" "$mrepo" "gh pr merge 5 --match-head-commit=$sha --squash" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "merge with an abbreviated sha matching the head allowed" "$mrepo" "gh pr merge 5 --match-head-commit $short" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "merge blocked when the PR head is not the sha" "$mrepo" "gh pr merge 5 --match-head-commit $sha" 2 "the PR head is deadbeef, not $sha" "${gh_env[@]}" FAKE_GH_HEAD=deadbeef FAKE_GH_REQUIRED=0
-hook_case "merge blocked when CI is red" "$mrepo" "gh pr merge 5 --match-head-commit $sha" 2 "CI is not green on $sha" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=1 FAKE_GH_CHECKS=1
-hook_case "merge blocked when CI is still pending" "$mrepo" "gh pr merge 5 --match-head-commit $sha" 2 "CI is not green" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=1 FAKE_GH_CHECKS=8
-hook_case "merge allowed when no check is required but all pass" "$mrepo" "gh pr merge 5 --match-head-commit $sha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=1 FAKE_GH_CHECKS=0
-hook_case "merge fails closed when gh pr view fails" "$mrepo" "gh pr merge 5 --match-head-commit $sha" 2 "gh pr view failed" "${gh_env[@]}" FAKE_GH_VIEW_FAIL=1 FAKE_GH_REQUIRED=0
-hook_case "merge fails closed on an empty PR head" "$mrepo" "gh pr merge 5 --match-head-commit $sha" 2 "the PR head is unknown" "${gh_env[@]}" FAKE_GH_HEAD= FAKE_GH_REQUIRED=0
-hook_case "merge blocked for a sha that is not hex" "$mrepo" "gh pr merge 5 --match-head-commit main" 2 "'main' is not a commit sha" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "gh api PUT .../pulls/5/merge without sha blocked" "$mrepo" "gh api -X PUT repos/o/r/pulls/5/merge -f merge_method=squash" 2 "merge exactly the head you checked" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "gh api PUT .../pulls/5/merge with -f sha allowed" "$mrepo" "gh api -X PUT repos/o/r/pulls/5/merge -f sha=$sha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "gh pr view is not a merge" "$mrepo" "gh pr view 5 --json state" 0 "" "${gh_env[@]}"
-hook_case "gh pr merge --help style text in a message passes" "$mrepo" 'echo "run gh pr merge later"' 0 "" "${gh_env[@]}"
-
-: > "$mlog"
-hook_case "merge passes -R and the PR to gh" "$mrepo" "gh pr merge 5 -R o/r --match-head-commit $sha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0 "FAKE_GH_LOG=$mlog"
-pass_if "gh was asked about PR 5 in o/r" grep -qF "pr view 5 -R o/r" "$mlog"
-
 mred=$(new_repo merge-red); green_normal "$mred"; rm "$mred/.scratch/shape/$SLUG.md"; msha=$(git -C "$mred" rev-parse HEAD)
-hook_case "merge blocked when the feature-loop gates are red" "$mred" "gh pr merge 5 --match-head-commit $msha" 2 "G1 red: shape file missing" "${gh_env[@]}" "FAKE_GH_HEAD=$msha" FAKE_GH_REQUIRED=0
+smrepo=$(new_repo merge-small); gates_json "$smrepo" small; put "$smrepo" envelope.md ".scratch/envelope/$SLUG.md"; put_live "$smrepo" report-pass.json
+ssha=$(git -C "$smrepo" rev-parse HEAD)
+OWNER_MERGES="While the loop is active the owner merges: the loop never does"
+
+# fork.9: the owner merges. Every merge is refused while a loop is active, whatever the gates, the sha or CI say.
+hook_case "merge refused while a loop is active, with every gate green and CI green" "$mrepo" "gh pr merge 5 --squash --match-head-commit $sha" 2 "$OWNER_MERGES" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
+hook_case "merge refusal says the owner merges and that there is no bypass" "$mrepo" "gh pr merge 5 --match-head-commit $sha" 2 "This gate has no bypass" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
+hook_case "merge refused without --match-head-commit too" "$mrepo" "gh pr merge 5 --squash" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused with --match-head-commit=<sha>" "$mrepo" "gh pr merge 5 --match-head-commit=$sha --squash" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused with an abbreviated sha" "$mrepo" "gh pr merge 5 --match-head-commit $short" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused with --auto" "$mrepo" "gh pr merge 5 --auto --squash" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused with --admin" "$mrepo" "gh pr merge 5 --admin" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused when the gates are red as well" "$mred" "gh pr merge 5 --match-head-commit $msha" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge of small work with a passing live run is refused too" "$smrepo" "gh pr merge 5 --match-head-commit $ssha" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "gh api PUT .../pulls/5/merge refused" "$mrepo" "gh api -X PUT repos/o/r/pulls/5/merge -f sha=$sha" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "gh api PUT .../pulls/5/merge refused without a sha" "$mrepo" "gh api -X PUT repos/o/r/pulls/5/merge -f merge_method=squash" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused from another directory (git -C style cd)" "$outside" "cd $mrepo && gh pr merge 5 --match-head-commit $sha" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused inside bash -c" "$mrepo" "bash -c 'gh pr merge 5'" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "merge refused after a chained command" "$mrepo" "echo merging; gh pr merge 5" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "gh pr view is not a merge" "$mrepo" "gh pr view 5 --json state" 0 "" "${gh_env[@]}"
+hook_case "gh pr merge in a message passes" "$mrepo" 'echo "run gh pr merge later"' 0 "" "${gh_env[@]}"
 hook_case "merge never blocked without gates.json" "$plain_repo" "gh pr merge 5" 0 "" "${gh_env[@]}"
-
-# merge_check in gates.json replaces the gh checks. {sha} and {pr} are filled in.
-merge_check_repo() { # <name> <merge_check command>
-  local d; d=$(new_repo "$1"); green_normal "$d"
-  node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ slug: "reply-options", size: "normal", base: "main", merge_check: process.argv[2] }))' "$d/.scratch/gates.json" "$2"
-  printf '%s' "$d"
-}
-cpass=$(merge_check_repo merge-check-pass 'test "{pr}" = 5 && test "{sha}" = "$EXPECT_SHA"')
-csha=$(git -C "$cpass" rev-parse HEAD)
-hook_case "merge_check run with {sha} and {pr} filled in, exit 0 allows" "$cpass" "gh pr merge 5 --match-head-commit $csha" 0 "" "${gh_env[@]}" FAKE_GH_VIEW_FAIL=1 "EXPECT_SHA=$csha"
-hook_case "merge_check replaces gh: a failing gh stub does not matter" "$cpass" "gh pr merge 5 --match-head-commit $csha" 0 "" "${gh_env[@]}" FAKE_GH_VIEW_FAIL=1 FAKE_GH_REQUIRED=1 FAKE_GH_CHECKS=1 "EXPECT_SHA=$csha"
-hook_case "merge_check non-zero blocks" "$cpass" "gh pr merge 6 --match-head-commit $csha" 2 "merge_check failed: test \"6\" = 5" "${gh_env[@]}" "EXPECT_SHA=$csha"
-hook_case "merge_check refuses a PR reference with shell characters" "$cpass" 'gh pr merge "5;touch pwned" --match-head-commit '"$csha" 2 "cannot go into merge_check" "${gh_env[@]}" "EXPECT_SHA=$csha"
-pass_if "merge_check injection did not run" test ! -e "$cpass/pwned"
-cfail=$(merge_check_repo merge-check-fail 'false')
-hook_case "merge_check false blocks" "$cfail" "gh pr merge 5 --match-head-commit $(git -C "$cfail" rev-parse HEAD)" 2 "merge_check failed: false" "${gh_env[@]}"
-
-hook_case "merge bypass without reason still blocked" "$mrepo" "gh pr merge 5" 2 "without FEATURE_LOOP_BYPASS_REASON" "${gh_env[@]}" FEATURE_LOOP_GATES=off
-hook_case "merge bypass with reason allowed" "$mrepo" "gh pr merge 5" 0 "" "${gh_env[@]}" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=CI outage, lead approved"
-pass_if "merge bypass logged" grep -qF "reply-options gates bypassed: CI outage, lead approved (merge)" "$mrepo/.scratch/loop-metrics.md"
+hook_case "merge bypass: FEATURE_LOOP_GATES=off does not unblock a merge" "$mrepo" "gh pr merge 5" 2 "$OWNER_MERGES" "${gh_env[@]}" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=CI outage, lead approved"
+hook_case "merge bypass inline in the command does not unblock a merge" "$mrepo" "FEATURE_LOOP_GATES=off FEATURE_LOOP_BYPASS_REASON=x gh pr merge 5" 2 "$OWNER_MERGES" "${gh_env[@]}"
+pass_if "a refused merge writes no bypass record" bash -c '! grep -qF "(merge)" "$1/.scratch/loop-metrics.md"' _ "$mrepo"
 
 # ---- stop-hook.sh and session-start-hook.sh
 
@@ -612,6 +644,7 @@ start_payload() { node -e 'const o = { hook_event_name: "SessionStart", session_
 # event_case <name> <script> <payload> <exit> <out|err> <needle, or @empty for no output> [VAR=value...]
 event_case() {
   local name="$1" script="$2" payload="$3" want="$4" stream="$5" needle="$6"; shift 6
+  skip_case && return 0
   local so="$work/ev.out" se="$work/ev.err" code bad="" text
   (cd "$work" && printf '%s' "$payload" | env "$@" bash "$here/$script" >"$so" 2>"$se"); code=$?
   [ "$code" = "$want" ] || bad="exit $code, want $want"
@@ -678,6 +711,7 @@ event_case "garbage input never fails the session" session-start-hook.sh "not js
 # silent_case <name> <cwd> <command> [VAR=value...]: exit 0 and nothing on stdout or stderr.
 silent_case() {
   local name="$1" cwd="$2" cmd="$3"; shift 3
+  skip_case && return 0
   local payload so se code bad=""
   payload="$(node -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], tool_name: "Bash", tool_input: { command: process.argv[2] } }))' "$cwd" "$cmd")"
   so="$work/sc.out"; se="$work/sc.err"
@@ -691,6 +725,7 @@ silent_case() {
 # raw_hook_case <name> <raw stdin> <exit> <stderr needle> [VAR=value...]: a payload that is not built from JSON.
 raw_hook_case() {
   local name="$1" payload="$2" want="$3" needle="$4"; shift 4
+  skip_case && return 0
   local err code bad=""
   err="$(cd "$work" && printf '%s' "$payload" | env "$@" bash "$hook" 2>&1 >/dev/null)"; code=$?
   [ "$code" = "$want" ] || bad="exit $code, want $want"
@@ -737,20 +772,18 @@ pass_if "explicit gates and a phase intersect (G7 is not a merge gate)" test "$(
 expect "usage: unknown phase" "$d" 2 "unknown phase: soon" 0 --phase soon
 expect "usage: --phase needs a value" "$d" 2 "--phase needs" 0 --phase
 
-# The hooks use the phases: push and PR creation need only G1 G2 G8; the merge gate needs G1 to G6 and G8.
+# The hooks use the phases: a push needs only G1 G2 G8 G9; a PR needs the whole pr phase.
 bd=$(new_repo ph-hook-build); gates_json "$bd" normal; put "$bd" shape.md ".scratch/shape/$SLUG.md"; put "$bd" envelope.md ".scratch/envelope/$SLUG.md"
 hook_case "push during Build passes with only G1 G2 G8 green" "$bd" "git push -u origin feature" 0 ""
-hook_case "draft PR during Build passes with only G1 G2 G8 green" "$bd" 'gh pr create --draft --title x --body y' 0 ""
-hook_case "gh api POST pulls during Build passes with only G1 G2 G8 green" "$bd" "gh api repos/o/r/pulls -f title=x -f head=feature -f base=main" 0 ""
+hook_case "draft PR during Build is refused: a PR needs the pr phase (fork.9)" "$bd" 'gh pr create --draft --title x --body y' 2 "opening a draft PR was blocked, the pr phase is red"
+hook_case "gh api POST pulls during Build is refused too" "$bd" "gh api repos/o/r/pulls -f title=x -f head=feature -f base=main" 2 "opening a PR was blocked, the pr phase is red"
 bd2=$(new_repo ph-hook-build-g8); gates_json "$bd2" normal; put "$bd2" shape.md ".scratch/shape/$SLUG.md"; put "$bd2" envelope.md ".scratch/envelope/$SLUG.md"; put "$bd2" loop-status-no-evidence.md .scratch/loop-status.md
 hook_case "push during Build is still blocked by a red G8" "$bd2" "git push origin feature" 2 "G8 red: done stage without evidence"
 bd3=$(new_repo ph-hook-build-g2); gates_json "$bd3" normal; put "$bd3" shape.md ".scratch/shape/$SLUG.md"
 hook_case "push during Build is still blocked by a red G2" "$bd3" "git push origin feature" 2 "G2 red: envelope file missing"
 
-mnm=$(new_repo ph-merge-nometrics); green_normal "$mnm"; rm "$mnm/.scratch/loop-metrics.md"; nsha=$(git -C "$mnm" rev-parse HEAD)
-hook_case "merge passes without the metrics line: G7 is the close gate" "$mnm" "gh pr merge 5 --match-head-commit $nsha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$nsha" FAKE_GH_REQUIRED=0
-mg5=$(new_repo ph-merge-g5); green_normal "$mg5"; put "$mg5" review-open-high.md ".scratch/review/$SLUG.md"; g5sha=$(git -C "$mg5" rev-parse HEAD)
-hook_case "merge blocked when G5 is red" "$mg5" "gh pr merge 5 --match-head-commit $g5sha" 2 "G5 red: open CONFIRMED finding: F1 HIGH" "${gh_env[@]}" "FAKE_GH_HEAD=$g5sha" FAKE_GH_REQUIRED=0
+mg5=$(new_repo ph-pr-g5); green_normal "$mg5"; put "$mg5" review-open-high.md ".scratch/review/$SLUG.md"
+hook_case "PR creation blocked when G5 is red" "$mg5" 'gh pr create --title x --body y' 2 "G5 red: open CONFIRMED finding: F1 HIGH" "${gh_env[@]}"
 
 # ---- builder worktrees: the loop root is the main worktree
 
@@ -772,14 +805,12 @@ event_case "stop hook finds the loop from a builder worktree" stop-hook.sh "$(st
 event_case "session-start hook finds the loop from a builder worktree" session-start-hook.sh "$(start_payload "$wt")" 0 out 'feature-loop is running for "reply-options"'
 rm "$wr/.scratch/loop-status.md"
 
-# A merge run from a worktree judges that worktree's code, not the main checkout's.
+# A PR opened from a worktree judges that worktree's code, not the main checkout's.
 wm=$(new_repo wt-merge-root); green_normal "$wm"
 wmt="$work/wt-merge"; git -C "$wm" worktree add -q -b builder2 "$wmt" >/dev/null 2>&1
 add_slop "$wmt"; wsha=$(git -C "$wmt" rev-parse HEAD)
 touch -d "@$(( $(git -C "$wmt" log -1 --format=%ct) + 5 ))" "$wm/.scratch/live/run1/report.json"
-hook_case "merge from a worktree checks that worktree's code (G6)" "$wmt" "gh pr merge 5 --match-head-commit $wsha" 2 "CRAFT-06.todo src/slop.js:2" "${gh_env[@]}" "FAKE_GH_HEAD=$wsha" FAKE_GH_REQUIRED=0
-put "$wm" review-justified.md ".scratch/review/$SLUG.md"
-hook_case "merge from a worktree passes once the findings are justified" "$wmt" "gh pr merge 5 --match-head-commit $wsha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$wsha" FAKE_GH_REQUIRED=0
+hook_case "PR creation from a worktree checks that worktree's code (G6)" "$wmt" "gh pr create --title x --body y" 2 "CRAFT-06.todo src/slop.js:2" "${gh_env[@]}"
 
 # ---- fail closed when a loop is active
 
@@ -845,21 +876,14 @@ hook_case "status other than closed keeps the loop active" "$cl" "git push origi
 # ---- other merge paths
 
 gq() { printf "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"PR_kwDOabc\"%s}) { pullRequest { id } } }'" "${1:+, expectedHeadOid: \"$1\"}"; }
-hook_case "graphql mergePullRequest blocked when the gates are red" "$mred" "$(gq "$msha")" 2 "G1 red: shape file missing" "${gh_env[@]}" "FAKE_GH_HEAD=$msha" FAKE_GH_REQUIRED=0
-hook_case "graphql mergePullRequest needs the head sha" "$mrepo" "$(gq)" 2 "merge exactly the head you checked" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "graphql mergePullRequest with the head sha, green gates and CI is allowed" "$mrepo" "$(gq "$sha")" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
-hook_case "graphql mergePullRequest blocked when CI is red" "$mrepo" "$(gq "$sha")" 2 "CI is not green" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=1 FAKE_GH_CHECKS=1
-hook_case "graphql merge with -f expectedHeadOid=<sha> counts as the sha" "$mrepo" "gh api graphql -f query='mutation(\$id: ID!, \$oid: GitObjectID) { mergePullRequest(input: {pullRequestId: \$id, expectedHeadOid: \$oid}) { clientMutationId } }' -f id=PR_x -f expectedHeadOid=$sha" 0 "" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
+hook_case "graphql mergePullRequest refused when the gates are red" "$mred" "$(gq "$msha")" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "graphql mergePullRequest refused without a sha" "$mrepo" "$(gq)" 2 "$OWNER_MERGES" "${gh_env[@]}"
+hook_case "graphql mergePullRequest refused with the head sha, green gates and CI" "$mrepo" "$(gq "$sha")" 2 "$OWNER_MERGES" "${gh_env[@]}" "FAKE_GH_HEAD=$sha" FAKE_GH_REQUIRED=0
+hook_case "graphql merge with -f expectedHeadOid=<sha> refused" "$mrepo" "gh api graphql -f query='mutation(\$id: ID!, \$oid: GitObjectID) { mergePullRequest(input: {pullRequestId: \$id, expectedHeadOid: \$oid}) { clientMutationId } }' -f id=PR_x -f expectedHeadOid=$sha" 2 "$OWNER_MERGES" "${gh_env[@]}"
 hook_case "a read-only graphql query passes" "$mred" "gh api graphql -f query='query { viewer { login } }'" 0 ""
 hook_case "a graphql createPullRequest is still a PR creation" "$red_repo" "gh api graphql -f query='mutation { createPullRequest(input: {title: \"x\"}) { pullRequest { id } } }'" 2 "G1 red"
 
-# A merge is judged on the local tree, so the checked-out HEAD must be the sha being merged.
-mh=$(new_repo merge-head); green_normal "$mh"; oldsha=$(git -C "$mh" rev-parse HEAD~1)
-hook_case "merge refused when the checked-out HEAD is not the sha" "$mh" "gh pr merge 5 --match-head-commit $oldsha" 2 "check out the PR head $oldsha first" "${gh_env[@]}" "FAKE_GH_HEAD=$oldsha" FAKE_GH_REQUIRED=0
-hook_case "a graphql merge is refused too when HEAD is not the sha" "$mh" "$(gq "$oldsha")" 2 "check out the PR head $oldsha first" "${gh_env[@]}" "FAKE_GH_HEAD=$oldsha" FAKE_GH_REQUIRED=0
-hook_case "merge_check does not excuse a HEAD that is not the sha" "$cpass" "gh pr merge 5 --match-head-commit $(git -C "$cpass" rev-parse HEAD~1)" 2 "check out the PR head" "${gh_env[@]}" "EXPECT_SHA=$csha"
-
-# A push that targets the base branch skips the merge gate; refuse it.
+# A push that targets the base branch skips the owner's merge; refuse it.
 br=$(new_repo push-base); green_normal "$br"
 hook_case "push HEAD:main refused" "$br" "git push origin HEAD:main" 2 "merge through the PR so the merge gate runs"
 hook_case "push origin main refused" "$br" "git push origin main" 2 "merge through the PR so the merge gate runs"
@@ -1125,19 +1149,45 @@ d=$(loop_repo stage-small-early small); write_src "$d"; stage_hook "$d" Write '{
 pass_if "small: source before the envelope is a violation naming only the envelope" bash -c 'test "$1" = 2 && printf "%s" "$2" | grep -qF "missing: behavioral-envelope;"' _ "$sh_code" "$sh_err"
 d=$(loop_repo stage-small-merge small); log_skill "$d" behavioral-envelope; commit_src "$d"
 expect "H4: small merge G9 is red without wp-loop, code-review and live-verify" "$d" 1 "not run in this loop (no entry in the log): wp-loop; not run in this loop (no entry in the log): code-review; not run in this loop (no entry in the log): live-verify" 1 --phase merge G9
-log_many "$d" wp-loop; log_skill "$d" code-review "$PAST"; log_skill "$d" live-verify "$FUTURE"
-expect "H4: small code-review logged before the last source change is stale" "$d" 1 "code-review was logged before the last source change" 1 --phase merge G9
-log_skill "$d" code-review "$FUTURE"
-expect "small: merge G9 green once wp-loop, code-review and live-verify are logged after the source" "$d" 0 "G9 green" 0 --phase merge G9
+log_many "$d" wp-loop code-review live-verify
+# fork.9: a Skill call alone no longer counts for the review and verification stages.
+expect "fork.9 G9: Skill calls without a review file are red" "$d" 1 "code-review was logged but left no evidence on the head: no review file .scratch/review/reply-options.md" 1 --phase merge G9
+expect "fork.9 G9: Skill calls without a live report are red" "$d" 1 "live-verify was logged but left no evidence on the head: no live run (.scratch/live/<run>/report.json)" 1 --phase merge G9
+put_review_head "$d"
+expect "fork.9 G9: a review file naming the head satisfies code-review, live-verify still needs its report" "$d" 1 "live-verify was logged but left no evidence" 1 --phase merge G9
+out="$(cd "$d" && "$check" --phase merge G9)"
+pass_if "fork.9 G9: ... and code-review is no longer a problem" test -z "$(printf '%s' "$out" | grep -F 'code-review was logged but')"
+put_live "$d" report-pass.json
+expect "small: merge G9 green once the Skills ran and left a review file and a live report on the head" "$d" 0 "G9 green" 0 --phase merge G9
+expect "fork.9 G9: the pr phase asks the same of G9" "$d" 0 "G9 green" - --phase pr G9
+commit_src_new "$d"
+expect "fork.9 G9: a source commit after the review makes the review file stale" "$d" 1 "code-review was logged but left no evidence on the head: .scratch/review/reply-options.md is for" 1 --phase merge G9
+expect "fork.9 G9: and the live report" "$d" 1 "live-verify was logged but left no evidence on the head: .scratch/live/run1/report.json: the live run ran on" 1 --phase merge G9
+put_review_head "$d"; put_live "$d" report-pass.json
+expect "fork.9 G9: green again once both are redone on the new head" "$d" 0 "G9 green" 0 --phase merge G9
+commit_doc "$d"
+expect "fork.9 G9: HEAD moved by a non-source file only: the evidence still holds" "$d" 0 "G9 green" 0 --phase merge G9
+printf '# Review\n\n## Findings\n\n| ID | Severity | Status | Resolution |\n|---|---|---|---|\n| F1 | LOW | PLAUSIBLE | open |\n' > "$d/.scratch/review/$SLUG.md"
+expect "fork.9 G9: a review file that names no head is red" "$d" 1 "names no head sha" 1 --phase merge G9
+printf '# Review\n\n## Findings\n\nHead: %s\n' "$(git -C "$d" rev-parse HEAD)" > "$d/.scratch/review/$SLUG.md"
+expect "fork.9 G9: a review file with no findings table is red" "$d" 1 "has no ## Findings table" 1 --phase merge G9
+put_review_head "$d"
 expect "small: close G9 is red without retro" "$d" 1 "retro" 1 --phase close G9
 log_skill "$d" retro
 expect "small: close G9 green with retro logged" "$d" 0 "G9 green" 0 --phase close G9
+
+# fork.9: in a loop with a plan_sha the codex code attack (G11) replaces adversarial-review.
+d=$(loop_repo stage-planned normal); gates_json_with "$d" normal "\"plan_sha\": \"$(printf 'p%.0s' {1..64} | tr p a)\""; init_loop "$d"
+log_many "$d" $PLANNING; commit_src "$d"; log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"; put_review_head "$d"; put_live "$d" report-pass.json
+expect "fork.9 G9: with a plan_sha, adversarial-review is not needed at merge" "$d" 0 "G9 green" 0 --phase merge G9
+d=$(loop_repo stage-unplanned normal); log_many "$d" $PLANNING; commit_src "$d"; log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"; put_review_head "$d"; put_live "$d" report-pass.json
+expect "fork.9 G9: without a plan_sha it still is" "$d" 1 "not run in this loop (no entry in the log): adversarial-review" 1 --phase merge G9
 
 # Normal: code-review, live-verify and adversarial-review after the last source commit (L3: with a margin).
 d=$(loop_repo stage-normal normal)
 log_many "$d" $PLANNING; commit_src "$d"
 expect "normal: merge G9 is red without code-review, live-verify and adversarial-review" "$d" 1 "not run in this loop (no entry in the log): code-review; not run in this loop (no entry in the log): live-verify; not run in this loop (no entry in the log): adversarial-review" 1 --phase merge G9
-log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"
+log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"; put_review_head "$d"; put_live "$d" report-pass.json
 log_skill "$d" adversarial-review "$PAST"
 expect "normal: adversarial-review logged before the last source commit does not count" "$d" 1 "adversarial-review was logged before the last source change" 1 --phase merge G9
 ct=$(git -C "$d" log -1 --format=%ct)
@@ -1170,6 +1220,7 @@ pass_if "M1: a plan edited after init (outside ## Changes) waives nothing" test 
 d=$(loop_repo stage-large large)
 log_agent "$d" sonnet "2010-01-01T00:00:00Z"
 log_many "$d" $PLANNING; commit_src "$d"; log_many "$d" wp-loop; log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"; log_skill "$d" adversarial-review "$FUTURE"
+put_review_head "$d"; put_live "$d" report-pass.json
 expect "large: red without a design-challenge file" "$d" 1 "large work needs the design challenge written to .scratch/design-challenge/" - --phase merge G9
 mkdir -p "$d/.scratch/design-challenge"; printf '## Findings\n\n- F1 CONFIRMED: retry storm\n' > "$d/.scratch/design-challenge/$SLUG.md"
 expect "large: a subagent on sonnet is not enough, red without an opus one" "$d" 1 "large work needs a subagent on opus whose description names the design challenge" 1 --phase merge G9
@@ -1185,6 +1236,7 @@ expect "M2: a design-challenge file older than the opus subagent is red" "$d" 1 
 # Hand-written lines, edited lines, removed lines and a missing key are rejected.
 d=$(loop_repo stage-tamper normal)
 log_many "$d" $PLANNING; commit_src "$d"; log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"; log_skill "$d" adversarial-review "$FUTURE"
+put_review_head "$d"; put_live "$d" report-pass.json
 expect "tamper: untouched log is green" "$d" 0 "G9 green" 0 --phase merge G9
 cp "$(log_of "$d")" "$work/stage-tamper.bak"
 printf '{"kind":"skill","skill":"retro","ts":"2020-01-01T00:00:00Z","session":"s1"}\n' >> "$(log_of "$d")"
@@ -1215,7 +1267,7 @@ rm -f "$d/.scratch/gates.json"
 hook_case "H5: a deleted gates.json blocks a push" "$d" "git push -u origin feature" 2 "gates.json is gone"
 d=$(loop_repo stage-h5-close small); put "$d" envelope.md ".scratch/envelope/$SLUG.md"
 log_skill "$d" behavioral-envelope; commit_src "$d"; log_many "$d" wp-loop retro; log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"
-put_live "$d" report-pass.json
+put_live "$d" report-pass.json; put_review_head "$d"
 (cd "$d" && "$check" --phase close >/dev/null 2>&1); code=$?
 pass_if "H5: a passing close phase signs a close entry" bash -c 'test "$1" = 0 && grep -qF "\"kind\":\"close\"" "$2"' _ "$code" "$(log_of "$d")"
 printf '{ "slug": "%s", "size": "small", "base": "main", "status": "closed" }\n' "$SLUG" > "$d/.scratch/gates.json"
@@ -1228,6 +1280,379 @@ hook_case "H5: a deleted gates.json after a signed close is fine" "$d" "git push
 fa=$(new_repo add-fails); gates_json "$fa" normal
 hook_case "a failing chained git add fails closed with its error shown" "$fa" 'git add no-such-file && git commit -m x' 2 "git add failed"
 hook_case "a failing chained git add names the path" "$fa" 'git add no-such-file && git commit -m x' 2 "no-such-file"
+# ---- fork.9: G3/G4 head rule (above), the G4 Packs bypass, G10 to G12, the pr phase, PR and merge refusal
+SKIPPING=""
+export PATH="$bin:$PATH" # the gh stand-in answers `gh run list --commit` for the pr phase
+unset FAKE_GH_RUNS FAKE_GH_RUN_FAIL FAKE_GH_LOG
+PLAN_SHA=$(printf 'ab%.0s' {1..32}); OTHER_SHA=$(printf 'cd%.0s' {1..32})
+APPR="$work/approvals.json"
+# set_approvals <json list>: the owner's verified approvals, as builder B's stage-log.mjs approvals(root) returns them.
+# The gates read them through gates-approvals.mjs, which takes this file in tests (FEATURE_LOOP_APPROVALS_FIXTURE).
+set_approvals() { printf '%s\n' "$1" > "$APPR"; export FEATURE_LOOP_APPROVALS_FIXTURE="$APPR"; }
+approve() { # <stop> <plan_sha or head>: one approval object
+  case "$1" in
+    pr) printf '{"stop":"pr","head":"%s","at":"2026-10-11T10:00:00Z"}' "$2" ;;
+    acceptance) printf '{"stop":"acceptance","acceptance_sha":"%s","at":"2026-10-11T10:00:00Z"}' "$2" ;;
+    *) printf '{"stop":"%s","plan_sha":"%s","at":"2026-10-11T10:00:00Z"}' "$1" "$2" ;;
+  esac
+}
+# at_key <plan file>: the key of its acceptance tests (acceptance-key.mjs), the subject of "approve acceptance".
+at_key() { # paths go in as arguments, which Git Bash converts for node; a path inside the -e code would not be
+  node --input-type=module -e "const { pathToFileURL } = await import('node:url'); const { readFileSync } = await import('node:fs'); const { acceptanceKeyOf } = await import(pathToFileURL(process.argv[1]).href); process.stdout.write(acceptanceKeyOf(readFileSync(process.argv[2], 'utf8')));" "$here/acceptance-key.mjs" "$1"
+}
+AT_KEY=$(at_key "$fx/plan-acceptance.md"); AT_KEY_TWO=$(at_key "$fx/plan-acceptance-two.md")
+[ ${#AT_KEY} = 64 ] && [ ${#AT_KEY_TWO} = 64 ] || { echo "FAIL at_key could not compute the acceptance keys"; exit 1; }
+gates_json_f9() { mkdir -p "$1/.scratch"; printf '{ "slug": "%s", "size": "%s", "base": "main", "plan_sha": "%s" }\n' "$SLUG" "${2:-normal}" "${3:-$PLAN_SHA}" > "$1/.scratch/gates.json"; }
+
+# codex_report <dir> <kind> <subject_sha> <findings JSON> [exit_code] [model]: the report codex-review.sh writes.
+codex_report() {
+  mkdir -p "$1/.scratch/review"
+  node -e 'const [dir, kind, subject, findings, exit, model] = process.argv.slice(1);
+    require("fs").writeFileSync(`${dir}/.scratch/review/codex-${kind}-${process.env.SLUG_X}.json`, JSON.stringify({ kind, model: model || "gpt-6-astra", codex_version: "1.0.0", subject_sha: subject, base: "main", started: "2026-10-11T10:00:00Z", finished: "2026-10-11T10:05:00Z", exit_code: Number(exit ?? 0), summary: "s", findings: JSON.parse(findings) }, null, 2));' "$1" "$2" "$3" "$4" "${5:-0}" "${6:-}"
+}
+export SLUG_X="$SLUG"
+finding() { # <id> <severity> <status>
+  printf '{"id":"%s","severity":"%s","status":"%s","title":"t","where":"src/a.js:1","evidence":"e","repro":"r"}' "$1" "$2" "$3"
+}
+resolutions() { # <dir> <kind> <rows: "id|resolution" ...>
+  local d="$1" k="$2" r; shift 2
+  mkdir -p "$d/.scratch/review"
+  { printf '# Resolutions\n\n| id | resolution |\n|---|---|\n'; for r in "$@"; do printf '| %s | %s |\n' "${r%%|*}" "${r#*|}"; done; } > "$d/.scratch/review/codex-$k-$SLUG.resolutions.md"
+}
+head_of() { git -C "$1" rev-parse HEAD; }
+
+# ---- G10: codex plan review
+
+d=$(new_repo g10); gates_json_f9 "$d"; set_approvals "[$(approve plan "$PLAN_SHA")]"
+expect "G10 red: no codex plan report" "$d" 1 "G10 red: no codex plan report: run the codex-review skill in plan mode (.scratch/review/codex-plan-reply-options.json)" 1 G10
+codex_report "$d" plan "$PLAN_SHA" '[]'
+expect "G10 green: report on the approved plan, nothing confirmed, signed approve plan" "$d" 0 "G10 green" 0 G10
+codex_report "$d" plan "$PLAN_SHA" '[]' 2
+expect "G10 red: exit_code is not 0" "$d" 1 "exit_code is 2, not 0" 1 G10
+codex_report "$d" plan "$PLAN_SHA" '[]' 0 some-other-model
+expect "G10 red: model is not the configured one" "$d" 1 "model is \"some-other-model\", not the configured gpt-6-astra" 1 G10
+d_env="$(cd "$d" && CODEX_REVIEW_MODEL=some-other-model "$check" G10 2>&1)"
+pass_if "G10: CODEX_REVIEW_MODEL changes the configured model" test "$(printf '%s' "$d_env" | grep -c '^G10 green')" = 1
+codex_report "$d" plan "$OTHER_SHA" '[]'
+expect "G10 red: the review is of a different plan than plan_sha" "$d" 1 "neither the approved plan nor a committed version" 1 G10
+d2=$(new_repo g10-version); mkdir -p "$d2/docs/plans"; printf '# Plan
+
+first draft
+' > "$d2/docs/plans/$SLUG.md"; git -C "$d2" add -A; git -C "$d2" commit -q -m "plan draft"
+draft_sha=$(sha256sum "$d2/docs/plans/$SLUG.md" | cut -c1-64)
+printf '# Plan
+
+first draft
+
+folded: codex finding P1
+' > "$d2/docs/plans/$SLUG.md"; git -C "$d2" add -A; git -C "$d2" commit -q -m "fold codex findings"
+gates_json_f9 "$d2"; set_approvals "[$(approve plan "$PLAN_SHA")]"; codex_report "$d2" plan "$draft_sha" '[]'
+expect "G10 green: the review is of an earlier committed version of the same plan file (findings folded in since)" "$d2" 0 "G10 green" 0 G10
+codex_report "$d2" plan "$OTHER_SHA" '[]'
+expect "G10 red: a review of a plan that was never committed in this file" "$d2" 1 "neither the approved plan nor a committed version" 1 G10
+set_approvals "[$(approve plan "$PLAN_SHA")]"
+codex_report "$d" code "$PLAN_SHA" '[]'; mv "$d/.scratch/review/codex-code-$SLUG.json" "$d/.scratch/review/codex-plan-$SLUG.json"
+expect "G10 red: a code report cannot stand in for the plan review" "$d" 1 'kind is "code", not "plan"' 1 G10
+codex_report "$d" plan "$PLAN_SHA" "[$(finding P1 HIGH CONFIRMED),$(finding P2 LOW PLAUSIBLE)]"
+expect "G10 red: a CONFIRMED finding with no resolutions file" "$d" 1 "CONFIRMED finding with no \"fixed: <commit>\" or \"rejected: <reason>\" row in .scratch/review/codex-plan-reply-options.resolutions.md: P1 HIGH" 1 G10
+resolutions "$d" plan "P1|open"
+expect "G10 red: a resolution that is neither fixed nor rejected" "$d" 1 "P1 HIGH" 1 G10
+resolutions "$d" plan "P1|fixed: abc1234"
+expect "G10 green: CONFIRMED finding fixed, PLAUSIBLE one needs no row" "$d" 0 "G10 green" 0 G10
+resolutions "$d" plan "P1|rejected: the plan already says so in Decisions"
+expect "G10 green: CONFIRMED finding rejected with a reason" "$d" 0 "G10 green" 0 G10
+resolutions "$d" plan "P1|rejected:"
+expect "G10 red: rejected with no reason" "$d" 1 "P1 HIGH" 1 G10
+codex_report "$d" plan "$PLAN_SHA" "[$(finding P3 LOW CONFIRMED)]"; resolutions "$d" plan "P9|fixed: abc1234"
+expect "G10 red: every CONFIRMED finding needs a row, whatever its severity" "$d" 1 "P3 LOW" 1 G10
+codex_report "$d" plan "$PLAN_SHA" '[]'
+set_approvals '[]'
+expect "G10 red: no signed approve plan" "$d" 1 'the signed log has no "approve plan" for plan abababababab' 1 G10
+set_approvals "[$(approve plan "$OTHER_SHA")]"
+expect "G10 red: approve plan for another plan" "$d" 1 'no "approve plan"' 1 G10
+set_approvals "[$(approve acceptance "$PLAN_SHA"),$(approve pr "$(head_of "$d")")]"
+expect "G10 red: approve acceptance or pr is not approve plan" "$d" 1 'no "approve plan"' 1 G10
+FEATURE_LOOP_APPROVALS_FIXTURE="$work/no-such-approvals.json" expect "G10 red: approvals that cannot be read fail closed" "$d" 1 "approvals could not be read" 1 G10
+set_approvals "[$(approve plan "$PLAN_SHA")]"
+d=$(new_repo g10-noplansha); gates_json "$d" normal; codex_report "$d" plan "$PLAN_SHA" '[]'
+expect "G10 red: gates.json has no plan_sha" "$d" 1 '.scratch/gates.json has no "plan_sha"' 1 G10
+d=$(new_repo g10-badplansha); gates_json_with "$d" normal '"plan_sha": "abc"'
+expect "plan_sha must be 64 hex digits" "$d" 2 '"plan_sha" must be the sha256 (64 hex digits) of the approved plan' 0
+d=$(new_repo g10-small); gates_json_f9 "$d" small; codex_report "$d" plan "$PLAN_SHA" '[]'
+expect "G10 applies to small work too" "$d" 0 "G10 green" 0 G10
+
+# ---- G11: codex code attack
+
+d=$(new_repo g11); gates_json_f9 "$d"; set_approvals "[]"
+expect "G11 red: no codex code report" "$d" 1 "G11 red: no codex code report: run the codex-review skill in code mode" 1 G11
+codex_report "$d" code "$(head_of "$d")" '[]'
+expect "G11 green: report on HEAD, nothing found" "$d" 0 "G11 green" 0 G11
+codex_report "$d" code "$(head_of "$d")" '[]' 3
+expect "G11 red: exit_code not 0" "$d" 1 "exit_code is 3, not 0" 1 G11
+codex_report "$d" code "$(head_of "$d")" '[]' 0 other-model
+expect "G11 red: model not the configured one" "$d" 1 "model is \"other-model\"" 1 G11
+codex_report "$d" code "$(head_of "$d")" '[]'; commit_src_new "$d"
+expect "G11 red: the attack ran on an older head and source changed since" "$d" 1 "the attack ran on" 1 G11
+expect "G11 red: ... and says to run it again" "$d" 1 "run the code attack again on this head" 1 G11
+codex_report "$d" code "$(head_of "$d")" '[]'; commit_doc "$d"
+expect "G11 green: HEAD moved only by a non-source file since the attack" "$d" 0 "G11 green" 0 G11
+codex_report "$d" code "$(head_of "$d")" '[]'; printf 'x\n' > "$d/src/edit.js"
+expect "G11 red: uncommitted source edits since the attack" "$d" 1 "uncommitted: src/edit.js" 1 G11
+rm "$d/src/edit.js"
+codex_report "$d" code "$(head_of "$d")" "[$(finding C1 CRITICAL CONFIRMED)]"
+expect "G11 red: a CONFIRMED CRITICAL with no resolutions" "$d" 1 "C1 CRITICAL" 1 G11
+codex_report "$d" code "$(head_of "$d")" "[$(finding C1 HIGH CONFIRMED)]"
+expect "G11 red: a CONFIRMED HIGH with no resolutions" "$d" 1 "C1 HIGH" 1 G11
+codex_report "$d" code "$(head_of "$d")" "[$(finding C1 HIGH PLAUSIBLE),$(finding C2 MEDIUM CONFIRMED),$(finding C3 LOW CONFIRMED)]"
+expect "G11 green: PLAUSIBLE HIGH and CONFIRMED MEDIUM or LOW need no resolution" "$d" 0 "G11 green" 0 G11
+codex_report "$d" code "$(head_of "$d")" "[$(finding C1 HIGH CONFIRMED)]"; resolutions "$d" code "C1|rejected: not reachable, the route is behind auth (src/auth.js:9)"
+expect "G11 green: a CONFIRMED HIGH rejected with a reason" "$d" 0 "G11 green" 0 G11
+resolutions "$d" code "C1|open"
+expect "G11 red: open is not a resolution" "$d" 1 "C1 HIGH" 1 G11
+
+# fixed: the repro is kept, the fix commit is on the branch, and the repo has an equivalent test.
+fixed_repo() { # <name>: a repo whose fix commit adds tests/c1.test.js; prints the dir; the fix sha is in $FIX
+  local r; r=$(new_repo "$1"); gates_json_f9 "$r"
+  mkdir -p "$r/tests" && printf 'test("c1", () => {});\n' > "$r/tests/c1.test.js" && git -C "$r" add -A && git -C "$r" commit -q -m "fix C1"
+  FIX=$(git -C "$r" rev-parse HEAD); printf '%s' "$r"
+}
+d=$(fixed_repo g11-fixed); FIX=$(head_of "$d"); codex_report "$d" code "$(head_of "$d")" "[$(finding C1 HIGH CONFIRMED)]"; resolutions "$d" code "C1|fixed: $FIX"
+expect "G11 red: fixed but its repro is not in codex-repros/<id>/" "$d" 1 "C1 is fixed but its repro is not in .scratch/review/codex-repros/C1/" 1 G11
+mkdir -p "$d/.scratch/review/codex-repros/C1"; printf 'test("c1", () => {});\n' > "$d/.scratch/review/codex-repros/C1/c1.repro.test.js"
+expect "G11 green: fixed, repro kept, and the fix commit added a test" "$d" 0 "G11 green" 0 G11
+resolutions "$d" code "C1|fixed: 0123456789abcdef"
+expect "G11 red: fixed: names a commit that is not on this branch" "$d" 1 "is not a commit on this branch" 1 G11
+d=$(new_repo g11-notest); gates_json_f9 "$d"; commit_src_new "$d"; FIX=$(head_of "$d")
+codex_report "$d" code "$FIX" "[$(finding C1 HIGH CONFIRMED)]"; resolutions "$d" code "C1|fixed: $FIX"
+mkdir -p "$d/.scratch/review/codex-repros/C1"; printf 'test("c1", () => {});\n' > "$d/.scratch/review/codex-repros/C1/c1.repro.test.js"
+expect "G11 red: fixed, but the repo has no test equivalent to the repro" "$d" 1 "the repo has no test equivalent to its repro" 1 G11
+mkdir -p "$d/tests"; printf 'test("c1", () => {});\n' > "$d/tests/c1.repro.test.js"; git -C "$d" add -A; git -C "$d" commit -q -m "add the repro as a test"
+codex_report "$d" code "$(head_of "$d")" "[$(finding C1 HIGH CONFIRMED)]"
+expect "G11 green: the repro file is in the tree by name" "$d" 0 "G11 green" 0 G11
+d=$(new_repo g11-small); gates_json_f9 "$d" small; codex_report "$d" code "$(head_of "$d")" '[]'
+expect "G11 applies to small work too" "$d" 0 "G11 green" 0 G11
+
+# ---- G12: acceptance
+
+at_repo() { # <name>: a repo with the plan's acceptance tests mapped and passing on HEAD; approvals set
+  local r; r=$(new_repo "$1"); gates_json_f9 "$r"; put "$r" plan-acceptance.md "docs/plans/$SLUG.md"
+  mkdir -p "$r/tests"; printf 't\n' > "$r/tests/at2.test.js"; printf 't\n' > "$r/tests/at3.test.js"; git -C "$r" add -A; git -C "$r" commit -q -m "acceptance tests"
+  put_live "$r" report-pass.json
+  sed "s/@SHA@/$(head_of "$r")/" "$fx/acceptance-ok.md" > "$r/.scratch/acceptance.md"
+  set_approvals "[$(approve acceptance "$AT_KEY")]"
+  printf '%s' "$r"
+}
+d=$(at_repo g12)
+expect "G12 green: every acceptance test mapped to a test or scenario, passing on HEAD, approved" "$d" 0 "G12 green" 0 G12
+d=$(at_repo g12-noplansec); put "$d" plan-complete.md "docs/plans/$SLUG.md"
+expect "G12 red: the plan has no ## Acceptance tests section" "$d" 1 "the plan has no ## Acceptance tests section" 1 G12
+d=$(at_repo g12-noplan); rm "$d/docs/plans/$SLUG.md"
+expect "G12 red: no plan file" "$d" 1 "the plan has no ## Acceptance tests section" 1 G12
+d=$(at_repo g12-nomap); rm "$d/.scratch/acceptance.md"
+expect "G12 red: no .scratch/acceptance.md" "$d" 1 "no .scratch/acceptance.md mapping each acceptance test" 1 G12
+d=$(at_repo g12-unmapped); grep -v '^| AT3' "$d/.scratch/acceptance.md" > "$d/.scratch/a.tmp"; mv "$d/.scratch/a.tmp" "$d/.scratch/acceptance.md"
+expect "G12 red: an acceptance test with no row is unmapped" "$d" 1 "AT3 is not mapped" 1 G12
+d=$(at_repo g12-empty-target); sed -i 's/^| AT2 | tests\/at2.test.js /| AT2 |  /' "$d/.scratch/acceptance.md"
+expect "G12 red: a row that maps to nothing" "$d" 1 "AT2 maps to no test or scenario" 1 G12
+d=$(at_repo g12-nofile); rm "$d/tests/at2.test.js"; git -C "$d" add -A; git -C "$d" commit -q -m rm; sed -i "s/pass [0-9a-f]\{40\}/pass $(head_of "$d")/" "$d/.scratch/acceptance.md"; put_live "$d" report-pass.json
+expect "G12 red: the mapped test file does not exist" "$d" 1 "AT2 its test tests/at2.test.js does not exist" 1 G12
+d=$(at_repo g12-noscenario); sed -i 's/first reply after install/a scenario nobody ran/' "$d/.scratch/acceptance.md"
+expect "G12 red: the named scenario is in no live report" "$d" 1 'AT1 has no live-verify scenario named "a scenario nobody ran" in a report' 1 G12
+d=$(at_repo g12-failscen); put_live "$d" report-fail.json; sed -i 's/first reply after install/two reviewers race/' "$d/.scratch/acceptance.md"
+expect "G12 red: the named scenario failed in the live report" "$d" 1 'AT1 live-verify scenario "two reviewers race" has no passing result on HEAD' 1 G12
+d=$(at_repo g12-failing); sed -i '0,/pass /s//fail /' "$d/.scratch/acceptance.md"
+expect "G12 red: a failing result" "$d" 1 "AT1 is failing" 1 G12
+d=$(at_repo g12-noresult); sed -i 's/pass [0-9a-f]\{40\}//' "$d/.scratch/acceptance.md"
+expect "G12 red: a result with no sha" "$d" 1 'has no "pass <sha>" result' 1 G12
+d=$(at_repo g12-stale); commit_src_new "$d"
+expect "G12 red: results are for an older head and source changed since" "$d" 1 "AT2 result ran on" 1 G12
+d=$(at_repo g12-nonsource); commit_doc "$d"
+expect "G12 green: HEAD moved only by a non-source file" "$d" 0 "G12 green" 0 G12
+d=$(at_repo g12-noappr); set_approvals '[]'
+expect "G12 red: no signed approve acceptance" "$d" 1 'the signed log has no "approve acceptance"' 1 G12
+set_approvals "[$(approve plan "$PLAN_SHA")]"
+expect "G12 red: approve plan is not approve acceptance" "$d" 1 'no "approve acceptance"' 1 G12
+set_approvals "[$(approve acceptance "$OTHER_SHA")]"
+expect "G12 red: approve acceptance for other acceptance tests" "$d" 1 'no "approve acceptance"' 1 G12
+set_approvals "[$(approve acceptance "$PLAN_SHA")]"
+expect "G12 red: an acceptance approval keyed to the plan file, not the tests, does not count" "$d" 1 'no "approve acceptance"' 1 G12
+d=$(at_repo g12-edited); put "$d" plan-acceptance-two.md "docs/plans/$SLUG.md"
+expect "G12 red: edited acceptance tests need a fresh approval" "$d" 1 'a changed test needs a fresh approval' 1 G12
+d=$(at_repo g12-two); put "$d" plan-acceptance-two.md "docs/plans/$SLUG.md"; set_approvals "[$(approve acceptance "$AT_KEY_TWO")]"
+expect "G12 green: items without an AT id are numbered AT1, AT2 in order; extra rows are ignored" "$d" 0 "G12 green" 0 G12
+d=$(at_repo g12-small); gates_json_f9 "$d" small
+expect "G12 applies to small work too" "$d" 0 "G12 green" 0 G12
+
+# ---- G4: editing the envelope's Packs line after a red G4 is a bypass
+
+set_packs() { sed -i "s/^\*\*Packs:\*\*.*/**Packs:** $2/" "$1/.scratch/envelope/$SLUG.md"; }
+packs_hash8() { printf '%s' "$1" | sha256sum | cut -c1-8; }
+d=$(loop_repo g4-bypass normal); put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"
+(cd "$d" && "$check" G4 >/dev/null 2>&1) # setup, not an assertion: the red G4 the rest builds on must exist in every shard
+expect "G4 bypass: the llm pack with no eval results is red (and recorded in the signed log)" "$d" 1 "G4 red: eval results missing" 1 G4
+pass_if "G4 bypass: the red G4 is signed into the stage log" grep -qF '"kind":"g4"' "$(log_of "$d")"
+set_packs "$d" "core, api, data"
+expect "G4 bypass: the Packs line changed after a red G4 is a bypass, red" "$d" 1 "the envelope Packs line was changed after G4 was red (a bypass)" 1 G4
+H8=$(packs_hash8 "core, api, data")
+expect "G4 bypass: the message says what to record" "$d" 1 "\"<date> reply-options G4 packs bypass $H8: <reason>\"" 1 G4
+printf '2026-10-11T10:00:00Z reply-options G4 packs bypass %s: the diff has no llm call, see .scratch/review/reply-options.md\n' "$H8" >> "$d/.scratch/loop-metrics.md"
+expect "G4 bypass: with the reason in loop-metrics.md the edit stands (n/a)" "$d" 0 "G4 n/a: envelope Packs names neither llm nor retrieval" 0 G4
+set_packs "$d" "core, api, data, jobs"
+expect "G4 bypass: an old reason does not cover a new edit" "$d" 1 "the envelope Packs line was changed after G4 was red" 1 G4
+printf '2026-10-11T10:00:00Z reply-options G4 packs bypass %s:   \n' "$(packs_hash8 "core, api, data, jobs")" >> "$d/.scratch/loop-metrics.md"
+expect "G4 bypass: a reason that is blank does not count" "$d" 1 "the envelope Packs line was changed after G4 was red" 1 G4
+put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"
+expect "G4 bypass: putting the Packs line back is not a bypass (G4 is simply red again)" "$d" 1 "G4 red: eval results missing" 1 G4
+d=$(loop_repo g4-nobypass normal); put "$d" envelope-no-llm-words.md ".scratch/envelope/$SLUG.md"
+expect "G4 bypass: a G4 that was never red leaves the Packs line free to change (n/a)" "$d" 0 "G4 n/a" 0 G4
+set_packs "$d" "core, api"
+expect "G4 bypass: ... still n/a after an edit" "$d" 0 "G4 n/a" 0 G4
+put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"
+expect "G4 bypass: adding the llm pack is red for its own reason, not a bypass" "$d" 1 "G4 red: eval results missing" 1 G4
+
+# ---- the pr phase: G1 to G6 and G8 to G12, CI green on the exact HEAD, the owner's approve pr for HEAD
+
+pr_repo() { # <name>: a normal-size repo with every gate's evidence on HEAD, approvals for the three stops
+  local r; r=$(new_repo "$1"); green_normal "$r"; gates_json_f9 "$r"
+  put "$r" plan-acceptance.md "docs/plans/$SLUG.md"
+  mkdir -p "$r/tests"; printf 't\n' > "$r/tests/at2.test.js"; printf 't\n' > "$r/tests/at3.test.js"; git -C "$r" add -A; git -C "$r" commit -q -m "acceptance tests"
+  put_live "$r" report-pass.json; put_review_head "$r"
+  codex_report "$r" plan "$PLAN_SHA" '[]'; codex_report "$r" code "$(head_of "$r")" '[]'
+  sed "s/@SHA@/$(head_of "$r")/" "$fx/acceptance-ok.md" > "$r/.scratch/acceptance.md"
+  printf '%s' "$r"
+}
+ALL_APPROVED="[$(approve plan "$PLAN_SHA"),$(approve acceptance "$AT_KEY")"
+CI_OK='[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"success"}]'
+pr_approvals() { set_approvals "$ALL_APPROVED,$(approve pr "$(head_of "$1")")]"; }
+export FAKE_GH_RUNS="$CI_OK"
+d=$(pr_repo pr-green); pr_approvals "$d"
+expect "pr phase: every gate, CI on HEAD and approve pr green" "$d" 0 "gates: green for reply-options (size normal): 10 green, 0 red, 2 n/a" 0 --phase pr
+expect "pr phase: prints PR-CI and PR-APPROVAL" "$d" 0 "PR-CI green" 0 --phase pr
+expect "pr phase: ... and PR-APPROVAL" "$d" 0 "PR-APPROVAL green" 0 --phase pr
+out="$(cd "$d" && "$check" --phase pr)"
+pass_if "pr phase: G10 G11 G12 are evaluated, G7 is not" bash -c 'printf "%s\n" "$1" | grep -q "^G12 green" && printf "%s\n" "$1" | grep -q "^G10 green" && ! printf "%s\n" "$1" | grep -q "^G7 "' _ "$out"
+out="$(cd "$d" && "$check" --phase pr G3)"
+pass_if "pr phase with explicit gates does not run the CI and approval checks" test -z "$(printf '%s\n' "$out" | grep -E '^PR-')"
+out="$(cd "$d" && "$check")"
+pass_if "no phase does not run the CI and approval checks either" test -z "$(printf '%s\n' "$out" | grep -E '^PR-')"
+: > "$work/gh-run.log"; out="$(cd "$d" && FAKE_GH_LOG="$work/gh-run.log" "$check" --phase pr)"
+pass_if "pr phase asks gh for the runs of the exact HEAD sha" grep -qF "run list --commit $(head_of "$d") --json conclusion,status" "$work/gh-run.log"
+
+FAKE_GH_RUNS='[]' expect "pr phase red: no CI run on HEAD" "$d" 1 "PR-CI red: no CI run on $(head_of "$d" | cut -c1-9): push the branch and wait for the workflow" 1 --phase pr
+FAKE_GH_RUNS='[{"status":"completed","conclusion":"success"},{"status":"in_progress","conclusion":""}]' expect "pr phase red: CI still running" "$d" 1 "PR-CI red: CI is still running on" 1 --phase pr
+FAKE_GH_RUNS='[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"failure"}]' expect "pr phase red: a failed run" "$d" 1 "PR-CI red: CI is not green on $(head_of "$d" | cut -c1-9): failure" 1 --phase pr
+FAKE_GH_RUNS='[{"status":"completed","conclusion":"cancelled"}]' expect "pr phase red: a cancelled run" "$d" 1 "CI is not green on" 1 --phase pr
+FAKE_GH_RUNS='[{"status":"completed","conclusion":"skipped"}]' expect "pr phase red: every run skipped is not a pass" "$d" 1 "no CI run succeeded" 1 --phase pr
+FAKE_GH_RUNS='[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"skipped"},{"status":"completed","conclusion":"neutral"}]' expect "pr phase green: success with skipped and neutral runs" "$d" 0 "PR-CI green" 0 --phase pr
+FAKE_GH_RUN_FAIL=1 expect "pr phase red: gh fails, so CI cannot be checked (fail closed)" "$d" 1 "so CI could not be checked" 1 --phase pr
+FAKE_GH_RUNS='not json' expect "pr phase red: gh output that is not JSON" "$d" 1 "gh run list did not return JSON" 1 --phase pr
+set_approvals "$ALL_APPROVED]"
+expect "pr phase red: no signed approve pr" "$d" 1 'PR-APPROVAL red: the signed log has no "approve pr" for HEAD' 1 --phase pr
+set_approvals "$ALL_APPROVED,$(approve pr "$(git -C "$d" rev-parse HEAD~1)")]"
+expect "pr phase red: approve pr for another head, source changed since" "$d" 1 "PR-APPROVAL red" 1 --phase pr
+old_head=$(head_of "$d"); commit_doc "$d"
+set_approvals "$ALL_APPROVED,$(approve pr "$old_head")]"
+expect "pr phase: approve pr for a head that only non-source files changed since still counts" "$d" 0 "PR-APPROVAL green" 0 --phase pr
+pr_approvals "$d"
+
+d=$(pr_repo pr-g10); pr_approvals "$d"; resolutions "$d" plan "X|open"; codex_report "$d" plan "$PLAN_SHA" "[$(finding X1 HIGH CONFIRMED)]"
+expect "pr phase red: an unresolved CONFIRMED plan-review finding" "$d" 1 "G10 red" 1 --phase pr
+d=$(pr_repo pr-g11); pr_approvals "$d"; codex_report "$d" code "$(head_of "$d")" "[$(finding X1 CRITICAL CONFIRMED)]"
+expect "pr phase red: an unresolved CONFIRMED CRITICAL code-attack finding" "$d" 1 "G11 red" 1 --phase pr
+d=$(pr_repo pr-g12); pr_approvals "$d"; rm "$d/.scratch/acceptance.md"
+expect "pr phase red: acceptance tests not mapped" "$d" 1 "G12 red" 1 --phase pr
+d=$(pr_repo pr-g3); pr_approvals "$d"; rm -r "$d/.scratch/live"
+expect "pr phase red: no live run (G3)" "$d" 1 "G3 red: no live run" - --phase pr
+d=$(pr_repo pr-noplansha); pr_approvals "$d"; gates_json "$d" normal
+expect "pr phase red: a loop with no plan_sha cannot skip G10 (the pr phase always asks)" "$d" 1 'G10 red: .scratch/gates.json has no "plan_sha"' - --phase pr
+d=$(pr_repo pr-merge-check); pr_approvals "$d"; gates_json_with "$d" normal "\"plan_sha\": \"$PLAN_SHA\", \"merge_check\": \"true\""
+FAKE_GH_RUNS='[]' expect "pr phase: merge_check replaces gh for CI" "$d" 0 "PR-CI green" 0 --phase pr
+gates_json_with "$d" normal "\"plan_sha\": \"$PLAN_SHA\", \"merge_check\": \"false\""
+expect "pr phase red: a failing merge_check" "$d" 1 "PR-CI red: merge_check failed on" 1 --phase pr
+d=$(new_repo ph-pr-usage); gates_json "$d" normal
+expect "usage: --phase needs build, merge, pr or close" "$d" 2 "--phase needs build, merge, pr or close" 0 --phase
+expect "usage: unknown phase lists pr" "$d" 2 "expected build, merge, pr or close" 0 --phase later
+d=$(new_repo ph-codex-skip); green_normal "$d"
+expect "a loop without plan_sha leaves G10 to G12 out of the merge phase (they are for the fork.9 flow)" "$d" 0 "gates: green for reply-options (size normal): 5 green, 0 red, 2 n/a" 0 --phase merge
+d=$(new_repo ph-codex-merge); green_normal "$d"; gates_json_f9 "$d"; set_approvals '[]'
+expect "a loop with a plan_sha asks G10 to G12 at the merge phase too" "$d" 1 "G10 red" 3 --phase merge
+expect "... and at close" "$d" 1 "G12 red" 3 --phase close
+
+# ---- gate-hook.sh: PR creation needs the pr phase, merge is refused
+
+PRMSG="the pr phase is red"
+hr=$(pr_repo hook-pr-green); pr_approvals "$hr"
+hook_case "gh pr create allowed when the pr phase is green" "$hr" 'gh pr create --title x --body y' 0 ""
+hook_case "gh pr create --draft allowed when the pr phase is green" "$hr" 'gh pr create --draft --title x --body y' 0 ""
+hook_case "gh api POST pulls allowed when the pr phase is green" "$hr" "gh api repos/o/r/pulls -f title=x -f head=feature -f base=main" 0 ""
+hook_case "graphql createPullRequest allowed when the pr phase is green" "$hr" "gh api graphql -f query='mutation { createPullRequest(input: {title: \"x\"}) { pullRequest { id } } }'" 0 ""
+hook_case "git push passes before CI exists (a push is the build phase)" "$hr" "git push -u origin feature" 0 "" FAKE_GH_RUNS='[]'
+FAKE_GH_RUNS='[]' hook_case "gh pr create refused with no CI run on HEAD" "$hr" 'gh pr create --title x --body y' 2 "$PRMSG"
+FAKE_GH_RUNS='[]' hook_case "the refusal names the CI check" "$hr" 'gh pr create --title x --body y' 2 "PR-CI red: no CI run on"
+FAKE_GH_RUNS='[{"status":"completed","conclusion":"failure"}]' hook_case "gh pr create refused when CI failed on HEAD" "$hr" 'gh pr create --title x --body y' 2 "PR-CI red: CI is not green"
+FAKE_GH_RUNS='[]' hook_case "a draft PR is refused before the pr phase, and says draft" "$hr" 'gh pr create --draft --title x --body y' 2 "opening a draft PR was blocked, the pr phase is red"
+FAKE_GH_RUNS='[]' hook_case "gh pr create -d is a draft too" "$hr" 'gh pr create -d --title x' 2 "opening a draft PR was blocked"
+FAKE_GH_RUNS='[]' hook_case "REST POST pulls with draft=true is a draft" "$hr" "gh api repos/o/r/pulls -f title=x -F draft=true" 2 "opening a draft PR was blocked"
+FAKE_GH_RUNS='[]' hook_case "graphql createPullRequest refused before the pr phase" "$hr" "gh api graphql -f query='mutation { createPullRequest(input: {title: \"x\", draft: true}) { pullRequest { id } } }'" 2 "opening a draft PR was blocked"
+FAKE_GH_RUNS='[]' hook_case "the refusal says how to fix and that there is no bypass" "$hr" 'gh pr create --title x' 2 "this gate has no bypass"
+FAKE_GH_RUN_FAIL=1 hook_case "gh failing refuses PR creation (fail closed)" "$hr" 'gh pr create --title x' 2 "so CI could not be checked"
+set_approvals "$ALL_APPROVED]"
+hook_case "gh pr create refused without the owner's approve pr" "$hr" 'gh pr create --title x --body y' 2 "PR-APPROVAL red"
+set_approvals '[]'
+hook_case "gh pr create refused without approvals at all" "$hr" 'gh pr create --title x --body y' 2 'no "approve plan"'
+pr_approvals "$hr"
+hook_case "bypass does not unblock PR creation" "$hr" 'gh pr create --title x' 2 "no bypass" FAKE_GH_RUNS='[]' FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=owner is waiting"
+hook_case "inline bypass does not unblock PR creation" "$hr" "FEATURE_LOOP_GATES=off FEATURE_LOOP_BYPASS_REASON=x gh pr create --title x" 2 "no bypass" FAKE_GH_RUNS='[]'
+pass_if "a refused PR writes no bypass record" bash -c '! grep -q "gates bypassed" "$1/.scratch/loop-metrics.md"' _ "$hr"
+: > "$work/gh-hook.log"
+hook_case "the hook asks gh about the runs of HEAD" "$hr" 'gh pr create --title x' 0 "" FAKE_GH_LOG="$work/gh-hook.log"
+pass_if "hook: gh run list --commit <HEAD sha>" grep -qF "run list --commit $(head_of "$hr")" "$work/gh-hook.log"
+hn=$(pr_repo hook-pr-noready); pr_approvals "$hn"
+HOOK_NOREADY=1 hook_case "gh pr create refused when no hook ever started the loop (G9 is mandatory)" "$hn" 'gh pr create --title x' 2 "G9 red: no signed init entry"
+hg=$(pr_repo hook-pr-g1); pr_approvals "$hg"; rm "$hg/.scratch/shape/$SLUG.md"
+hook_case "gh pr create refused when an earlier gate is red (G1) and names it" "$hg" 'gh pr create --title x' 2 "G1 red: shape file missing"
+hook_case "gh pr create --draft from another directory is gated" "$outside" "cd $hg && gh pr create --draft --title x" 2 "opening a draft PR was blocked"
+hook_case "gh pr new is gated like gh pr create" "$hg" 'gh pr new --title x' 2 "$PRMSG"
+hook_case "gh pr list is not a PR creation" "$hg" 'gh pr list' 0 ""
+
+# ---- mcp-pr-hook.sh: the GitHub MCP tools walk around the Bash hook, so they have their own
+
+mcp_case() { # <name> <cwd> <tool_name> <exit> <needle or @empty> [VAR=value...]
+  local name="$1" cwd="$2" tool="$3" want="$4" needle="$5"; shift 5
+  skip_case && return 0
+  local payload err code bad=""
+  payload="$(node -e 'process.stdout.write(JSON.stringify({ session_id: "s1", cwd: process.argv[1], hook_event_name: "PreToolUse", tool_name: process.argv[2], tool_input: { owner: "o", repo: "r", pullNumber: 5 } }))' "$cwd" "$tool")"
+  err="$(cd "$work" && printf '%s' "$payload" | env "$@" bash "$here/mcp-pr-hook.sh" 2>&1 >/dev/null)"; code=$?
+  [ "$code" = "$want" ] || bad="exit $code, want $want"
+  if [ "$needle" = @empty ]; then [ -z "$err" ] || bad="${bad:+$bad; }expected no output"
+  elif ! printf '%s\n' "$err" | grep -qF -- "$needle"; then bad="${bad:+$bad; }missing: $needle"; fi
+  total=$((total + 1))
+  if [ -z "$bad" ]; then echo "ok   mcp: $name"; else echo "FAIL mcp: $name: $bad"; printf '%s\n' "$err" | sed 's/^/       | /'; fail=1; fi
+}
+MERGE_TOOL=mcp__plugin_everything-claude-code_github__merge_pull_request
+CREATE_TOOL=mcp__plugin_everything-claude-code_github__create_pull_request
+ready_repo "$hr"; ready_repo "$hg" # the signed log a finished loop leaves (an hook_case does this too, but a sharded run may skip it)
+mcp_case "merge_pull_request refused while a loop is active" "$hr" "$MERGE_TOOL" 2 "$OWNER_MERGES"
+mcp_case "merge refusal has no bypass" "$hr" "$MERGE_TOOL" 2 "This gate has no bypass" FEATURE_LOOP_GATES=off "FEATURE_LOOP_BYPASS_REASON=x"
+mcp_case "merge_pull_request from another MCP server name is refused too" "$hr" "mcp__github__merge_pull_request" 2 "$OWNER_MERGES"
+mcp_case "merge refused even when every gate and CI are green" "$hr" "$MERGE_TOOL" 2 "owner merges"
+pr_approvals "$hr" # the approvals file holds the last repo's approve pr (hg), so give hr its own
+mcp_case "create_pull_request allowed when the pr phase is green" "$hr" "$CREATE_TOOL" 0 @empty
+FAKE_GH_RUNS='[]' mcp_case "create_pull_request refused with no CI on HEAD" "$hr" "$CREATE_TOOL" 2 "PR-CI red: no CI run on"
+mcp_case "create_pull_request refused without approve pr" "$hg" "$CREATE_TOOL" 2 "opening a PR was blocked, the pr phase is not green"
+mcp_case "another MCP github tool passes" "$hr" "mcp__plugin_everything-claude-code_github__get_pull_request" 0 @empty
+mcp_case "a non-MCP tool name passes" "$hr" "Bash" 0 @empty
+mcp_case "merge with no loop passes" "$plain_repo" "$MERGE_TOOL" 0 @empty
+mcp_case "create with no loop passes" "$plain_repo" "$CREATE_TOOL" 0 @empty
+d_cl=$(loop_repo mcp-closed normal); sign_close "$d_cl"; printf '{ "slug": "%s", "size": "normal", "base": "main", "status": "closed" }
+' "$SLUG" > "$d_cl/.scratch/gates.json"
+mcp_case "merge on a properly closed loop passes" "$d_cl" "$MERGE_TOOL" 0 @empty
+d_h5=$(loop_repo mcp-h5 normal); printf '{ "slug": "%s", "size": "normal", "base": "main", "status": "closed" }
+' "$SLUG" > "$d_h5/.scratch/gates.json"
+mcp_case "merge on a loop closed without a signed close entry is refused" "$d_h5" "$MERGE_TOOL" 2 "closed without a signed close"
+mcp_case "node absent, loop active: create fails closed" "$hr" "$CREATE_TOOL" 2 "node not found" "PATH=$np"
+mcp_case "node absent, loop active: merge is still refused" "$hr" "$MERGE_TOOL" 2 "$OWNER_MERGES" "PATH=$np"
+
 echo
 if [ "$fail" -eq 0 ]; then echo "test-gates: all $total passed"; else echo "test-gates: failures above ($total cases)"; fi
 exit "$fail"

@@ -1,6 +1,6 @@
 # Iteration 1: draftReplies prompt and parser
 
-Target: `skills/fork/live-verify/bench/inbox-assist/src/draft.mjs` (`draftReplies`). Suite: this folder, 40 cases, 7 code graders, 5 judges. Generation `haiku` (served `claude-haiku-5-5`), judging `sonnet`, through the harness's `claude-cli` client. Cases and graders unchanged between runs (same `casesSha` and `gradersSha`, so the paired comparison carries no warnings).
+Target: `bench/inbox-assist/src/draft.mjs` (`draftReplies`). Suite: this folder, 40 cases, 7 code graders, 5 judges. Generation `haiku` (served `claude-haiku-5-5`), judging `sonnet`, through the harness's `claude-cli` client. Cases and graders unchanged between runs (same `casesSha` and `gradersSha`, so the paired comparison carries no warnings).
 
 - Error analysis: [error-analysis.md](error-analysis.md)
 - Dev and held-out split: [split.json](split.json) (15 dev, 25 held-out, stratified by tag, clusters kept on one side, fixed before the first new-prompt run)

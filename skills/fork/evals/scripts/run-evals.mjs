@@ -11,6 +11,7 @@
 // too many infrastructure errors, or a gate names a metric that does not exist).
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import {
@@ -49,6 +50,12 @@ function readJsonl(path) {
     .map(([l, n]) => { try { return JSON.parse(l); } catch (e) { throw usage(`${path}:${n}: ${e.message}`); } });
 }
 const sha = (path) => createHash('sha256').update(readFileSync(path)).digest('hex').slice(0, 16);
+// The commit the evals ran on (fork.9, gate G4: fresh means this head is the branch head, never file time). '' when none.
+function gitHead() {
+  if (process.env.EVALS_HEAD) return process.env.EVALS_HEAD;
+  const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD'], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : '';
+}
 function writeAtomic(path, data) { writeFileSync(path + '.tmp', data); renameSync(path + '.tmp', path); }
 async function importModule(p) { return import(pathToFileURL(resolve(p)).href); }
 
@@ -449,7 +456,7 @@ async function main() {
   }
   result.gates = evaluateGates(a.gate, result.metrics);
 
-  writeAtomic(join(outDir, 'results.json'), JSON.stringify(result, null, 2));
+  writeAtomic(join(outDir, 'results.json'), JSON.stringify({ ...result, head: gitHead() }, null, 2));
   const md = renderMarkdown(result);
   writeAtomic(join(outDir, 'results.md'), md);
   process.stdout.write(md);

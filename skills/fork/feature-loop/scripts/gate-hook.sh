@@ -4,29 +4,29 @@
 # repository, when the command runs in a linked builder worktree) without "status": "closed". Work that is not
 # running the feature loop is never blocked.
 #
-#   push / PR   `git push`, `gh pr create`, or a `gh api` POST to .../pulls (or a createPullRequest mutation): runs
-#               check-gates.sh --phase build, the gates due while building: G1, G2, G8, G9. The first push and the
-#               draft PR open during Build, before the live run, the review and the metrics exist.
-#   base push   `git push` whose target is the base branch of gates.json ("base"): refused, the merge goes through
-#               the PR so that the merge gate runs.
+#   push        `git push`: runs check-gates.sh --phase build, the gates due while building: G1, G2, G8, G9.
+#   base push   `git push` whose target is the base branch of gates.json ("base"): refused, the base moves only by the
+#               owner's merge of the PR.
+#   PR          `gh pr create` (or `gh pr new`), a `gh api` POST to .../pulls, or a createPullRequest mutation (fork.9),
+#               draft or not: runs check-gates.sh --phase pr --require-stages: G1 to G6 and G8 to G12 green, CI green on
+#               the exact HEAD of the pushed branch (gh run list --commit) and the owner's signed `approve pr` for HEAD.
+#               There is no bypass: a PR opens only after stop 3. (MCP create_pull_request: mcp-pr-hook.sh.)
 #   commit      `git commit` (also `-a`, `-am`, `git -C <dir> commit`, and `git add ... && git commit`): runs
 #               slop-check.sh --staged on what the commit will contain, in the worktree the commit runs in; findings
 #               not listed under ## Justified in the loop root's .scratch/review/<slug>.md block it.
-#   merge       `gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, or a mergePullRequest mutation: needs the sha
-#               being merged (--match-head-commit, sha=, expectedHeadOid), the checked-out HEAD equal to that sha,
-#               check-gates.sh --phase merge green (G1 to G6, G8, G9) and green CI on exactly that sha. CI is `gh pr
-#               checks` plus the PR head equal to the sha, or the "merge_check" command in .scratch/gates.json
-#               ({sha} and {pr} are filled in). G7, the metrics line, is the close gate and is not asked here.
+#   merge       `gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, or a mergePullRequest mutation (fork.9): refused every
+#               time while a loop is active, whatever the gates say. The owner merges. There is no bypass. (MCP
+#               merge_pull_request: mcp-pr-hook.sh.)
 #
 # A red gate blocks the command: exit 2 with the reasons on stderr, which Claude Code shows to the model.
 # It fails closed: when a loop is active and node is missing, hook-command.mjs fails, the hook input is not JSON,
 # gates.json is not valid JSON, or a chained `git add` fails, the command is blocked (exit 2) with the reason. Only
 # where no loop is active may those problems end in a warning (exit 1, shown to the user, the command runs).
 #
-# Deliberate bypass: FEATURE_LOOP_GATES=off together with a non-empty FEATURE_LOOP_BYPASS_REASON, set in the
-# environment or as assignments in the command itself. The bypass is appended to .scratch/loop-metrics.md as
-# "<date> <slug> gates bypassed: <reason>" (with " (commit)", " (merge)" or " (push to base)" after the reason for
-# those gates). FEATURE_LOOP_GATES=off without a reason is ignored. It needs node (to read the command), so it
+# Deliberate bypass (push, base push and commit only): FEATURE_LOOP_GATES=off together with a non-empty
+# FEATURE_LOOP_BYPASS_REASON, set in the environment or as assignments in the command itself. The bypass is appended to
+# .scratch/loop-metrics.md as "<date> <slug> gates bypassed: <reason>" (with " (commit)" or " (push to base)" after the
+# reason for those gates). FEATURE_LOOP_GATES=off without a reason is ignored. It needs node (to read the command), so it
 # cannot unblock a hook that failed closed because node is missing.
 set -uo pipefail
 
@@ -121,7 +121,7 @@ bypass_hint() { # <flag>
 
 blocked=0
 
-# ---- push and PR creation
+# ---- push
 
 gate_push() { # <root> <dir> <flag> <reason>
   local root="$1" d="$2" flag="$3" why="$4" out code
@@ -131,10 +131,10 @@ gate_push() { # <root> <dir> <flag> <reason>
   blocked=1
   {
     if [ "$code" -eq 1 ]; then
-      echo "feature-loop gates are red, so this push or PR was blocked (repo: $root)."
-      printf '%s\n' "$out" | grep -E '^G[1-9] red:'
+      echo "feature-loop gates are red, so this push was blocked (repo: $root)."
+      printf '%s\n' "$out" | grep -E '^(G[0-9]+|PR-[A-Z]+) red:'
     else
-      echo "feature-loop gates could not run (exit $code), so this push or PR was blocked (repo: $root):"
+      echo "feature-loop gates could not run (exit $code), so this push was blocked (repo: $root):"
       printf '%s\n' "$out"
     fi
     echo "Fix: produce or fix each named file (see skills/fork/feature-loop/gates.md), check with check-gates.sh --phase build, then retry."
@@ -234,74 +234,33 @@ gate_commit() { # <root> <dir> <flag> <reason> <all> <adds>
   } >&2
 }
 
-# ---- merge
+# ---- pull requests and merges (fork.9: the owner merges; a PR opens only after stop 3; neither can be bypassed)
 
-# ci_check <root> <sha> <pr> <repo>: prints why and returns 1 unless CI is green on exactly that sha.
-ci_check() {
-  local root="$1" sha="$2" pr="$3" repo="$4" cmd out head want
-  local -a prarg=() repoarg=()
-  if ! cmd="$(json_field "$root" merge_check 2>&1)"; then echo "$cmd"; return 1; fi
-  if [ -n "$cmd" ]; then
-    case "$pr" in *[!A-Za-z0-9._/:#@-]*) echo "the PR reference '$pr' has characters that cannot go into merge_check"; return 1 ;; esac
-    cmd="${cmd//\{sha\}/$sha}"; cmd="${cmd//\{pr\}/$pr}"
-    out="$(cd "$root" && bash -c "$cmd" 2>&1)" || { echo "merge_check failed: $cmd"; printf '%s\n' "$out" | tail -n 5; return 1; }
-    return 0
-  fi
-  command -v gh >/dev/null 2>&1 || { echo "gh not found on PATH, so CI could not be checked (or set merge_check in .scratch/gates.json)"; return 1; }
-  [ -n "$pr" ] && prarg=("$pr")
-  [ -n "$repo" ] && repoarg=(-R "$repo")
-  head="$(gh pr view ${prarg[@]+"${prarg[@]}"} ${repoarg[@]+"${repoarg[@]}"} --json headRefOid --jq .headRefOid 2>&1)" || { echo "gh pr view failed, so the PR head could not be checked: $head"; return 1; }
-  head="$(printf '%s' "$head" | tr -d '[:space:]' | tr 'A-F' 'a-f')"
-  want="$(printf '%s' "$sha" | tr 'A-F' 'a-f')"
-  case "$head" in
-    "$want"*) ;;
-    *) echo "the PR head is ${head:-unknown}, not $sha: merge the head you checked, or push and recheck"; return 1 ;;
-  esac
-  gh pr checks ${prarg[@]+"${prarg[@]}"} ${repoarg[@]+"${repoarg[@]}"} --required >/dev/null 2>&1 && return 0
-  out="$(gh pr checks ${prarg[@]+"${prarg[@]}"} ${repoarg[@]+"${repoarg[@]}"} 2>&1)" && return 0
-  echo "CI is not green on $sha (gh pr checks):"
-  printf '%s\n' "$out" | tail -n 8
-  return 1
-}
-
-gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
-  local root="$1" d="$2" flag="$3" why="$4" sha="$5" pr="$6" repo="$7" out code ci line wt local_head want
-  local -a problems=()
-  bypass "$root" "$flag" "$why" merge && return 0
+gate_create() { # <root> <dir> <draft>
+  local root="$1" d="$2" draft="$3" out code wt what="a PR"
+  [ "$draft" = 1 ] && what="a draft PR"
   [ -d "$d" ] || d="$root"
   wt="$(loop_work_tree "$d" "$root")"
-  if [ -z "$sha" ]; then
-    problems+=("merge exactly the head you checked: --match-head-commit <sha> (gh api: -f sha=<sha>; graphql: expectedHeadOid)")
-  elif ! [[ "$sha" =~ ^[0-9a-fA-F]{7,64}$ ]]; then
-    problems+=("--match-head-commit '$sha' is not a commit sha: pass the head you checked")
-    sha=""
-  fi
-  if [ -n "$sha" ]; then
-    # The gates read the local tree, so it has to be the tree being merged.
-    local_head="$(git -C "$wt" rev-parse HEAD 2>/dev/null | tr 'A-F' 'a-f')"
-    want="$(printf '%s' "$sha" | tr 'A-F' 'a-f')"
-    case "$local_head" in
-      "$want"*) ;;
-      *) problems+=("the checked-out HEAD is ${local_head:-unknown}, not $sha: check out the PR head $sha first, because the gates check the local tree") ;;
-    esac
-  fi
-  out="$(cd "$wt" && "$here/check-gates.sh" --phase merge --require-stages 2>&1)"; code=$?
-  if [ "$code" -eq 1 ]; then
-    problems+=("the feature-loop gates are red:")
-    while IFS= read -r line; do problems+=("  $line"); done < <(printf '%s\n' "$out" | grep -E '^G[1-9] red:')
-  elif [ "$code" -ne 0 ]; then
-    problems+=("the feature-loop gates could not run (exit $code): $(printf '%s' "$out" | head -n 1)")
-  fi
-  if [ -n "$sha" ]; then
-    ci="$(ci_check "$root" "$sha" "$pr" "$repo")" || problems+=("$ci")
-  fi
-  [ "${#problems[@]}" -eq 0 ] && return 0
+  out="$(cd "$wt" && "$here/check-gates.sh" --phase pr --require-stages 2>&1)"; code=$?
+  [ "$code" -eq 0 ] && return 0
   blocked=1
   {
-    echo "feature-loop merge gate: this merge was blocked (repo: $root)."
-    printf '%s\n' "${problems[@]}"
-    echo "Fix: make the gates and CI green on the head, then merge it with --match-head-commit <that sha>."
-    bypass_hint "$flag"
+    if [ "$code" -eq 1 ]; then
+      echo "feature-loop PR gate: opening $what was blocked, the pr phase is red (repo: $root)."
+      printf '%s\n' "$out" | grep -E '^(G[0-9]+|PR-[A-Z]+) red:'
+    else
+      echo "feature-loop PR gate: the pr phase could not run (exit $code), so opening $what was blocked (repo: $root):"
+      printf '%s\n' "$out"
+    fi
+    echo "Fix: push the branch, make CI green on that HEAD, bring the evidence pack to the owner and wait for \"approve pr\" (stop 3); check with check-gates.sh --phase pr. A PR (draft or not) cannot be opened before that, and this gate has no bypass."
+  } >&2
+}
+
+gate_merge() { # <root>
+  blocked=1
+  {
+    echo "feature-loop merge gate: this merge was blocked (repo: $1). While the loop is active the owner merges: the loop never does, whatever the gates say."
+    echo "Stop at the PR: give the owner the PR link and the evidence pack and wait. This gate has no bypass."
   } >&2
 }
 
@@ -333,7 +292,7 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
   [ -n "${kind:-}" ] || continue
   [ "$aflag" = - ] && aflag=""
   [ "$areason" = - ] && areason=""
-  root="$(loop_root "$adir")" || { case "$kind" in pushref|merge) guard_vanished "$adir" ;; esac; continue; }
+  root="$(loop_root "$adir")" || { case "$kind" in pushref|merge|create) guard_vanished "$adir" ;; esac; continue; }
   validate_run "$root"
   case "$kind" in
     pushref)
@@ -342,9 +301,11 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
     commit)
       [ "$f2" = - ] && f2=""
       gate_commit "$root" "$adir" "$aflag" "$areason" "$f1" "$f2" ;;
+    create)
+      [ "$f1" = - ] && f1=""
+      gate_create "$root" "$adir" "$f1" ;;
     merge)
-      [ "$f1" = - ] && f1=""; [ "$f2" = - ] && f2=""; [ "$f3" = - ] && f3=""
-      gate_merge "$root" "$adir" "$aflag" "$areason" "$f1" "$f2" "$f3" ;;
+      gate_merge "$root" ;;
   esac
 done <<< "$actions"
 

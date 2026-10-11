@@ -23,7 +23,7 @@ set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fork="$(cd "$here/../.." && pwd)"
-app="$fork/live-verify/bench/inbox-assist"
+app="$fork/../../bench/inbox-assist"
 runner="$fork/live-verify/harness/runner.mjs"
 check="$fork/feature-loop/scripts/check-gates.sh"
 hook="$fork/feature-loop/scripts/gate-hook.sh"

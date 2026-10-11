@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codex Review"
+  short_description: "Second-model plan review and code attack with repro tests, through the Codex CLI"

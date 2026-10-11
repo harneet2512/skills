@@ -204,3 +204,20 @@ export function openViolations(entries) {
   const cleared = new Set(entries.filter((e) => e.kind === 'cleared').map((e) => e.of));
   return entries.filter((e) => e.kind === 'violation' && !cleared.has(e.seq));
 }
+
+// ---- approvals (fork.9): only the UserPromptSubmit hook writes them, signed like every other entry.
+// { kind: 'approval', stop: 'acceptance' | 'plan' | 'pr', plan_sha | head, plan_file, ts }. Read across epochs: the first two
+// are given before the loop's init. A log that fails verification yields none (fail closed), never a partial list.
+export function approvalReport(root) {
+  const log = readLog(root);
+  return { errors: log.errors, entries: log.errors.length ? [] : log.entries.filter((e) => e.kind === 'approval') };
+}
+export const approvals = (root) => approvalReport(root).entries;
+
+// Has the owner approved this stop for exactly this subject? key is the acceptance-tests key (acceptance), the plan
+// sha (plan) or the head (pr).
+const SUBJECT = { pr: 'head', acceptance: 'acceptance_sha', plan: 'plan_sha' };
+export function hasApproval(root, stop, key) {
+  if (!key) return false;
+  return approvals(root).some((a) => a.stop === stop && a[SUBJECT[stop]] === key);
+}

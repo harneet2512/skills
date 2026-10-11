@@ -12,7 +12,7 @@ set -uo pipefail
 
 B="$(cd "$(dirname "$0")" && pwd)"
 HARNESS="${HARNESS:-$B/../../live-verify/harness/runner.mjs}"
-BASE="${BASE:-$B/../../live-verify/bench/inbox-assist}"
+BASE="${BASE:-$B/../../../../bench/inbox-assist}"
 export RUNS="${RUNS:-$B/.scratch/runs}"
 REPEAT_01="${REPEAT_01:-1}"
 mkdir -p "$RUNS"

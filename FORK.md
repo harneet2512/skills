@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds ten skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.8`
+- **Fork version:** `1.3.1-fork.9`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -18,8 +18,8 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.8`; `repository` this fork; the ten fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.8` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -198,7 +198,7 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 
 ### Gates
 
-Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines nine gates (G1 to G9; G9 is section 9) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
+Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines nine gates (G1 to G9; G9 is section 9) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
 
 The plugin enforces the gates with a hook, which is new in this fork (upstream ships no hooks):
 
@@ -362,6 +362,36 @@ The vendored copy also needs `skills/concern-topics/scripts/slop-check.sh` and `
 - The detector runs after the tool, so the early write happens; the violation makes the build gate, the push and the merge red until it is cleared. An ignored (`.gitignore`) file is invisible to it. Reopening on identical content means that code written early and, by coincidence, written identically after the stages is reopened; write it differently or add a line.
 - A first loop on a machine whose `$HOME` was reset after init reports "state outside the repo is missing" until the loop is restarted in a clean checkout.
 - Every item of the second review (C1, H1 to H5, M1, M2, M4, M5, L1, L3) is closed in code; the gaps above are what remains by design.
+
+## 10. The owner workflow, visible end to end (fork.9)
+
+The owner's flow, enforced: **grill → acceptance tests (stop 1) → plan mode → codex plan review → reviewed plan (stop 2) → feature-loop builds, attacks and tests → evidence (stop 3) → PR. The owner merges.**
+
+- **`codex-review` (new skill).** OpenAI `gpt-6-astra` runs through the local codex CLI, a different model family from the builders.
+  - Plan mode reviews the plan file read-only against the repo.
+  - Code mode attacks HEAD in a throwaway worktree. It writes a repro test for every suspected defect, so a finding is CONFIRMED only when its repro fails.
+  - Reports are stamped with the plan hash or HEAD. `CODEX_REVIEW_MODEL` overrides the model.
+- **Visibility.** The hooks, not the agent, print one line to the owner per event: every stage change, gate result, codex result, test, CI or live run, push and PR. They also keep `.scratch/timeline.md`.
+  - `ESCALATION:` lines report at once: a change to the approved plan, a codex CONFIRMED CRITICAL or HIGH, a gate bypass, a touched evidence file, or a destructive git command.
+- **Hand-off.** Leaving plan mode tells Claude not to implement, but to run the codex plan review and show the owner the result. `feature-loop` is model-invoked, so `plan-first` can start it after `approve plan`.
+- **Owner approvals.** `approve acceptance`, `approve plan` and `approve pr`, at the start of a line in the owner's prompt, are signed into the stage log by the UserPromptSubmit hook. Nothing the agent writes can approve.
+  - The acceptance approval is keyed to the acceptance tests themselves, because it comes before the plan exists.
+  - The plan approval is keyed to the plan file, and the PR approval to HEAD.
+- **Gates.**
+  - G3 and G4 need the evidence to name the commit it ran on; file times no longer count.
+  - G9 needs review and live artifacts on HEAD, not just a skill call.
+  - **G10:** a codex plan review of a committed version of the approved plan, every CONFIRMED finding resolved, and `approve plan`.
+  - **G11:** a codex code attack on HEAD, no CONFIRMED CRITICAL or HIGH unresolved, and a repo test for each fixed one.
+  - **G12:** every acceptance test mapped to a passing test or live scenario on HEAD, and `approve acceptance`.
+  - **`pr` phase:** G1 to G12 except G7, CI green on the pushed HEAD, and `approve pr` for HEAD.
+- **PR last, owner merges.** No PR, draft or not, through gh, REST, GraphQL or the GitHub MCP tools, before the `pr` phase is green. Every merge is refused while a loop is active, with no bypass.
+- **The reference app moved** from `skills/fork/live-verify/bench/inbox-assist` to `bench/inbox-assist` at the repo root. It holds solved versions of features the loop was evaluated on, so it must not sit inside the shipped skills.
+- **Why:** the HAR-170 audits showed that fork.8's gates could be cleared without doing the work:
+  - a `touch` on a live report;
+  - a review skill called with no review;
+  - the eval gate switched off by editing the envelope.
+
+  The owner also asked for a flow they can see end to end, with a cross-vendor adversary.
 
 ## Install
 

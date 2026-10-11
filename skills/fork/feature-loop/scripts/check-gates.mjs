@@ -2,7 +2,7 @@
 // repo root, read the last commit time and validated the gate names. Node 22, no dependencies.
 //
 //   node check-gates.mjs --root <dir> [--work <dir>] --last-commit <unix seconds> --slop <slop-check.sh>
-//                        [--phase build|merge|close] [--require-stages] [G1 ... G9]
+//                        [--phase build|merge|pr|close] [--require-stages] [G1 ... G12]
 //   node check-gates.mjs --root <dir> --timebox
 //   node check-gates.mjs --root <dir> --plan-check [<plan file>]   (needs no run file; see plan-check.mjs)
 //
@@ -13,16 +13,25 @@
 //
 // Exit: 0 every evaluated gate green (or n/a), 1 any red, 2 the run file is invalid.
 // --plan-check: 0 plan complete, 1 sections missing or empty or a Changed line without a reason, 2 no plan file.
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { clean, blank, section, firstTable, tables } from './md-table.mjs';
-import { checkPlan, planCitationsOk, PLAN_STAGES_OK } from './plan-check.mjs';
+import { clean, blank, section, firstTable } from './md-table.mjs';
+import { checkPlan } from './plan-check.mjs';
 import { checkStages } from './stage-gate.mjs';
 import { appendEntry, storeStatus } from './stage-log.mjs';
-import { newestLiveReport, parseDemoBy, parseStarted, timebox } from './timebox.mjs';
+import { planSnapshot } from './stage-detect.mjs';
+import { g8 } from './gates-ledger.mjs';
+import { newestLiveReport, timebox } from './timebox.mjs';
+import { validateRunFields } from './gates-runfile.mjs';
+import { headFresh } from './gates-head.mjs';
+import { loadApprovals } from './gates-approvals.mjs';
+import { g10, g11 } from './gates-codex.mjs';
+import { g12 } from './gates-acceptance.mjs';
+import { g4Bypass, packsNeedEvals, recordG4Red } from './gates-g4.mjs';
+import { ciGreen, prApproval } from './gates-pr.mjs';
 
-const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9'];
+const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'G11', 'G12'];
 const NORMAL_UP = new Set(['normal', 'large']);
 const APPLIES = {
   G1: (size) => NORMAL_UP.has(size),
@@ -34,11 +43,19 @@ const APPLIES = {
   G7: (size) => NORMAL_UP.has(size),
   G8: () => true, // decided by whether .scratch/loop-status.md exists, below
   G9: () => true, // decided by whether the hooks made .scratch/.loop/, below
+  G10: () => true, // codex plan review, all sizes (fork.9)
+  G11: () => true, // codex code attack, all sizes
+  G12: () => true, // acceptance tests, all sizes
 };
-// Which gates are due when: build = before the first push or PR, merge = before the merge, close = all of them.
+// G10 to G12 belong to loops that run the fork.9 flow, which gates.json says with "plan_sha". Outside the pr phase a loop
+// without it leaves them out (like G9 without hooks); the pr phase always evaluates them, so no PR opens without them.
+const CODEX_FLOW = ['G10', 'G11', 'G12'];
+// Which gates are due when: build = before the first push, pr = before the PR is opened (G7, the metrics line, is written
+// after the owner's merge, so it is the close gate), merge = the fork.8 merge phase, close = all of them.
 const PHASES = {
   build: ['G1', 'G2', 'G8', 'G9'],
-  merge: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G8', 'G9'],
+  merge: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G8', 'G9', ...CODEX_FLOW],
+  pr: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G8', 'G9', ...CODEX_FLOW],
   close: ALL,
 };
 const CASE_RE = /\bJ[0-9]+\.[a-z][a-z0-9-]*\b/g;
@@ -57,7 +74,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--timebox') timeboxOnly = true;
   else if (a === '--require-stages') requireStages = true;
   else if (a === '--plan-check') planCheck = args[++i] ?? '';
-  else if (/^G[1-9]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
+  else if (/^G([1-9]|1[0-2])$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
 work = work || root;
@@ -95,24 +112,8 @@ if (!['small', 'normal', 'large'].includes(size)) {
   console.error('gates: .scratch/gates.json: "size" must be small, normal or large');
   process.exit(2);
 }
-// Optional fields (gates.md, "The run file"). Each is checked strictly, and so are the names: a misspelt field
-// ("demoBy", "Live") would otherwise turn its rule off without a word.
-const KNOWN = ['slug', 'size', 'base', 'status', 'merge_check', 'started', 'demo_by', 'evals', 'max_builders', 'live'];
-const unknown = Object.keys(run).filter((k) => !KNOWN.includes(k));
-if (unknown.length) die(`gates: .scratch/gates.json: unknown field${unknown.length > 1 ? 's' : ''} ${unknown.map((k) => JSON.stringify(k)).join(', ')} (known: ${KNOWN.join(', ')})`);
-try { parseDemoBy(run); parseStarted(run); } catch (e) { die(`gates: .scratch/gates.json: ${e.message}`); }
-if (run.evals !== undefined && !['smoke', 'full'].includes(run.evals)) die('gates: .scratch/gates.json: "evals" must be smoke or full');
-if (run.max_builders !== undefined && !(Number.isInteger(run.max_builders) && run.max_builders >= 1 && run.max_builders <= 8)) {
-  die('gates: .scratch/gates.json: "max_builders" must be a whole number from 1 to 8');
-}
-// A live waiver is "none: <reason>", and only small work may waive the live run.
 let liveWaiver = '';
-if (run.live !== undefined) {
-  const m = typeof run.live === 'string' ? /^none:\s*(\S.*)$/.exec(run.live) : null;
-  if (!m) die('gates: .scratch/gates.json: "live" must be "none: <reason>" (leave it out to run live-verify)');
-  if (size !== 'small') die('gates: .scratch/gates.json: "live": "none: ..." is only allowed on small work; normal and large always run live-verify');
-  liveWaiver = m[1].trim();
-}
+try { liveWaiver = validateRunFields(run, size); } catch (e) { die(e.message); }
 
 if (timeboxOnly) {
   const tb = timebox(run, root);
@@ -131,27 +132,10 @@ const P = {
 };
 const abs = (p) => join(root, p);
 const read = (p) => { try { return readFileSync(abs(p), 'utf8'); } catch { return null; } };
-const newerThanCommit = (p) => statSync(abs(p)).mtimeMs / 1000 > lastCommit;
 const listShort = (xs, n = 5) => xs.length <= n ? xs.join(', ') : `${xs.slice(0, n).join(', ')} and ${xs.length - n} more`;
 
 // ---- markdown helpers live in md-table.mjs
 const caseIds = (text) => [...new Set(String(text ?? '').match(CASE_RE) ?? [])];
-
-// Does the Packs line name the llm or retrieval pack? Backtick spans holding one word count as that word;
-// longer spans (the triggering lines) are dropped. "no llm" or "not retrieval" does not count.
-function packsNeedEvals(packs) {
-  const s = packs
-    .replace(/`([A-Za-z-]+)`/g, ' $1 ')
-    .replace(/`[^`]*`/g, ' ')
-    .replace(/"[^"]*"/g, ' ');
-  const re = /(^|[^A-Za-z0-9_-])(llm|retrieval)(?![A-Za-z0-9_-])/gi;
-  let m;
-  while ((m = re.exec(s))) {
-    const before = s.slice(0, m.index + m[1].length).toLowerCase();
-    if (!/\b(no|not|without)\s*$/.test(before)) return true;
-  }
-  return false;
-}
 
 // ---- the gates. Each returns { state: 'green' | 'red' | 'na', msg }.
 const green = () => ({ state: 'green' });
@@ -218,9 +202,11 @@ function G3() {
   const rel = newestLiveReport(root)?.rel ?? null;
   if (!rel) return red('no live run', `${P.live}/<run>/report.json`);
   const problems = [];
-  if (!newerThanCommit(rel)) problems.push('newest live run is older than the last commit, rerun live-verify');
   let rep;
   try { rep = JSON.parse(readFileSync(abs(rel), 'utf8')); } catch (e) { return red(`report.json is not valid JSON: ${e.message}`, rel); }
+  // Fresh means the head the run recorded is HEAD (or HEAD with only non-source changes since), never the file time.
+  const fresh = headFresh(work, rep?.head);
+  if (!fresh.ok) problems.push(`live run ${fresh.msg}, rerun live-verify (the runner records "head" in report.json)`);
   const scen = Array.isArray(rep?.scenarios) ? rep.scenarios : null;
   if (!scen || !scen.length) problems.push('no scenarios in the report');
   else {
@@ -242,12 +228,22 @@ function G4() {
   const { md, value } = envelopePacks();
   // Without the envelope nobody can say evals are not needed, so fail closed.
   if (md === null) return red('cannot tell whether evals apply: envelope file missing', P.envelope);
+  // Editing the Packs line after a red G4 is a bypass: red until the reason is recorded (gates-g4.mjs).
+  const bypass = g4Bypass(root, slug, value);
+  const r = g4Core(value);
+  if (r.state === 'red') recordG4Red(root, value, process.env.FEATURE_LOOP_NOW || new Date().toISOString());
+  if (bypass) return red(bypass, P.metrics);
+  return r;
+}
+
+function g4Core(value) {
   if (!value || !packsNeedEvals(value)) return na('envelope Packs names neither llm nor retrieval');
   if (!existsSync(abs(P.evals))) return red('eval results missing', P.evals);
   const problems = [];
-  if (!newerThanCommit(P.evals)) problems.push('eval results are older than the last commit, rerun the evals');
   let res;
   try { res = JSON.parse(readFileSync(abs(P.evals), 'utf8')); } catch (e) { return red(`results.json is not valid JSON: ${e.message}`, P.evals); }
+  const fresh = headFresh(work, res?.head);
+  if (!fresh.ok) problems.push(`eval results ${fresh.msg}, rerun the evals (run-evals.mjs records "head" in results.json)`);
   const gates = Array.isArray(res?.gates) ? res.gates : [];
   if (!gates.length) problems.push('no gates in results.json, run the evals with at least one --gate');
   else {
@@ -328,36 +324,7 @@ function G7() {
   return green();
 }
 
-// The ledger: a stage is done only on evidence, and evidence says how it is known.
-function G8() {
-  const md = read(P.status);
-  if (md === null) return na('no .scratch/loop-status.md');
-  const table = tables(md.split(/\r?\n/)).find((t) => t.header.includes('status') && t.header.includes('evidence'));
-  if (!table) return red('no stage table with Status and Evidence columns', P.status);
-  const col = (n) => table.header.indexOf(n);
-  const unmarked = [], assumed = [], planless = [], wrongStage = [];
-  for (const r of table.rows) {
-    const statusText = clean(r[col('status')] ?? '');
-    if (!/^done\b/i.test(statusText)) continue; // running rows are the Stop hook's business
-    const name = [clean(r[col('stage')] ?? ''), clean(r[col('skill')] ?? '')].filter(Boolean).join(' ') || `row ${table.rows.indexOf(r) + 1}`;
-    const ev = clean(r[col('evidence')] ?? '');
-    // "done, from approved plan": the stage was written from the approved plan, so the evidence must name a plan
-    // section that exists and has content: `inferred: docs/plans/<file>.md#<Section>`.
-    if (/^done\b.*\bfrom approved plan\b/i.test(statusText)) {
-      if (!PLAN_STAGES_OK(clean(r[col('stage')] ?? ''), clean(r[col('skill')] ?? ''))) wrongStage.push(name);
-      else if (!planCitationsOk(ev, readPlan)) planless.push(`${name} (${ev === '' ? 'empty' : JSON.stringify(ev)})`);
-    }
-    const tag = ev.replace(/^[`*_\s]+/, ''); // `measured:` or **measured:** still counts
-    if (!/^(measured|inferred|assumed):/i.test(tag)) unmarked.push(`${name} (${ev === '' ? 'empty' : JSON.stringify(ev)})`);
-    else if (/^assumed:/i.test(tag) && !/(^|[^A-Za-z])(measured|inferred):/i.test(tag)) assumed.push(name);
-  }
-  const problems = [];
-  if (unmarked.length) problems.push(`done stage without evidence (measured:, inferred: or assumed:): ${listShort(unmarked, 4)}`);
-  if (assumed.length) problems.push(`a stage cannot be done on an assumption: ${listShort(assumed, 4)}`);
-  if (wrongStage.length) problems.push(`"done, from approved plan" is only for stages 0, 1 and 3 (baseline, shape, to-tickets); stage 2 and every build, prove and later stage still run: ${listShort(wrongStage, 4)}`);
-  if (planless.length) problems.push(`"done, from approved plan" without an existing plan section as evidence (inferred: docs/plans/<file>.md#<Section>): ${listShort(planless, 4)}`);
-  return problems.length ? red(problems.join('; '), P.status) : green();
-}
+const G8 = () => g8({ read, readPlan, statusFile: P.status });
 
 // The plan is a tracked file (docs/plans/), so read it from the loop root, else from the worktree being checked.
 function readPlan(p) {
@@ -371,12 +338,22 @@ function G9() {
   return r.state === 'red' ? red(r.msg, r.file ?? '.scratch/.loop') : r;
 }
 
-const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8, G9 };
+// The approvals come from the signed log; they are read once, and only when a gate that needs them is going to run.
+const needsApprovals = selected.some((g) => ['G10', 'G12'].includes(g)) || phase === 'pr';
+const appr = needsApprovals ? await loadApprovals(root) : { ok: false, why: 'not loaded' };
+const planFile = planSnapshot(root, slug).file ?? '';
+const codexCtx = { root, work, run, slug, appr, readPlan, planFile };
+const G10 = () => g10(codexCtx);
+const G11 = () => g11(codexCtx);
+const G12 = () => g12(codexCtx);
+
+const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8, G9, G10, G11, G12 };
 const SIZE_NOTE = 'applies to normal and large only';
 const counts = { green: 0, red: 0, na: 0 };
 let stagesChecked = false;
 for (const g of selected) {
   if (g === 'G9' && !wanted.includes('G9') && !requireStages && storeStatus(root).kind === 'none') continue;
+  if (CODEX_FLOW.includes(g) && !wanted.includes(g) && phase !== 'pr' && run.plan_sha === undefined) continue;
   let r;
   if (!APPLIES[g](size)) r = na(`${SIZE_NOTE}, size is ${size}`);
   else {
@@ -387,6 +364,15 @@ for (const g of selected) {
   if (r.state === 'green') console.log(`${g} green`);
   else if (r.state === 'red') console.log(`${g} red: ${r.msg}`);
   else console.log(`${g} n/a: ${r.msg}`);
+}
+// The pr phase also needs CI on the exact HEAD of the pushed branch and the owner's signed `approve pr` for it.
+if (phase === 'pr' && !wanted.length) {
+  for (const [name, check] of [['PR-CI', ciGreen], ['PR-APPROVAL', prApproval]]) {
+    let r;
+    try { r = check(codexCtx); } catch (e) { r = { state: 'red', msg: `check crashed: ${e.message}` }; }
+    counts[r.state]++;
+    console.log(r.state === 'green' ? `${name} green` : `${name} red: ${r.msg}`);
+  }
 }
 const verdict = counts.red ? 'red' : 'green';
 // A close phase that passes every gate, G9 included, is signed into the log: the hooks accept "status": "closed" only

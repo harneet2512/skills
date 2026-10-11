@@ -2,10 +2,19 @@
 // The console never sees message bodies: only scenario names, results and counts.
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+// The commit the run was made on (fork.9, gate G3: evidence is fresh when its head is the branch head, never by file
+// time). LIVE_VERIFY_HEAD overrides it, for a run on a checkout git cannot read. '' when there is no commit.
+export function currentHead(cwd = process.cwd()) {
+  if (process.env.LIVE_VERIFY_HEAD) return process.env.LIVE_VERIFY_HEAD;
+  const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD'], { cwd, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : '';
+}
 
 export function writeReport(outDir, run) {
   fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify(run, null, 2));
+  fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify({ ...run, head: run.head ?? currentHead() }, null, 2));
   const rows = run.scenarios.map((s) =>
     `| ${s.name} | ${s.journey ?? ''} | ${(s.concerns ?? []).join(', ')} | ${s.result.toUpperCase()} | ${s.durationMs} ms |`);
   const failures = run.scenarios.filter((s) => s.result !== 'pass').map((s) => {
