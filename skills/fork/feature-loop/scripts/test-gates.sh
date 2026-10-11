@@ -1008,7 +1008,7 @@ expect "G9 with --require-stages (the push and merge hooks) is red where no hook
 # What is logged, signed, and where the key and the tip live.
 d=$(loop_repo stage-log normal)
 stage_hook "$d" Skill '{"skill":"mattpocock-skills:deep-engineering"}' "$PAST"
-pass_if "init entry records the base sha, the start sha and the size" grep -q '"kind":"init".*"size":"normal".*"baseSha":"[0-9a-f]\{40\}","startSha":"[0-9a-f]\{40\}"' "$(log_of "$d")"
+pass_if "init entry records the base sha, the merge-base, the start sha and the size" grep -q '"kind":"init".*"size":"normal".*"baseSha":"[0-9a-f]\{40\}".*"startSha":"[0-9a-f]\{40\}"' "$(log_of "$d")"
 pass_if "Skill call is logged with its name, time and session" grep -qF '"kind":"skill","skill":"mattpocock-skills:deep-engineering","ts":"2020-01-01T00:00:00Z","session":"s1"' "$(log_of "$d")"
 pass_if "every logged line carries an HMAC and the chain fields" grep -q '"seq":[0-9]*,"prev":"[0-9a-f]*","mac":"[0-9a-f]\{64\}"' "$(log_of "$d")"
 pass_if "the key is under .claude/.loop and never shows in git status" bash -c 'test -s "$1/.claude/.loop/key" && ! git -C "$1" status --porcelain -uall | grep -q claude' _ "$d"
@@ -1135,9 +1135,9 @@ log_skill "$d" code-review "$FUTURE"; log_skill "$d" live-verify "$FUTURE"
 log_skill "$d" adversarial-review "$PAST"
 expect "normal: adversarial-review logged before the last source commit does not count" "$d" 1 "adversarial-review was logged before the last source change" 1 --phase merge G9
 ct=$(git -C "$d" log -1 --format=%ct)
-log_skill "$d" adversarial-review "$(date -u -d "@$((ct - 1))" +%Y-%m-%dT%H:%M:%SZ)"
 log_skill "$d" adversarial-review "$(date -u -d "@$((ct - 3))" +%Y-%m-%dT%H:%M:%SZ)"
 expect "L3: a review logged three seconds before the commit time does not count" "$d" 1 "adversarial-review was logged before the last source change" 1 --phase merge G9
+log_skill "$d" adversarial-review "$(date -u -d "@$((ct - 1))" +%Y-%m-%dT%H:%M:%SZ)"
 expect "L3: a review logged one second before the commit time counts (clock rounding only)" "$d" 0 "G9 green" 0 --phase merge G9
 log_skill "$d" adversarial-review "$FUTURE"
 expect "normal: merge G9 green with every stage logged after the source" "$d" 0 "G9 green" 0 --phase merge G9
@@ -1146,16 +1146,16 @@ printf 'export const x = 2;%s' "" > "$d/src/a.js"; touch -d 2100-01-02 "$d/src/a
 expect "normal: a source edit after the reviews makes them stale" "$d" 1 "was logged before the last source change" - --phase merge G9
 
 # M1: plan waivers only from a plan that was hashed at init.
-d=$(new_repo stage-plan); gates_json "$d" normal; mkdir -p "$d/docs/plans"; put "$d" plan-complete.md "docs/plans/$SLUG.md"; put "$d" loop-status-from-plan.md .scratch/loop-status.md
+d=$(new_repo stage-plan); session_start "$d"; gates_json "$d" normal; mkdir -p "$d/docs/plans"; put "$d" plan-complete.md "docs/plans/$SLUG.md"; put "$d" loop-status-from-plan.md .scratch/loop-status.md
 init_loop "$d"; log_many "$d" deep-engineering behavioral-envelope to-spec; write_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'
 pass_if "shape and to-tickets covered by a plan that existed at init count for their slots" test "$sh_code" = 0
 printf '\n## Changes\n\n- Changed: dropped the retry queue because it is out of scope\n' >> "$d/docs/plans/$SLUG.md"; stage_hook "$d" Bash '{"command":"ls"}'
 pass_if "M1: a Changed line appended to the plan keeps the waiver" test "$sh_code" = 0
-d=$(new_repo stage-plan-late); gates_json "$d" normal; init_loop "$d"
+d=$(new_repo stage-plan-late); session_start "$d"; gates_json "$d" normal; init_loop "$d"
 mkdir -p "$d/docs/plans"; put "$d" plan-complete.md "docs/plans/$SLUG.md"; put "$d" loop-status-from-plan.md .scratch/loop-status.md
 log_many "$d" deep-engineering behavioral-envelope to-spec; write_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'
 pass_if "M1: a plan written after init waives nothing" test "$sh_code" = 2
-d=$(new_repo stage-plan-edit); gates_json "$d" normal; mkdir -p "$d/docs/plans"; put "$d" plan-complete.md "docs/plans/$SLUG.md"; put "$d" loop-status-from-plan.md .scratch/loop-status.md
+d=$(new_repo stage-plan-edit); session_start "$d"; gates_json "$d" normal; mkdir -p "$d/docs/plans"; put "$d" plan-complete.md "docs/plans/$SLUG.md"; put "$d" loop-status-from-plan.md .scratch/loop-status.md
 init_loop "$d"; printf 'A new decision slipped in.\n' | cat - "$d/docs/plans/$SLUG.md" > "$d/docs/plans/edited.tmp" && mv "$d/docs/plans/edited.tmp" "$d/docs/plans/$SLUG.md"
 log_many "$d" deep-engineering behavioral-envelope to-spec; write_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'
 pass_if "M1: a plan edited after init (outside ## Changes) waives nothing" test "$sh_code" = 2
