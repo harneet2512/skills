@@ -115,6 +115,7 @@ log_agent() { stage_hook "$1" Agent "{\"subagent_type\":\"general-purpose\",\"mo
 log_many() { local d="$1" s; shift; for s in "$@"; do log_skill "$d" "$s"; done; }
 init_loop() { stage_hook "$1" Bash '{"command":"ls"}'; }
 state_file() { node -e 'import(require("url").pathToFileURL(process.argv[1]).href).then((m) => { const r = m.readState(process.argv[2]); process.stdout.write(r ? r.path : ""); })' "$here/stage-log.mjs" "$1"; }
+sign_close() { node -e 'import(require("url").pathToFileURL(process.argv[1]).href).then((m) => { m.appendEntry(process.argv[2], { kind: "close", ts: new Date().toISOString(), slug: "x" }); })' "$here/stage-log.mjs" "$1"; }
 log_of() { printf '%s' "$1/.scratch/.loop/log.jsonl"; }
 
 # A loop with no detection: a typed /skill is logged without looking at the tree.
@@ -820,6 +821,7 @@ hook_case "malformed gates.json: merge fails closed and says so" "$badj" "gh pr 
 cl=$(new_repo closed-red); green_normal "$cl"; rm "$cl/.scratch/shape/$SLUG.md"; put "$cl" loop-status-running.md .scratch/loop-status.md
 cp "$fx/src/slop.js" "$cl/src/slop.js"; git -C "$cl" add src/slop.js
 hook_case "(open loop, for contrast) push blocked" "$cl" "git push origin feature" 2 "G1 red"
+sign_close "$cl" # a loop that closed properly: its passing close phase signed the close
 set_status "$cl" closed
 silent_case "closed loop: push is not gated" "$cl" "git push origin feature"
 silent_case "closed loop: PR creation is not gated" "$cl" "gh pr create --title x --body y"
