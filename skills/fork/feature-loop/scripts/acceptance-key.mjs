@@ -43,5 +43,5 @@ export function chooseAcceptance(dirs, named = '') {
     const key = cands.length ? keyOf(cands[0]) : '';
     if (key) return { at: { file: cands[0].file, rel: cands[0].rel, key } };
   }
-  return { error: 'no "## Acceptance tests" items in docs/acceptance/*.md or docs/plans/*.md' };
+  return { error: 'no new "## Acceptance tests" items: write the tests for this feature to docs/acceptance/<slug>.md under "## Acceptance tests" first, then ask for the approval again (files the default branch already holds are not candidates)' };
 }

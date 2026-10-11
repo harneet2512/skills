@@ -62,18 +62,17 @@ function baseRef(dir) {
   return ['origin/main', 'origin/master'].find((r) => gitOut(dir, ['rev-parse', '--verify', '--quiet', r])) ?? '';
 }
 
-// With several candidates, the ones this feature is about: not on the default branch with the same content (new, or
-// changed since). A file an earlier feature shipped is not a candidate for this approval. Returns `cands` unchanged
-// when there is no default branch to compare with or when every candidate is shipped.
+// The candidates this feature is about: not on the default branch with the same content (new, or changed since). A file
+// an earlier feature shipped, or one the repo has always tracked, is never what an approval or a hand-off is for (HAR-181:
+// eleven tracked docs/plans/*.md were offered as acceptance sources, and the hand-off named an old plan). Without a
+// default branch to compare with, every candidate counts. May return [].
 export function unshipped(cands) {
-  if (cands.length < 2) return cands;
-  const live = cands.filter((c) => {
+  return cands.filter((c) => {
     const base = c.dir ? baseRef(c.dir) : '';
     if (!base) return true;
     const shipped = gitOut(c.dir, ['rev-parse', '--verify', '--quiet', `${base}:${c.rel}`]);
     return !shipped || shipped !== gitOut(c.dir, ['hash-object', '--', c.rel]);
   });
-  return live.length ? live : cands;
 }
 
 // The file an approval prompt names ("approve plan docs/plans/x.md"), as a relative docs/ path, or ''.
@@ -94,7 +93,7 @@ const nameList = (cands) => cands.map((c) => c.rel).sort().join(', ');
 export function choosePlan(dirs, named = '') {
   const all = mdCandidates(dirs, 'plans');
   const cands = named ? all : unshipped(all);
-  if (!cands.length) return { error: 'no docs/plans/*.md' };
+  if (!cands.length) return { error: 'no new or changed docs/plans/*.md (files the default branch already holds belong to earlier work)' };
   let pick = cands[0];
   if (named) {
     pick = cands.find((c) => c.rel === named);
@@ -108,7 +107,7 @@ export function choosePlan(dirs, named = '') {
 
 // The newest docs/plans/*.md in any of `dirs`: { file (absolute), rel, sha } or null (the hand-off and the visibility look).
 export function newestPlan(dirs) {
-  const best = [...mdCandidates(dirs, 'plans')].sort((a, b) => b.m - a.m)[0];
+  const best = [...unshipped(mdCandidates(dirs, 'plans'))].sort((a, b) => b.m - a.m)[0];
   return best ? hashed(best) : null;
 }
 

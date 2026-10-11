@@ -49,7 +49,7 @@ These hold through planning and through every `wp-loop` run that follows:
 
 ## 2. Acceptance tests: stop 1
 
-End the grill with **3 to 5 acceptance tests** in the owner's words, one line each, `AT<n>: <observable behaviour>`: what someone could watch happen to know the feature works. Not implementation details. Write them to `docs/acceptance/<slug>.md` under a `## Acceptance tests` heading (the approval is keyed to that file's items; the file stays local), show them, and ask the owner to reply `approve acceptance` (or edit them). They go into the plan's `## Acceptance tests` section and become the final check: no PR opens until each one that the issue covers has a passing test or live-verify scenario named after it.
+End the grill with **3 to 5 acceptance tests** in the owner's words, one line each, `AT<n>: <observable behaviour>`: what someone could watch happen to know the feature works. Not implementation details. **Before you show them**, write them to `docs/acceptance/<slug>.md` under a `## Acceptance tests` heading (the approval hook reads that file and is keyed to its items; with no such file it refuses `approve acceptance`; the file stays local), show them, and ask the owner to reply `approve acceptance` (or edit them). They go into the plan's `## Acceptance tests` section and become the final check: no PR opens until each one that the issue covers has a passing test or live-verify scenario named after it.
 
 Only the owner's own message approves (the hook signs it); never write an approval yourself.
 

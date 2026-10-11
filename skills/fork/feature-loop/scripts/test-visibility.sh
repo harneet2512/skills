@@ -353,6 +353,28 @@ agent_hook "$w" '{"prompt":"x","isolation":"worktree"}'
 check "agent isolation: no active loop, so it passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
 check "hooks.json wires the Agent hook" "$(node -e 'const h=require(process.argv[1]).hooks.PreToolUse;process.exit(h.some(m=>m.matcher==="Agent"&&m.hooks.some(x=>x.command.includes("agent-base-hook.mjs")))?0:1)' "$plugin/hooks/hooks.json"; echo $?)"
 
+# HAR-181: with an origin, tracked docs/plans/*.md are never acceptance sources or the hand-off's plan
+g="$(new_repo h181)"; git init -q --bare "$work/h181-origin.git"
+(cd "$g" && printf '# Old plan two
+
+## Acceptance tests
+
+- old
+' > docs/plans/old2.md && git add -A && git commit -q -m more && git remote add origin "$work/h181-origin.git" && git push -q origin main && git remote set-head origin main) >/dev/null 2>&1
+prompt "$g" "approve acceptance"
+check "HAR-181: only shipped plans, so approve acceptance asks for docs/acceptance/<slug>.md" "$(has "$(msg_of)" 'approval NOT recorded: acceptance: no new' && has "$(msg_of)" 'docs/acceptance/<slug>.md' && echo 0 || echo 1)" "$(msg_of)"
+printf '# New plan
+
+## Acceptance tests
+
+- new
+
+## Changes
+
+- none
+' > "$g/docs/plans/new.md"; touch -d '2000-01-01' "$g/docs/plans/new.md"
+check "HAR-181: the hand-off's plan is the unshipped one, whatever the mtimes" "$(node --input-type=module -e 'const m=await import(process.argv[1]);process.stdout.write(m.newestPlan([process.argv[2]])?.rel??"")' "file:///$(cygpath -m "$here" 2>/dev/null || echo "$here")/vis-root.mjs" "$g" | grep -qx 'docs/plans/new.md' && echo 0 || echo 1)"
+
 echo
 echo "test-visibility: $total checks, $([ "$fail" = 0 ] && echo 'all passed' || echo 'FAILURES')"
 exit "$fail"
