@@ -18,16 +18,25 @@
 //       mutation through `gh api graphql` (fork.9: gated by the pr phase); draft = 1 for a draft PR (--draft/-d, `draft=true`,
 //       `isDraft: true`)
 //   merge <dir> <gates> <reason> <sha> <pr> <repo>
-//       `gh pr merge [<pr>]`, `gh api -X PUT .../pulls/<n>/merge`, or a `mergePullRequest` mutation through
-//       `gh api graphql`; sha is the --match-head-commit value (the `sha=` field of the REST call, the
+//       `gh pr merge [<pr>]`, `gh api -X PUT .../pulls/<n>/merge`, `gh api -X POST .../merges`, or a `mergePullRequest` or
+//       `enablePullRequestAutoMerge` mutation through `gh api graphql`; sha is the --match-head-commit value (the `sha=` field of the REST call, the
 //       `expectedHeadOid` of the mutation), pr is the positional argument or the number, repo is -R/--repo
+//   opaque <dir> <gates> <reason>
+//       `gh api graphql` whose query is read from a file or stdin (`-F query=@file`, `--input`): it cannot be inspected,
+//       so while a loop is active the hook refuses it (fork.9.1)
+//   ambiguous <dir> <gates> <reason>
+//       a command with a PR-creation or merge signature (`pr create`, `pulls`, `createPullRequest`, `/merges`, ...) that no
+//       parser of gh looked at (`foo gh pr create`, a deeply nested shell): refused while a loop is active (fork.9.1)
 //   pushref <dir> <gates> <reason> <refs>
 //       one per `git push` that ships (not --dry-run or --delete); refs are the refspecs after the remote, joined
 //       by U+001F (`*` for --all or --mirror), `-` when the push names none, so the hook can refuse a push to the
 //       base branch
 // Input that is not a JSON object exits 3 with a message on stderr.
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { segments } from './shell-lex.mjs';
+import { ghMerge, isDraftCreate, isGhCreate, isOpaqueGraphql } from './hook-gh.mjs';
 
 // On Windows the command runs in Git Bash, so its paths are POSIX (/c/repo, /tmp/x); node would resolve them
 // against the current drive and check a directory that does not exist. Map them to native paths first.
@@ -59,33 +68,6 @@ const input = parsed;
 const startDir = nativePath((typeof input.cwd === 'string' && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const command = input?.tool_name === 'Bash' && typeof input?.tool_input?.command === 'string' ? input.tool_input.command : '';
 
-// Shell-ish lexer: segments split on unquoted ; & | newline ( ) ` and $( ; tokens split on unquoted whitespace.
-// It does not expand variables or globs. Unterminated quotes run to the end, which is the safe direction.
-function segments(cmd) {
-  const out = [];
-  let toks = [], cur = '', has = false, q = '';
-  const endTok = () => { if (has) toks.push(cur); cur = ''; has = false; };
-  const endSeg = () => { endTok(); if (toks.length) out.push(toks); toks = []; };
-  for (let i = 0; i < cmd.length; i++) {
-    const c = cmd[i];
-    if (q === "'") { if (c === "'") q = ''; else cur += c; continue; }
-    if (q === '"') {
-      if (c === '\\' && i + 1 < cmd.length && '"\\$`'.includes(cmd[i + 1])) { cur += cmd[++i]; continue; }
-      if (c === '"') q = ''; else cur += c;
-      continue;
-    }
-    if (c === "'" || c === '"') { q = c; has = true; continue; }
-    if (c === '\\' && i + 1 < cmd.length) { if (cmd[i + 1] !== '\n') { cur += cmd[i + 1]; has = true; } i++; continue; }
-    if (c === '#' && !has && (i === 0 || /\s/.test(cmd[i - 1]))) { while (i < cmd.length && cmd[i] !== '\n') i++; endSeg(); continue; }
-    if (c === '$' && cmd[i + 1] === '(') { endSeg(); i++; continue; }
-    if (';&|\n()`'.includes(c)) { endSeg(); continue; }
-    if (/\s/.test(c)) { endTok(); continue; }
-    cur += c; has = true;
-  }
-  endSeg();
-  return out;
-}
-
 const ASSIGN = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s;
 const WRAPPERS = new Set(['{', '}', '!', 'if', 'then', 'else', 'elif', 'do', 'while', 'until', 'time', 'nohup',
   'command', 'builtin', 'exec', 'sudo', 'env', 'xargs', 'nice']);
@@ -97,7 +79,7 @@ const vars = {
   FEATURE_LOOP_GATES: process.env.FEATURE_LOOP_GATES ?? '',
   FEATURE_LOOP_BYPASS_REASON: process.env.FEATURE_LOOP_BYPASS_REASON ?? '',
 };
-const setVar = (k, v) => { if (k in vars) vars[k] = v; };
+const setVar = (k, v) => { if (k in vars) vars[k] = v; else if (k in gitEnv) gitEnv[k] = v; };
 // The variables as one command sees them: its own `X=... cmd` prefix wins over the shell's.
 const bypassFor = (local) => ({
   gates: local.FEATURE_LOOP_GATES ?? vars.FEATURE_LOOP_GATES,
@@ -105,26 +87,38 @@ const bypassFor = (local) => ({
 });
 
 const GIT_OPTS_WITH_ARG = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix']);
-const GH_API_OPTS_WITH_ARG = new Set(['-X', '--method', '-f', '--raw-field', '-F', '--field', '-H', '--header', '--input',
-  '-q', '--jq', '-t', '--template', '--hostname', '-p', '--preview', '--cache']);
-// Options of `gh` and `gh pr ...` that take a value, so the value is not mistaken for a subcommand or a PR.
-const GH_OPTS_WITH_ARG = new Set(['-R', '--repo', '-t', '--title', '--subject', '-b', '--body', '-F', '--body-file',
-  '-B', '--base', '-H', '--head', '-a', '--assignee', '-l', '--label', '-m', '--milestone', '-p', '--project',
-  '-r', '--reviewer', '-T', '--template', '-A', '--author-email', '--match-head-commit', '--hostname']);
 const COMMIT_SHORT_WITH_ARG = 'mFCct';
 const COMMIT_LONG_WITH_ARG = new Set(['--message', '--file', '--author', '--date', '--reuse-message', '--reedit-message',
   '--template', '--cleanup', '--fixup', '--squash', '--trailer', '--pathspec-from-file']);
 const ADD_INTERACTIVE = new Set(['-p', '--patch', '-i', '--interactive', '-e', '--edit']);
 
-// `git [global options] <sub> <args>`: the subcommand, its arguments, and the directory after any -C.
-function gitCall(args, dir) {
+// `git [global options] <sub> <args>`: the subcommand, its arguments, the directory after any -C, and every directory the
+// command may really act on: `--work-tree`/`GIT_WORK_TREE` and the parent of `--git-dir`/`GIT_DIR` (a bare repository is
+// its own directory) point at a repository other than the one the shell is in. `dir` is the one that holds a loop's run
+// file when one does, else the first of them.
+const gitEnv = { GIT_DIR: '', GIT_WORK_TREE: '' }; // `export GIT_DIR=...` earlier in the command
+const hasRunFile = (d) => existsSync(join(d, '.scratch', 'gates.json'));
+function gitCall(args, dir, env = {}) {
   let i = 0, d = dir;
+  let gitDir = env.GIT_DIR ?? gitEnv.GIT_DIR, workTree = env.GIT_WORK_TREE ?? gitEnv.GIT_WORK_TREE;
   while (i < args.length && args[i].startsWith('-')) {
-    const a = args[i];
-    if (a === '-C' && i + 1 < args.length) d = resolve(d, nativePath(args[i + 1]));
+    const a = args[i], next = args[i + 1];
+    if (a === '-C' && next !== undefined) d = resolve(d, nativePath(next));
+    if (a === '--git-dir' && next !== undefined) gitDir = next;
+    else if (a.startsWith('--git-dir=')) gitDir = a.slice('--git-dir='.length);
+    if (a === '--work-tree' && next !== undefined) workTree = next;
+    else if (a.startsWith('--work-tree=')) workTree = a.slice('--work-tree='.length);
     i += GIT_OPTS_WITH_ARG.has(a) ? 2 : 1;
   }
-  return { sub: args[i], rest: args.slice(i + 1), dir: d };
+  const cands = [d];
+  if (workTree) cands.push(resolve(d, nativePath(workTree)));
+  if (gitDir) {
+    const g = resolve(d, nativePath(gitDir));
+    cands.push(basename(g) === '.git' ? dirname(g) : g);
+  }
+  const dirs = [...new Set(cands)];
+  const primary = dirs.length === 1 ? d : (dirs.find(hasRunFile) ?? dirs[dirs.length - 1]);
+  return { sub: args[i], rest: args.slice(i + 1), dir: primary, dirs };
 }
 
 function isGitPush({ sub, rest, dir }) {
@@ -169,78 +163,11 @@ function commitStagesAll(rest) {
   return false;
 }
 
-// `gh` arguments split into positionals, the options that matter, and the raw option map.
-function ghParse(args) {
-  const pos = [], opt = {};
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    const eq = a.startsWith('--') ? a.indexOf('=') : -1;
-    const flag = eq > 0 ? a.slice(0, eq) : a;
-    if (GH_OPTS_WITH_ARG.has(flag)) { opt[flag] = eq > 0 ? a.slice(eq + 1) : (args[++i] ?? ''); continue; }
-    if (a.startsWith('-')) continue;
-    pos.push(a);
-  }
-  return { pos, opt };
-}
-
-// `gh api ...`: the method, the endpoint and the -f/-F fields (the first `name=value` of each).
-function ghApi(rest) {
-  let method = '', hasFields = false, endpoint = '';
-  const fields = {};
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i];
-    const [flag, inline] = a.startsWith('--') && a.includes('=') ? [a.slice(0, a.indexOf('=')), a.slice(a.indexOf('=') + 1)] : [a, null];
-    if (/^-X./.test(a)) { method = a.slice(2); continue; }
-    if (GH_API_OPTS_WITH_ARG.has(flag)) {
-      const v = inline ?? rest[++i] ?? '';
-      if (flag === '-X' || flag === '--method') method = v;
-      if (['-f', '--raw-field', '-F', '--field', '--input'].includes(flag)) hasFields = true;
-      if (['-f', '--raw-field', '-F', '--field'].includes(flag) && v.includes('=')) fields[v.slice(0, v.indexOf('='))] = v.slice(v.indexOf('=') + 1);
-      continue;
-    }
-    if (a.startsWith('-')) continue;
-    if (!endpoint) endpoint = a;
-  }
-  method = (method || (hasFields ? 'POST' : 'GET')).toUpperCase();
-  const path = endpoint.replace(/[?#].*$/, '').replace(/^\/+/, '').replace(/\/+$/, '');
-  return { method, endpoint, path, fields };
-}
-
-function isGhCreate(args) {
-  const { pos } = ghParse(args);
-  if (pos[0] === 'pr' && (pos[1] === 'create' || pos[1] === 'new')) return true;
-  if (pos[0] !== 'api') return false;
-  const rest = args.slice(args.indexOf('api') + 1);
-  const { method, endpoint, path } = ghApi(rest);
-  if (endpoint === 'graphql') return rest.some((a) => a.includes('createPullRequest'));
-  return method === 'POST' && /(^|\/)pulls$/.test(path);
-}
-
-// Is the PR being opened a draft? `gh pr create --draft`/`-d`, `-f draft=true` on the REST call, `isDraft` in the mutation.
-function isDraftCreate(args) {
-  return args.includes('--draft') || args.includes('-d') || /draft\W{0,4}true/i.test(args.join(' '));
-}
-
-// A merge through `gh pr merge`, the REST endpoint or a GraphQL mergePullRequest mutation, or null.
-function ghMerge(args) {
-  const { pos, opt } = ghParse(args);
-  if (pos[0] === 'pr' && pos[1] === 'merge') {
-    return { sha: opt['--match-head-commit'] ?? '', pr: pos[2] ?? '', repo: opt['-R'] ?? opt['--repo'] ?? '' };
-  }
-  if (pos[0] !== 'api') return null;
-  const rest = args.slice(args.indexOf('api') + 1);
-  const { method, endpoint, path, fields } = ghApi(rest);
-  if (endpoint === 'graphql') {
-    if (!rest.some((a) => a.includes('mergePullRequest'))) return null;
-    // The head the caller pins: a variable passed with -f/-F, else a literal in the query text.
-    const literal = /expectedHeadOid[^0-9a-fA-F]{0,8}([0-9a-fA-F]{7,64})\b/.exec(rest.join(' '));
-    return { sha: fields.expectedHeadOid ?? literal?.[1] ?? '', pr: '', repo: '' };
-  }
-  const m = /^(?:repos\/([^/]+\/[^/]+)\/)?pulls\/([0-9]+)\/merge$/.exec(path);
-  if (method !== 'PUT' || !m) return null;
-  return { sha: fields.sha ?? '', pr: m[2], repo: m[1] ?? '' };
-}
-
+// A command that carries a PR-creation or merge signature but that no gh parser looked at is ambiguous: the hook cannot tell
+// what it does (fork.9.1). A signature inside the text of a harmless command (echo, git commit -m, grep) is not one.
+const SIGNATURE = /pr\s+(?:create|new|merge)|pulls|createPullRequest|mergePullRequest|enablePullRequestAutoMerge|\/merges/;
+const TEXT_ONLY = new Set(['git', 'echo', 'printf', 'cat', 'grep', 'egrep', 'rg', 'head', 'tail', 'less', 'ls', 'find', 'sed', 'awk', 'tee', 'wc', 'diff']);
+let ambiguous = false;
 let push = null; // the first command that ships code: { dir, gates, reason }
 const actions = []; // commits and merges
 const adds = []; // `git add` commands seen so far: { dir, args }
@@ -260,6 +187,7 @@ function analyze(cmd, dir, depth) {
     }
     const name = i < seg.length ? base(seg[i]) : '';
     const args = seg.slice(i + 1);
+    if (name && name !== 'gh' && !TEXT_ONLY.has(name) && !((SHELLS.has(name) || name === 'eval') && depth < 3) && SIGNATURE.test(seg.slice(i).join(' '))) ambiguous = true;
     if (name === '') { for (const [k, v] of Object.entries(local)) setVar(k, v); continue; }
     if (name === 'export') { for (const a of args) { const m = ASSIGN.exec(a); if (m) setVar(m[1], m[2]); } continue; }
     if (name === 'cd') { if (args[0] && args[0] !== '-' && !args[0].startsWith('$')) dir = resolve(dir, nativePath(args[0])); continue; }
@@ -275,11 +203,12 @@ function analyze(cmd, dir, depth) {
       continue;
     }
     if (name === 'git') {
-      const call = gitCall(args, dir);
+      const call = gitCall(args, dir, local);
       const pushDir = isGitPush(call);
       if (pushDir) {
         if (!push) push = { dir: pushDir, ...bypassFor(local) };
-        actions.push({ kind: 'pushref', dir: pushDir, ...bypassFor(local), refs: pushRefs(call.rest) });
+        // One base-branch check per repository the push may reach (see gitCall).
+        for (const d of call.dirs) actions.push({ kind: 'pushref', dir: d, ...bypassFor(local), refs: pushRefs(call.rest) });
         continue;
       }
       if (call.sub === 'add') {
@@ -289,6 +218,7 @@ function analyze(cmd, dir, depth) {
           adds: adds.filter((a) => a.dir === call.dir).map((a) => a.args) });
       }
     } else if (name === 'gh') {
+      if (isOpaqueGraphql(args)) { actions.push({ kind: 'opaque', dir, ...bypassFor(local) }); continue; }
       if (isGhCreate(args)) { actions.push({ kind: 'create', dir, ...bypassFor(local), draft: isDraftCreate(args) }); continue; }
       const merge = ghMerge(args);
       if (merge) actions.push({ kind: 'merge', dir, ...bypassFor(local), ...merge });
@@ -297,6 +227,7 @@ function analyze(cmd, dir, depth) {
 }
 
 if (command) analyze(command, startDir, 0);
+if (ambiguous) actions.push({ kind: 'ambiguous', dir: startDir, ...bypassFor({}) });
 
 const oneLine = (s) => String(s).replace(/[\r\n]+/g, ' ').trim();
 const field = (s) => String(s ?? '').replace(/[\t\r\n\u001e\u001f]+/g, ' ').trim() || '-';
@@ -310,6 +241,8 @@ for (const a of actions) {
   const common = [a.kind, a.dir, a.gates, a.reason].map(field);
   if (a.kind === 'pushref') {
     out.push([...common, a.refs.map((x) => x.replace(/[\t\r\n\u001e\u001f]+/g, ' ')).join('\u001f') || '-'].join('\t'));
+  } else if (a.kind === 'opaque' || a.kind === 'ambiguous') {
+    out.push(common.join('	'));
   } else if (a.kind === 'create') {
     out.push([...common, a.draft ? '1' : '0'].join('	'));
   } else if (a.kind === 'commit') {

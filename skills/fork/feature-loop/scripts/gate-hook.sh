@@ -6,7 +6,8 @@
 #
 #   push        `git push`: runs check-gates.sh --phase build, the gates due while building: G1, G2, G8, G9.
 #   base push   `git push` whose target is the base branch of gates.json ("base"): refused, the base moves only by the
-#               owner's merge of the PR.
+#               owner's merge of the PR. There is no bypass (fork.9.1). The repository is the one the command acts on:
+#               `git -C <dir>`, `--git-dir`, `--work-tree`, and `GIT_DIR=` / `GIT_WORK_TREE=` prefixes are followed.
 #   PR          `gh pr create` (or `gh pr new`), a `gh api` POST to .../pulls, or a createPullRequest mutation (fork.9),
 #               draft or not: runs check-gates.sh --phase pr --require-stages: G1 to G6 and G8 to G12 green, CI green on
 #               the exact HEAD of the pushed branch (gh run list --commit) and the owner's signed `approve pr` for HEAD.
@@ -14,19 +15,23 @@
 #   commit      `git commit` (also `-a`, `-am`, `git -C <dir> commit`, and `git add ... && git commit`): runs
 #               slop-check.sh --staged on what the commit will contain, in the worktree the commit runs in; findings
 #               not listed under ## Justified in the loop root's .scratch/review/<slug>.md block it.
-#   merge       `gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, or a mergePullRequest mutation (fork.9): refused every
-#               time while a loop is active, whatever the gates say. The owner merges. There is no bypass. (MCP
-#               merge_pull_request: mcp-pr-hook.sh.)
+#   merge       `gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, `gh api -X POST .../merges`, or a mergePullRequest or
+#               enablePullRequestAutoMerge mutation (fork.9): refused every time while a loop is active, whatever the gates
+#               say. The owner merges. There is no bypass. (MCP merge_pull_request: mcp-pr-hook.sh.)
+#   ambiguous   a command that mentions a PR creation or merge in a way the hook cannot classify: refused while a loop is
+#               active, with no bypass; run the gh command in its own Bash call (fork.9.1).
+#   opaque      `gh api graphql` whose query comes from a file or stdin (`-F query=@file`, `--input`): it cannot be read, so
+#               it is refused while a loop is active (fork.9.1). There is no bypass.
 #
 # A red gate blocks the command: exit 2 with the reasons on stderr, which Claude Code shows to the model.
 # It fails closed: when a loop is active and node is missing, hook-command.mjs fails, the hook input is not JSON,
 # gates.json is not valid JSON, or a chained `git add` fails, the command is blocked (exit 2) with the reason. Only
 # where no loop is active may those problems end in a warning (exit 1, shown to the user, the command runs).
 #
-# Deliberate bypass (push, base push and commit only): FEATURE_LOOP_GATES=off together with a non-empty
+# Deliberate bypass (push and commit only; never a push to the base branch, a PR or a merge): FEATURE_LOOP_GATES=off together with a non-empty
 # FEATURE_LOOP_BYPASS_REASON, set in the environment or as assignments in the command itself. The bypass is appended to
-# .scratch/loop-metrics.md as "<date> <slug> gates bypassed: <reason>" (with " (commit)" or " (push to base)" after the
-# reason for those gates). FEATURE_LOOP_GATES=off without a reason is ignored. It needs node (to read the command), so it
+# .scratch/loop-metrics.md as "<date> <slug> gates bypassed: <reason>" (with " (commit)" after the
+# reason for commits). FEATURE_LOOP_GATES=off without a reason is ignored. It needs node (to read the command), so it
 # cannot unblock a hook that failed closed because node is missing.
 set -uo pipefail
 
@@ -169,11 +174,10 @@ gate_push_base() {
     if [ -n "$dst" ] && { [ "$dst" = "$bare" ] || { [ -n "$bare2" ] && [ "$dst" = "$bare2" ]; }; }; then hit=1; fi
   done
   [ "$hit" -eq 1 ] || return 0
-  bypass "$root" "$flag" "$why" "push to base" && return 0
   blocked=1
   {
     echo "feature-loop push gate: this push updates the base branch ($bare) directly, which skips the merge gate (repo: $root): merge through the PR so the merge gate runs."
-    bypass_hint "$flag"
+    echo "The base moves only by the owner's merge of the PR. This gate has no bypass."
   } >&2
 }
 
@@ -264,6 +268,22 @@ gate_merge() { # <root>
   } >&2
 }
 
+gate_opaque() { # <root>
+  blocked=1
+  {
+    echo "feature-loop gate: this gh api graphql call was blocked: its query is read from a file or stdin, so the gate cannot tell whether it merges or opens a PR (repo: $1)."
+    echo "Put the query inline (-f query='...') so it can be checked. This gate has no bypass."
+  } >&2
+}
+
+gate_ambiguous() { # <root>
+  blocked=1
+  {
+    echo "feature-loop gate: this command was blocked because it mentions a PR creation or merge (pr create, pr merge, pulls, createPullRequest, mergePullRequest, /merges) in a way the hook cannot classify (repo: $1)."
+    echo "Ambiguous command: run the gh command on its own, in its own Bash call, so the gates can judge it. This gate has no bypass."
+  } >&2
+}
+
 # guard_vanished <dir>: no active loop here, but one was started by the stage hooks (the marker outside the repo): a
 # gates.json that is gone, or closed without a signed close entry, blocks a push or a merge (stage-guard.mjs).
 guard_vanished() {
@@ -306,6 +326,10 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
       gate_create "$root" "$adir" "$f1" ;;
     merge)
       gate_merge "$root" ;;
+    opaque)
+      gate_opaque "$root" ;;
+    ambiguous)
+      gate_ambiguous "$root" ;;
   esac
 done <<< "$actions"
 
