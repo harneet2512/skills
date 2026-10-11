@@ -260,7 +260,7 @@ expect "filter: G2 G6 ignore a red G1" "$d" 0 "gates: green for reply-options (s
 out="$(cd "$d" && "$check" G2 G6)"
 pass_if "filter: prints only the named gates" test "$(printf '%s\n' "$out" | grep -cE '^G[1-8] ')" = 2
 expect "filter: lowercase g1 accepted" "$d" 1 "G1 red: shape file missing" 1 g1
-expect "usage: unknown gate G9" "$d" 2 "unknown argument: G9" 0 G9
+expect "usage: unknown gate G10" "$d" 2 "unknown argument: G10" 0 G10
 expect "usage: unknown flag" "$d" 2 "unknown argument: --bogus" 0 --bogus
 expect "usage: --help" "$d" 0 "Usage (run from the target repo's root)" 0 --help
 
