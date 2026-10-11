@@ -34,6 +34,10 @@ The intended path is: the user's brief, then `grilling` (shared understanding, c
 
 Without an approved plan, the loop runs as the stages below describe.
 
+## Stages are enforced, not just files
+
+Run the stage skills for real, in order, with the Skill tool. **No source change before the planning skills for the size have run:** small needs `behavioral-envelope`; normal and large need one of `grilling`, `grill-with-docs` or `shape`, then `deep-engineering`, `behavioral-envelope`, `to-spec` and `to-tickets` (a stage covered by an approved plan is recorded `done, from approved plan` and counts). Hooks log every Skill and Agent call in `.scratch/.loop/` (signed: never read, edit or write those files), and gate G9 reads the logs. Writing source early opens a violation and turns G9 red; it clears only when you revert that code, run the missing skills and write it again. At merge, G9 also needs `code-review`, `live-verify` and `adversarial-review` (after the last source change) in the log, plus on large work a design challenge file and a subagent on `opus` before `to-spec`; small work needs `wp-loop`; closing needs `retro`. A file written by hand proves nothing here: only the log does. Details: [gates.md](gates.md#g9-stages).
+
 ## Size it first
 
 Size by **risk**: what breaks, for whom, and whether it can be undone. The kind of feature does not decide the size; an AI feature is sized like any other.
@@ -147,7 +151,7 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 
 2. **Design** (fork). **Requires:** the shape file.
    - Call the Skill tool with `deep-engineering`. It builds the system model from repo evidence and calls `behavioral-envelope` (gate G2), `concern-topics` (journey × topic matrix and safety arguments) and, when the envelope's `**Packs:**` line names `llm` or `retrieval`, `evals` (the eval plan, before any prompt exists). It ends with the engineering contract.
-   - **Design challenge (adversarial plan review).** With an approved plan this already ran in plan mode ([design-challenge.md](../plan-first/design-challenge.md)) and its findings are in the plan's Design challenge section: do not run it again; fold the plan's resolutions into the contract. Otherwise, for Large work, and for Normal work whose envelope has a Critical Live item (Small work with a Critical item is not Small: escalate it to Normal, so it gets a contract to challenge): before the spec, one reviewer subagent on the strongest model, with a fresh context, attacks the contract. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and list what to cut to reach a working live demo sooner without losing a Critical item. One round: fold every CONFIRMED finding into the contract with its resolution, say which ones changed the design, and take the cuts the user would accept (ask in one line when unsure).
+   - **Design challenge (adversarial plan review).** With an approved plan this already ran in plan mode ([design-challenge.md](../plan-first/design-challenge.md)) and its findings are in the plan's Design challenge section: do not run it again; fold the plan's resolutions into the contract. Otherwise, for Large work, and for Normal work whose envelope has a Critical Live item (Small work with a Critical item is not Small: escalate it to Normal, so it gets a contract to challenge): before the spec, one reviewer subagent on the strongest model (`model: "opus"`, which G9 reads from the log), with a fresh context, attacks the contract; write its report to `.scratch/design-challenge/<slug>.md`. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and list what to cut to reach a working live demo sooner without losing a Critical item. One round: fold every CONFIRMED finding into the contract with its resolution, say which ones changed the design, and take the cuts the user would accept (ask in one line when unsure).
 
    **Done when:**
    - the contract gives every Live item a mechanism, an enforcement point and a proof, plus the build order;
@@ -230,9 +234,9 @@ Run `<this skill>/scripts/check-gates.sh --phase <phase>` from the target repo r
 
 | Phase | Gates | Used by |
 |---|---|---|
-| `build` | G1, G2, G8 | the push and PR-create hook, during stages 4 to 6 |
-| `merge` | G1 to G6, G8 | the merge hook, stage 7 |
-| `close` | all, including G7 | stage 9 |
+| `build` | G1, G2, G8, G9 | the push and PR-create hook, during stages 4 to 6 |
+| `merge` | G1 to G6, G8, G9 | the merge hook, stage 7 |
+| `close` | all, including G7 and G9 | stage 9 |
 
 The bypass (`FEATURE_LOOP_GATES=off` with `FEATURE_LOOP_BYPASS_REASON`) is for emergencies only, because it ships unchecked work. The hooks record it in `.scratch/loop-metrics.md`, and Learn reviews it.
 
@@ -245,6 +249,7 @@ Rules in skill text can be skipped, so the plugin enforces the loop at the stron
 | `git commit` | commit gate | `slop-check --staged` has findings not listed under `## Justified` |
 | `git push`, `gh pr create` | push gate | a `build`-phase gate is red; or the push targets the base branch (merge through the PR) |
 | `gh pr merge`, a GraphQL `mergePullRequest` | merge gate | a `merge`-phase gate is red; or CI is not green on the exact head (or `merge_check` fails); or `--match-head-commit` is missing; or the checked-out HEAD is not the head being merged |
+| Every tool call | PostToolUse | never refuses a command: it logs Skill and Agent calls, and records a violation (exit 2, shown to you) when source changed before the planning skills ran |
 | End of a turn | Stop | a ledger row is `running` |
 | Session start | SessionStart | never refuses: it prints the ledger and the resume point |
 

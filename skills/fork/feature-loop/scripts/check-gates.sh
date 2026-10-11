@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Check the feature-loop gates (G1 to G8 in ../gates.md) for the feature named in .scratch/gates.json.
+# Check the feature-loop gates (G1 to G9 in ../gates.md) for the feature named in .scratch/gates.json.
 #
 # Usage (run from the target repo's root):
 #   check-gates.sh                    every gate that applies to the feature's size (the close phase)
 #   check-gates.sh G2 G6              only these gates
-#   check-gates.sh --phase build      G1 G2 G8: what must hold before the first push or PR (during Build)
-#   check-gates.sh --phase merge      G1 to G6 and G8: what must hold before the merge
+#   check-gates.sh --phase build      G1 G2 G8 G9: what must hold before the first push or PR (during Build)
+#   check-gates.sh --phase merge      G1 to G6, G8 and G9: what must hold before the merge
 #   check-gates.sh --phase close      every gate, G7 (the metrics line, written after the merge) included
 #   (a phase and gate IDs together check the gates that are in both)
 #   check-gates.sh --plan [FILE]      only the approved plan (default: the newest docs/plans/*.md): lists each missing or
@@ -41,9 +41,9 @@ while [ "$#" -gt 0 ]; do
     --timebox) timebox=1; shift ;;
     --plan)
       plan=1; shift
-      case "${1:-}" in ""|-*|[Gg][1-8]) ;; *) planfile="$1"; shift ;; esac ;;
-    [Gg][1-8]) gates+=("G${1:1}"); shift ;;
-    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G8, --phase build|merge|close, --timebox, or --plan [FILE])" >&2; usage >&2; exit 2 ;;
+      case "${1:-}" in ""|-*|[Gg][1-9]) ;; *) planfile="$1"; shift ;; esac ;;
+    [Gg][1-9]) gates+=("G${1:1}"); shift ;;
+    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G9, --phase build|merge|close, --timebox, or --plan [FILE])" >&2; usage >&2; exit 2 ;;
   esac
 done
 

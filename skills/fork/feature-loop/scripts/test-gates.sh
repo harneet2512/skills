@@ -68,7 +68,7 @@ expect() {
   local name="$1" dir="$2" want="$3" needle="$4" reds="$5"; shift 5
   local out code got_reds bad=""
   out="$(cd "$dir" && "$check" "$@" 2>&1)"; code=$?
-  got_reds="$(printf '%s\n' "$out" | grep -cE '^G[1-8] red:')"
+  got_reds="$(printf '%s\n' "$out" | grep -cE '^G[1-9] red:')"
   [ "$code" = "$want" ] || bad="exit $code, want $want"
   if [ -n "$needle" ] && ! printf '%s\n' "$out" | grep -qF -- "$needle"; then bad="${bad:+$bad; }missing: $needle"; fi
   if [ "$reds" != - ] && [ "$got_reds" != "$reds" ]; then bad="${bad:+$bad; }red lines $got_reds, want $reds"; fi
@@ -917,6 +917,151 @@ rm "$d2/.scratch/gates.json"
 expect "--plan: without a loop it falls back to the newest plan" "$d2" 1 "plan red" - --plan
 expect "--plan with gate IDs is a usage error" "$d" 2 "--plan checks only the approved plan" - --plan G1
 expect "--plan with --phase is a usage error" "$d" 2 "--plan checks only the approved plan" - --plan --phase build
+
+# ---- stage logs and gate G9 (fork.8): the stages ran, in order, proven by the hook-owned signed logs
+
+export FEATURE_LOOP_KEY_DIR="$work/keys"
+PAST=2020-01-01T00:00:00Z; FUTURE=2099-01-01T00:00:00Z
+
+# stage_hook <dir> <tool> <tool_input json> [now]: runs the PostToolUse hook; sets sh_code and sh_err.
+stage_hook() {
+  local payload
+  payload="$(node -e 'process.stdout.write(JSON.stringify({ session_id: "s1", cwd: process.argv[1], hook_event_name: "PostToolUse", tool_name: process.argv[2], tool_input: JSON.parse(process.argv[3]) }))' "$1" "$2" "$3")"
+  sh_err="$(cd "$work" && printf '%s' "$payload" | env ${4:+FEATURE_LOOP_NOW=$4} bash "$here/stage-hook.sh" post-tool 2>&1 >/dev/null)"; sh_code=$?
+}
+log_skill() { stage_hook "$1" Skill "{\"skill\":\"$2\"}" "${3:-$PAST}"; }
+log_agent() { stage_hook "$1" Agent "{\"subagent_type\":\"general-purpose\",\"model\":\"$2\",\"description\":\"attack the design\"}" "${3:-$PAST}"; }
+log_many() { local d="$1" s; shift; for s in "$@"; do log_skill "$d" "$s"; done; }
+PLANNING="grilling deep-engineering behavioral-envelope to-spec to-tickets"
+
+# A repo on a feature branch with nothing changed yet, and a loop of the given size on it.
+loop_repo() {
+  local d="$work/$1"
+  mkdir -p "$d"
+  (
+    cd "$d" || exit 1
+    git init -q -b main
+    printf '.scratch/\n' > .gitignore
+    printf '# demo\n' > README.md
+    git add -A && git commit -q -m base
+    git checkout -q -b feature
+  ) || { echo "FAIL could not build repo $1"; exit 1; }
+  gates_json "$d" "$2"
+  printf '%s' "$d"
+}
+write_src() { mkdir -p "$1/src" && printf 'export const x = 1;\n' > "$1/src/a.js"; }
+commit_src() { write_src "$1"; git -C "$1" add -A && git -C "$1" commit -q -m src; }
+
+d=$(new_repo stage-noloop)
+stage_hook "$d" Skill '{"skill":"deep-engineering"}'
+pass_if "stage hook: no loop, nothing is logged and nothing is created" bash -c 'test "$1" = 0 && test ! -e "$2/.scratch/.loop"' _ "$sh_code" "$d"
+d=$(loop_repo stage-closed normal); printf '{ "slug": "x", "size": "normal", "base": "main", "status": "closed" }\n' > "$d/.scratch/gates.json"
+write_src "$d"; stage_hook "$d" Skill '{"skill":"deep-engineering"}'
+pass_if "stage hook: a closed loop is invisible, no violation and no logs" bash -c 'test "$1" = 0 && test ! -e "$2/.scratch/.loop"' _ "$sh_code" "$d"
+d=$(new_repo stage-na); gates_json "$d" normal
+expect "G9 asked for by name says n/a where no hook has run" "$d" 0 "G9 n/a: no stage logs" - G9
+
+# The Skill and Agent calls are logged, signed, with the key outside the repo.
+d=$(loop_repo stage-log normal)
+stage_hook "$d" Skill '{"skill":"mattpocock-skills:deep-engineering"}' "$PAST"
+pass_if "Skill call is logged with its name, time and session" grep -qF '"skill":"mattpocock-skills:deep-engineering","ts":"2020-01-01T00:00:00Z","session":"s1"' "$d/.scratch/.loop/skills.jsonl"
+pass_if "every logged line carries an HMAC" grep -q '"mac":"[0-9a-f]\{64\}"' "$d/.scratch/.loop/skills.jsonl"
+pass_if "the key is outside the repo" bash -c 'ls "$1"/*.key >/dev/null 2>&1 && ! git -C "$2" status --porcelain -uall | grep -q key' _ "$work/keys" "$d"
+log_agent "$d" opus
+pass_if "Agent call is logged with its subagent type, model and description" grep -qF '"subagent_type":"general-purpose","model":"opus","resolved":"","description":"attack the design"' "$d/.scratch/.loop/agents.jsonl"
+payload="$(node -e 'process.stdout.write(JSON.stringify({ session_id: "s1", cwd: process.argv[1], hook_event_name: "UserPromptExpansion", expansion_type: "slash_command", command_name: "mattpocock-skills:grilling", command_args: "" }))' "$d")"
+(cd "$work" && printf '%s' "$payload" | FEATURE_LOOP_NOW=$PAST bash "$here/stage-hook.sh" prompt-expansion >/dev/null 2>&1); code=$?
+pass_if "a typed /skill is logged too (it bypasses the Skill tool)" bash -c 'test "$1" = 0 && grep -qF "\"skill\":\"mattpocock-skills:grilling\"" "$2/.scratch/.loop/skills.jsonl" && grep -qF "\"via\":\"slash\"" "$2/.scratch/.loop/skills.jsonl"' _ "$code" "$d"
+
+# Code before the planning skills: a violation and a red build gate; revert, run the stages, write again: cleared.
+d=$(loop_repo stage-viol normal)
+write_src "$d"; stage_hook "$d" Bash '{"command":"python - <<EOF ..."}'
+pass_if "source edited before the planning skills: the hook reports it (exit 2)" bash -c 'test "$1" = 2 && printf "%s" "$2" | grep -qF "missing: grilling|grill-with-docs|shape, deep-engineering, behavioral-envelope, to-spec, to-tickets"' _ "$sh_code" "$sh_err"
+pass_if "the violation lists the paths and the missing skills" grep -qF '"kind":"violation"' "$d/.scratch/.loop/violations.jsonl"
+expect "build gate G9 is red while a violation is open" "$d" 1 "G9 red: open violation: source changed before" 1 --phase build G9
+log_many "$d" $PLANNING
+expect "running the stages but keeping the early code does not clear it" "$d" 1 "G9 red: open violation" 1 --phase build G9
+rm -f "$d/src/a.js"; stage_hook "$d" Bash '{"command":"git checkout -- ."}'
+pass_if "reverting the code, with the skills run, records a cleared line" grep -qF '"kind":"cleared"' "$d/.scratch/.loop/violations.jsonl"
+expect "G9 is green after revert and run (before the code is written again)" "$d" 0 "G9 green" 0 --phase build G9
+write_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'
+pass_if "writing the code again after the stages is not a violation" test "$sh_code" = 0
+expect "G9 stays green with the code written after the stages" "$d" 0 "G9 green" 0 --phase build G9
+
+d=$(loop_repo stage-revert-first normal)
+write_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'; rm -f "$d/src/a.js"
+log_many "$d" $PLANNING
+pass_if "reverting first and running the stages after clears the violation" grep -qF '"kind":"cleared"' "$d/.scratch/.loop/violations.jsonl"
+
+d=$(loop_repo stage-committed normal)
+commit_src "$d"; stage_hook "$d" Bash '{"command":"git commit -m x"}'
+pass_if "source committed before the planning skills is a violation too" test "$sh_code" = 2
+expect "G9 re-checks the tree itself: committed source with no stages is red" "$d" 1 "G9 red: open violation" 1 --phase build G9
+
+d=$(loop_repo stage-selfcheck normal); log_skill "$d" shape; write_src "$d"
+expect "G9 is red on source changed before the stages even when no hook caught it" "$d" 1 "before deep-engineering, behavioral-envelope, to-spec, to-tickets had run" 1 --phase build G9
+
+# Size decides the planning skills: small needs only the envelope.
+d=$(loop_repo stage-small small)
+log_skill "$d" behavioral-envelope; commit_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'
+pass_if "small: the envelope alone is enough before a source change" test "$sh_code" = 0
+expect "small: build G9 green with only the envelope run" "$d" 0 "G9 green" 0 --phase build G9
+d=$(loop_repo stage-small-early small); write_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'
+pass_if "small: source before the envelope is a violation naming only the envelope" bash -c 'test "$1" = 2 && printf "%s" "$2" | grep -qF "missing: behavioral-envelope;"' _ "$sh_code" "$sh_err"
+d=$(loop_repo stage-small-merge small); log_skill "$d" behavioral-envelope; commit_src "$d"
+expect "small: merge G9 is red without wp-loop" "$d" 1 "not run in this loop (no entry in skills.jsonl): wp-loop" 1 --phase merge G9
+log_skill "$d" wp-loop
+expect "small: merge G9 green once wp-loop is logged" "$d" 0 "G9 green" 0 --phase merge G9
+expect "small: close G9 is red without retro" "$d" 1 "retro" 1 --phase close G9
+log_skill "$d" retro
+expect "small: close G9 green with retro logged" "$d" 0 "G9 green" 0 --phase close G9
+
+# Normal: code-review, live-verify and adversarial-review after the last source commit.
+d=$(loop_repo stage-normal normal)
+log_many "$d" $PLANNING; commit_src "$d"
+expect "normal: merge G9 is red without code-review and live-verify" "$d" 1 "not run in this loop (no entry in skills.jsonl): code-review, live-verify; not run in this loop (no entry in skills.jsonl): adversarial-review" 1 --phase merge G9
+log_many "$d" code-review live-verify
+expect "normal: merge G9 is red without adversarial-review" "$d" 1 "no entry in skills.jsonl): adversarial-review" 1 --phase merge G9
+log_skill "$d" adversarial-review "$PAST"
+expect "normal: adversarial-review logged before the last source commit does not count" "$d" 1 "adversarial-review was logged before the last source change" 1 --phase merge G9
+log_skill "$d" adversarial-review "$FUTURE"
+expect "normal: merge G9 green with every stage logged and adversarial-review after the source" "$d" 0 "G9 green" 0 --phase merge G9
+expect "normal: close G9 is red without retro" "$d" 1 "retro" 1 --phase close G9
+printf 'export const x = 2;%s' "" > "$d/src/a.js"; touch -d 2100-01-01 "$d/src/a.js"
+expect "normal: a source edit after adversarial-review makes it stale" "$d" 1 "adversarial-review was logged before the last source change" 1 --phase merge G9
+
+d=$(loop_repo stage-fromplan normal)
+mkdir -p "$d/docs/plans"; put "$d" plan-complete.md "docs/plans/$SLUG.md"; put "$d" loop-status-from-plan.md .scratch/loop-status.md
+log_many "$d" deep-engineering behavioral-envelope to-spec; write_src "$d"; stage_hook "$d" Write '{"file_path":"src/a.js"}'
+pass_if "shape and to-tickets stages covered by the approved plan count for their slots" test "$sh_code" = 0
+
+# Large: a design challenge file and an opus subagent logged before to-spec.
+d=$(loop_repo stage-large large)
+log_agent "$d" sonnet "2010-01-01T00:00:00Z"
+log_many "$d" $PLANNING; commit_src "$d"; log_many "$d" code-review live-verify; log_skill "$d" adversarial-review "$FUTURE"
+expect "large: red without a design-challenge file" "$d" 1 "large work needs a design challenge" - --phase merge G9
+mkdir -p "$d/.scratch/design-challenge"; printf '## Findings\n\n- F1 CONFIRMED: retry storm\n' > "$d/.scratch/design-challenge/$SLUG.md"
+expect "large: a logged subagent on sonnet is not enough, red without an opus one" "$d" 1 "large work needs a subagent on opus (agents.jsonl) logged before to-spec" 1 --phase merge G9
+log_agent "$d" opus "2030-01-01T00:00:00Z"
+expect "large: an opus subagent logged after to-spec is too late" "$d" 1 "logged before to-spec" 1 --phase merge G9
+log_agent "$d" opus "2010-06-01T00:00:00Z"
+expect "large: green with the design challenge file and an opus subagent before to-spec" "$d" 0 "G9 green" 0 --phase merge G9
+
+# Hand-written lines are rejected.
+d=$(loop_repo stage-tamper normal)
+log_many "$d" $PLANNING; commit_src "$d"; log_many "$d" code-review live-verify; log_skill "$d" adversarial-review "$FUTURE"
+expect "tamper: untouched logs are green" "$d" 0 "G9 green" 0 --phase merge G9
+printf '{"skill":"retro","ts":"2020-01-01T00:00:00Z","session":"s1"}\n' >> "$d/.scratch/.loop/skills.jsonl"
+expect "tamper: a line written by hand (no HMAC) is rejected" "$d" 1 "skills.jsonl line 9 fails its HMAC" 1 --phase merge G9
+sed -i '$d' "$d/.scratch/.loop/skills.jsonl"
+sed -i 's/"skill":"code-review"/"skill":"code-reviex"/' "$d/.scratch/.loop/skills.jsonl"
+expect "tamper: an edited line is rejected" "$d" 1 "fails its HMAC" 1 --phase merge G9
+d=$(loop_repo stage-tamper-rm normal)
+log_many "$d" $PLANNING; sed -i '2d' "$d/.scratch/.loop/skills.jsonl"
+expect "tamper: a removed line breaks the chain" "$d" 1 "does not follow the line before it" 1 --phase build G9
+d=$(loop_repo stage-nokey normal)
+log_many "$d" $PLANNING; rm -f "$work"/keys/*.key
+expect "tamper: a deleted key leaves the logs unverifiable and red" "$d" 1 "the loop key is missing" 1 --phase build G9
 
 # ---- errors are not hidden
 

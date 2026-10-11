@@ -2,7 +2,7 @@
 // repo root, read the last commit time and validated the gate names. Node 22, no dependencies.
 //
 //   node check-gates.mjs --root <dir> [--work <dir>] --last-commit <unix seconds> --slop <slop-check.sh>
-//                        [--phase build|merge|close] [G1 ... G8]
+//                        [--phase build|merge|close] [G1 ... G9]
 //   node check-gates.mjs --root <dir> --timebox
 //   node check-gates.mjs --root <dir> --plan-check [<plan file>]   (needs no run file; see plan-check.mjs)
 //
@@ -18,9 +18,11 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { clean, blank, section, firstTable, tables } from './md-table.mjs';
 import { checkPlan, planCitationsOk, PLAN_STAGES_OK } from './plan-check.mjs';
+import { checkStages } from './stage-gate.mjs';
+import { loopDirExists } from './stage-log.mjs';
 import { newestLiveReport, parseDemoBy, parseStarted, timebox } from './timebox.mjs';
 
-const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
+const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9'];
 const NORMAL_UP = new Set(['normal', 'large']);
 const APPLIES = {
   G1: (size) => NORMAL_UP.has(size),
@@ -31,11 +33,12 @@ const APPLIES = {
   G6: () => true,
   G7: (size) => NORMAL_UP.has(size),
   G8: () => true, // decided by whether .scratch/loop-status.md exists, below
+  G9: () => true, // decided by whether the hooks made .scratch/.loop/, below
 };
 // Which gates are due when: build = before the first push or PR, merge = before the merge, close = all of them.
 const PHASES = {
-  build: ['G1', 'G2', 'G8'],
-  merge: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G8'],
+  build: ['G1', 'G2', 'G8', 'G9'],
+  merge: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G8', 'G9'],
   close: ALL,
 };
 const CASE_RE = /\bJ[0-9]+\.[a-z][a-z0-9-]*\b/g;
@@ -53,10 +56,12 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--slop') slop = args[++i];
   else if (a === '--timebox') timeboxOnly = true;
   else if (a === '--plan-check') planCheck = args[++i] ?? '';
-  else if (/^G[1-8]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
+  else if (/^G[1-9]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
 work = work || root;
+// G9 reads the logs the stage hooks write in .scratch/.loop/. Where no hook has run there, it is left out of a general
+// check (it prints and counts nothing) and says n/a only when asked for by name.
 const selected = ALL.filter((g) => (!phase || PHASES[phase].includes(g)) && (!wanted.length || wanted.includes(g)));
 
 // ---- the approved plan: checked before the run file exists, because the plan is written first
@@ -359,10 +364,16 @@ function readPlan(p) {
   try { return readFileSync(join(work, p), 'utf8'); } catch { return null; }
 }
 
-const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8 };
+function G9() {
+  const r = checkStages({ root, work, size, slug, base, phase: phase || 'close', readPlan });
+  return r.state === 'red' ? red(r.msg, r.file ?? '.scratch/.loop') : r;
+}
+
+const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8, G9 };
 const SIZE_NOTE = 'applies to normal and large only';
 const counts = { green: 0, red: 0, na: 0 };
 for (const g of selected) {
+  if (g === 'G9' && !wanted.includes('G9') && !loopDirExists(root)) continue;
   let r;
   if (!APPLIES[g](size)) r = na(`${SIZE_NOTE}, size is ${size}`);
   else {

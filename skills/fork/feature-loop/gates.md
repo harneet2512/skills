@@ -40,6 +40,36 @@ An optional `"merge_check"` is the command the merge hook runs instead of `gh pr
 | G6 craft | all | `concern-topics/scripts/slop-check.sh --diff <base> --justified .scratch/review/<slug>.md` reports nothing: every finding's `file:line` is listed under `## Justified` with a reason (the commit hook runs the same code with `--staged`, so the two never disagree about a review file) |
 | G7 metrics | normal, large | `.scratch/loop-metrics.md` has a line containing `<slug>` (bypass records do not count); and when `.scratch/review/<slug>.md` has any `CONFIRMED` finding, the **last** such line carries `escapes=<n>` and `floors=<m>` with `n` at least the number of `CONFIRMED` rows in the review's Findings table (every confirmed finding is an escape) and `m` at least `n` (each escape raised a floor: a check, pack item, scenario or eval case) |
 | G8 ledger | all, once `.scratch/loop-status.md` exists (n/a before) | every row of the stage table with status `done` has an Evidence cell that starts with `measured:`, `inferred:` or `assumed:`, and not one that is only `assumed:` (a stage cannot be done on an assumption); a row whose status is `done, from approved plan` must be stage 0, 1 or 3 (baseline, shape, to-tickets; stage 2 and every build, prove and later stage still run) and its evidence must be `inferred:` followed by one or more `docs/plans/<file>.md#<Section>` citations separated by `;`, each naming a file that exists and a section with content; `running` rows are ignored here, the Stop hook holds them |
+| G9 stages | all, once the hooks have made `.scratch/.loop/` (left out of a general check, and n/a when asked for by name, before that) | the stages ran, in order, proven by the hook-owned signed logs, not by files: see "G9 stages" below |
+
+## G9 stages
+
+The other gates check that files exist. G9 checks that the stages ran, because a file proves nothing about how it was made (a pilot ran every gate green with no stage skill invoked: the fix was written first and the shape, envelope, spec and ticket files were backfilled when the commit gate blocked it).
+
+**The rule:** no source change before the planning skills for the size have run. Source is every path outside `.scratch/`, `docs/plans/`, `docs/agents/`, `docs/adr/` and `GLOSSARY.md`. The planning skills are:
+
+| Size | Before the first source change |
+|---|---|
+| small | `behavioral-envelope` |
+| normal, large | one of `grilling`, `grill-with-docs`, `shape`; and `deep-engineering`, `behavioral-envelope`, `to-spec`, `to-tickets` |
+
+`plan-first` also meets the first slot and the `to-tickets` slot, and a stage whose ledger row says `done, from approved plan` (G8 checks it) counts for its slot: the approved plan covers stages 1 and 3, and plan mode ran before the loop had logs.
+
+**The logs** are `.scratch/.loop/skills.jsonl`, `agents.jsonl` and `violations.jsonl`, written only by hooks (`scripts/stage-hook.sh`, registered in `hooks/hooks.json`) and only while a loop is active:
+
+- `skills.jsonl`: `{"skill","ts","session"}` for every Skill tool call (PostToolUse) and every typed `/skill` (UserPromptExpansion, `"via":"slash"`, because typing a skill bypasses the Skill tool).
+- `agents.jsonl`: `{"subagent_type","model","resolved","description","ts","session"}` for every Agent tool call; `resolved` is the model the subagent started on, from the tool response.
+- `violations.jsonl`: after every tool call the PostToolUse hook runs `git status --porcelain` (untracked files included) in the loop root and in the worktree it ran in, and `git diff <base>...HEAD`, so committed source counts too. When source changed and a planning skill for the size is missing from `skills.jsonl`, it appends `{"kind":"violation","ts","paths","missing"}` and exits 2, which shows the reason to the model. A violation is cleared (a `{"kind":"cleared","of"}` line) only when the tree has no source change left against the base and every planning skill is logged: revert the code, run the stages, write it again. Running the stages and keeping the early code does not clear it.
+
+Every line carries `seq`, `prev` (the HMAC of the line before) and `mac`: HMAC-SHA256 under a per-loop key made by the SessionStart hook (or by the first hook call after `gates.json` appears) in `$FEATURE_LOOP_KEY_DIR`, else `$HOME/.cache/feature-loop/<loop id>.key`, else `<root>/.claude/.loop-key`. `check-gates.sh` rejects a line with a wrong HMAC, a removed or inserted line, a non-JSON line and a missing key, each as red. The repo holds only the loop id (`.scratch/.loop/id`).
+
+**Green when** (phase `build`): no open violation, and the tree has no source change while a planning skill for the size is missing (G9 re-checks the tree itself, so a source change that no hook caught is still red). Phases `merge` and `close` add, from `skills.jsonl`:
+
+- small: `wp-loop`. normal and large: `code-review`, `live-verify` (and its report, G3), and `adversarial-review` logged after the last source commit and the last uncommitted source edit.
+- large: a design challenge (`.scratch/design-challenge/<slug>.md`, or the approved plan's Design challenge section) and at least one `agents.jsonl` entry on `opus` (the requested or the resolved model) logged before the first `to-spec`; the approved plan's Design challenge section also meets the opus part, because plan mode ran it before the loop could log.
+- close only: `retro`.
+
+Not logged: anything before the loop's `gates.json` exists (grilling, plan mode). Where `.scratch/.loop/` does not exist (the hooks never ran in this repo), G9 is left out of a general check and says `n/a` only when named; the plugin's PostToolUse hook creates the directory on the first tool call after `gates.json` appears, so a session with the plugin installed always has it.
 
 ## The review file
 
@@ -67,9 +97,9 @@ The plan is a tracked file, so builders commit its `Changed:` lines with the cod
 ```
 <feature-loop>/scripts/check-gates.sh                  # every gate that applies (the close phase), exit 0 green, 1 red, 2 usage
 <feature-loop>/scripts/check-gates.sh G2 G6            # only these
-<feature-loop>/scripts/check-gates.sh --phase build    # G1 G2 G8
-<feature-loop>/scripts/check-gates.sh --phase merge    # G1 to G6 and G8
-<feature-loop>/scripts/check-gates.sh --phase close    # all eight, as with no phase
+<feature-loop>/scripts/check-gates.sh --phase build    # G1 G2 G8 G9
+<feature-loop>/scripts/check-gates.sh --phase merge    # G1 to G6, G8 and G9
+<feature-loop>/scripts/check-gates.sh --phase close    # all nine, as with no phase
 <feature-loop>/scripts/check-gates.sh --timebox        # only the time box; exit 1 when demo_by passed with no passing live run
 <feature-loop>/scripts/check-gates.sh --plan [FILE]    # only the approved plan (default: the newest docs/plans/*.md); needs no gates.json
 ```
@@ -82,9 +112,9 @@ The gates are not all due at the same time. Feature-loop pushes slices and opens
 
 | Phase | Gates | Asked by |
 |---|---|---|
-| `build` | G1, G2, G8 | the hook on `git push`, `gh pr create`, `gh api` POST to `.../pulls` and a `createPullRequest` mutation |
-| `merge` | G1, G2, G3, G4, G5, G6, G8 | the hook on a merge (`gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, a `mergePullRequest` mutation) |
-| `close` | G1 to G8, G7 included | you, after the merge, once the metrics line is written; also what `check-gates.sh` runs with no phase |
+| `build` | G1, G2, G8, G9 | the hook on `git push`, `gh pr create`, `gh api` POST to `.../pulls` and a `createPullRequest` mutation |
+| `merge` | G1, G2, G3, G4, G5, G6, G8, G9 | the hook on a merge (`gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, a `mergePullRequest` mutation) |
+| `close` | G1 to G9, G7 included | you, after the merge, once the metrics line is written; also what `check-gates.sh` runs with no phase |
 
 ### The hooks
 

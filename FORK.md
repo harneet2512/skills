@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds ten skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.7`
+- **Fork version:** `1.3.1-fork.8`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -18,8 +18,8 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.7`; `repository` this fork; the ten fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.7` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.8`; `repository` this fork; the ten fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.8` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -198,7 +198,7 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 
 ### Gates
 
-Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines eight gates (G1 to G8) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
+Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines nine gates (G1 to G9; G9 is section 9) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
 
 The plugin enforces the gates with a hook, which is new in this fork (upstream ships no hooks):
 
@@ -314,6 +314,35 @@ Upstream skill bodies (`to-spec`, `to-tickets`) are not edited. `feature-loop` t
 - Whether a subagent runs in plan mode has been read from the docs, not observed; the practice run records it.
 
 **Not done in this change:** the practice run on a toy repo (HAR-170 "Done when"). `feature-loop/PRACTICE-RUN.md` holds the exact steps (the plan is approved by choosing "No, keep planning", pressing Shift+Tab out of plan mode (plan mode cannot write files; this gives no second approval prompt) and starting the loop on it, because the plan-mode approve prompt starts editing outside the loop) and the ledger it must show; it runs in a cloud session after the A/B.
+## 9. Stages are enforced, not just files (fork.8)
+
+**Why (evidence):** a cloud pilot ran `/feature-loop` with every skill and the three hooks vendored, a local-markdown tracker, and the instruction to run all nine stages unattended. Sonnet wrote the fix in `src/` in its first minute (through a python heredoc, not the Edit tool), backfilled the shape, envelope, spec and ticket files only when the commit gate blocked it, used a plain `npm test` run as live evidence, merged, and wrote the retro by hand. Gates G1 to G8 were all green and no stage skill (grilling, deep-engineering, design challenge, to-spec, to-tickets, code-review, live-verify, adversarial-review, retro) was invoked. The gates checked that files exist, not that stages ran.
+
+**The rule:** no source change before the planning skills for the size have run (small: `behavioral-envelope`; normal and large: one of `grilling`, `grill-with-docs`, `shape`, then `deep-engineering`, `behavioral-envelope`, `to-spec`, `to-tickets`). Stages are proven by an invocation log that hooks write, not by files the agent writes.
+
+| Change | Where | What it does |
+|---|---|---|
+| Invocation log | `scripts/stage-hook.sh`, `stage-hook.mjs`; PostToolUse `*` and UserPromptExpansion in `hooks/hooks.json` | Appends `{"skill","ts","session"}` to `.scratch/.loop/skills.jsonl` for each Skill call, and `{"subagent_type","model","resolved","description","ts","session"}` to `agents.jsonl` for each Agent call, only while a loop is active. A typed `/skill` is logged from UserPromptExpansion, because the docs say typing a skill bypasses PreToolUse for the Skill tool and UserPromptExpansion covers that path. One hook on `*` does the logging and the detection, so they cannot race (matching hooks run in parallel) |
+| Code-before-plan detector | same hook, `stage-detect.mjs` | After every tool call: `git status --porcelain -z -uall` in the loop root and the worktree it ran in, plus `git diff <base>...HEAD` (so committed code counts). Source is any path outside `.scratch/`, `docs/plans/`, `docs/agents/`, `docs/adr/`, `GLOSSARY.md`. If source changed and a required planning skill is not in `skills.jsonl`, it appends a violation to `violations.jsonl` and exits 2 (shown to the model). It clears only when the tree has no source change left and all the skills are logged |
+| Gate G9 | `scripts/stage-gate.mjs`, `gates.md` "G9 stages" | Build: no open violation, and the tree has no source change while a planning skill is missing (re-checked at gate time). Merge adds `code-review`, `live-verify`, `adversarial-review` after the last source change (normal, large), a design challenge file and an `opus` subagent before `to-spec` (large), `wp-loop` (small). Close adds `retro` |
+| Signed lines | `scripts/stage-log.mjs` | HMAC-SHA256 per line under a per-loop key made by the SessionStart hook in `$HOME/.cache/feature-loop/<loop id>.key` (`$CLAUDE_PROJECT_DIR/.claude/.loop-key` if that cannot be written; `FEATURE_LOOP_KEY_DIR` overrides the directory). Each line also carries `seq` and the previous line's HMAC, so a removed or inserted line is found. A bad line, a gap or a missing key is red |
+
+**Tests:** `test-gates.sh` (Linux and Windows CI) covers: no loop and a closed loop do nothing and create nothing; Skill, Agent and typed `/skill` calls are logged and signed with the key outside the repo; source edited (and committed) before the skills gives a violation and a red build gate; running the skills while keeping the code stays red; revert then run, and run then revert, both clear; writing code after the stages is fine; a source change no hook caught is red at gate time; small needs only the envelope; merge red without `code-review`, `live-verify` or `adversarial-review`, and red when `adversarial-review` was logged before the last source commit or edit; large red without a design challenge file or an opus subagent logged before `to-spec` (a sonnet one, or an opus one after `to-spec`, does not count); a hand-written line, an edited line, a removed line and a deleted key are each rejected; a stage covered by an approved plan counts for its slot; close red without `retro`.
+
+**Do PostToolUse hooks fire for the Skill and Agent tools? (checked 2026-10-10)**
+- Source: the Claude Code hooks reference, https://code.claude.com/docs/en/hooks. "`PostToolUse` ... runs immediately after a tool completes successfully", it "matches on tool name, same values as PreToolUse", and to run a hook "after any tool completes successfully, omit the `matcher` or set it to `"*"`". The payload carries `session_id`, `cwd`, `hook_event_name`, `tool_name`, `tool_input`, `tool_response`, `tool_use_id`. The page documents the tool names `Bash`, `Edit`, `Write` and so on, and the tool `Agent` ("Spawns a subagent": `tool_input` fields `prompt`, `description`, `subagent_type`, optional `model`; for a foreground call `tool_response` carries `agentId`, `status`, `resolvedModel` and run telemetry; a background call returns `status: "async_launched"`). The tools reference, https://code.claude.com/docs/en/tools-reference, lists `Skill` ("Executes a skill within the main conversation") and `Agent` as tools, and the hooks page says "a `PreToolUse` hook matching the `Skill` tool fires only when Claude calls the tool, but typing `/skillname` directly bypasses `PreToolUse`. `UserPromptExpansion` fires on that direct path" (payload `command_name`, `command_args`, `expansion_type`).
+- Not documented there: the `tool_input` field names of the `Skill` tool. The hook reads `tool_input.skill`, then `command`, then `name` (the Skill tool's own parameter is `skill`, with optional `args`), and strips a `plugin:` prefix when it compares. The name `Task` is the older name of `Agent`; the hook accepts both. Not observed on a live run yet: the first cloud practice run should confirm that PostToolUse fires for `Skill` and `Agent` with these fields (the logs would stay empty and G9 would say so if it did not). If Skill did not fire PostToolUse, the fallback is UserPromptExpansion (typed commands, already logged) plus the model-invoked case being unlogged, which G9 would show as missing stages, never as green.
+- One more caveat from the same page: the Agent tool's matching is the tool name `Agent`; a `Task` matcher is not needed because the hook registers on `*`.
+
+**Residual gaps (said plainly):**
+- The key is a file the agent can read. An agent determined to cheat can read it, sign its own lines (or delete the key and re-run everything), and defeat G9. The HMAC stops the cheap routes (editing a line, appending one, deleting one in the middle, pasting a skill name into a file), not a deliberate forgery. Truncating the end of a log is not detected.
+- It proves a skill was invoked, not that it was done well: a one-line call to `deep-engineering` followed by code satisfies the rule.
+- Skills the model runs without the Skill tool (reading a SKILL.md and following it) are not logged. Anything before `gates.json` exists (grilling, plan mode) is not logged, so a plan-first loop meets the shape and `to-tickets` slots through `done, from approved plan` ledger rows (G8 validates their citations) and the large-work opus requirement through the plan's Design challenge section.
+- Where the plugin hooks are not installed, `.scratch/.loop/` never appears and G9 is left out of a general check (it says n/a only when named). The hook needs `node` and fails open on its own errors.
+- Only source paths git reports are seen: an ignored file (`.gitignore`) is invisible to the detector.
+- The detector runs after the tool, so the early write happens; the violation makes the build gate, the push and the merge red until it is cleared.
+- Subagents run with the same hooks, and a skill a subagent invokes is logged under the same session.
+
 
 ## Install
 
