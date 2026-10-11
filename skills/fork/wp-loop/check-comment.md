@@ -5,7 +5,7 @@ Post this on the PR only, once it is open and green; never on the issue (the rev
 ```markdown
 ## Work package check: #<issue>
 
-**PR:** #<pr> | **Closes:** #<issue> | **Base:** <base branch> | **CI:** success on <head sha>
+**PR:** #<pr> | **Closes:** #<issue> | **Base:** <base branch> | **CI:** <success on <head sha>, or the red checks that fail the same way on the default branch, with that run's id>
 
 ### Acceptance
 
@@ -25,7 +25,7 @@ Post this on the PR only, once it is open and green; never on the issue (the rev
 ### Numbers
 
 - Tests: <passed>/<total> (<n> new)
-- Coverage of touched packages: <percent>
+- Coverage of touched packages: <percent, or not measured>
 - <metric the issue defines>: <value>
 
 ### Follow-ups

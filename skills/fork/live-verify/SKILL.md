@@ -11,8 +11,8 @@ Unit tests prove functions. This proves the **product**: the real process, start
 
 | Mode | When | What it needs | What it proves |
 |---|---|---|---|
-| **Happy path** | the walking skeleton (`feature-loop` stage 4, ticket 1); after each slice merges; small work (`wp-loop` step 6b) | the envelope, plus the shape file when there is one | the main journey runs end to end on the real process: one scenario (or a few), stand-ins for every external system the path touches, one instance |
-| **Full** | `feature-loop` stage 5 and `wp-loop` step 6b on normal and large work | the shape file and the envelope | every journey case and every Critical and High Live item with a live proof, two instances, faults injected |
+| **Happy path** | the walking skeleton (`feature-loop` stage 4, ticket 1); after each slice merges; small work (`wp-loop` step 7) | the envelope, plus the shape file when there is one | the main journey runs end to end on the real process: one scenario (or a few), stand-ins for every external system the path touches, one instance |
+| **Full** | `feature-loop` stage 5 and `wp-loop` step 7 on normal and large work | the shape file and the envelope | every journey case and every Critical and High Live item with a live proof, two instances, faults injected |
 
 Happy path runs steps 1 to 4 for the systems on that path only, with a single scenario file whose `meta.journey` names the main journey case when the shape file has one. Write it so it keeps passing as the feature grows: it is the check every later slice merges against. Full mode is the whole skill below.
 

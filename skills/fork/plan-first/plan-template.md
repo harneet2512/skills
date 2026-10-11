@@ -35,9 +35,10 @@ it touches, ending in one happy-path live-verify scenario. Name the issue and th
 
 ## Tickets and seams
 
-<!-- A table (Issue, Blocked by, Branch base, Journey cases, Live items, Seams) with one row per EXISTING issue (#N), in
+<!-- A table (Issue, Blocked by, Branch base, ATs, Journey cases, Live items, Seams) with one row per EXISTING issue (#N), in
 build order. Never invent or split issues: a big issue is broken into steps inside its own row. Branch base is the
-previous issue's branch when that PR is not merged yet (stacked), else the default branch. For each: journey cases,
+previous issue's branch when that PR is not merged yet (stacked), else the default branch. ATs are the acceptance
+tests (AT<n>) this issue's tests prove; every AT is covered by at least one issue. For each: journey cases,
 Live items, topic categories, and the seams where its tests attach (existing seams preferred, the highest possible).
 Approving the plan confirms these seams. -->
 

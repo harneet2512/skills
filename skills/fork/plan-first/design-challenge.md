@@ -1,10 +1,10 @@
 # Design challenge inside plan mode
 
-The adversarial review of the design runs **before the plan is approved**, as a read-only subagent against the draft plan, so the plan the user approves has already survived it. There is no second approval after stage 2.
+The adversarial review of the design runs **before the plan is approved**, as a read-only subagent against the draft plan, so the plan the user approves has already survived it.
 
 ## When it runs
 
-Large work, and normal work whose envelope has a Critical Live item (small work with a Critical item is not small: escalate it first). Otherwise the plan's `## Design challenge` says `n/a: <reason>`.
+At every size, as the fallback when codex is unavailable (see `plan-first` step 4). Stop 2 follows it: the owner approves the revised plan with `approve plan docs/plans/<file>.md`.
 
 ## How to launch it
 

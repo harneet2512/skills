@@ -21,7 +21,7 @@ export const handoffText = (planRel, slug = '') => [
   '2. Run the `codex-review` skill in plan mode on the plan file, in the foreground (`scripts/codex-review.sh plan <plan-file> --slug ' + (slug || slugOf(planRel))
     + '`). The slug must be the `slug` of .scratch/gates.json, which G10 and G11 read the reports by: use the same one when you start the loop.',
   '3. Fold every CONFIRMED finding into the plan, and write each resolution to `.scratch/review/codex-plan-' + (slug || slugOf(planRel))
-    + '.resolutions.md` (`fixed: <commit>` or `rejected: <reason>`).',
+    + '.resolutions.md` (`fixed: plan revised (<section>)` or `rejected: <evidence>`; the plan is never committed).',
   '4. Present the findings and the revised plan to the owner. This is stop 2: STOP and wait.',
   '5. Only when the owner types "approve plan", invoke the `wp-loop` skill on the first existing issue in the plan\'s order. Never create, edit or close an issue, and do not invoke `feature-loop`.',
 ].join('\n');

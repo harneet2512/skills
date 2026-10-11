@@ -18,10 +18,24 @@ These hold through planning and through every `wp-loop` run that follows:
   docs/acceptance/
   .scratch/
   .claude/settings.local.json
+  .claude/worktrees/
   CLAUDE.md
   ```
 
   Skip `CLAUDE.md` when the target repo already tracks one (`git ls-files CLAUDE.md` prints it): never hide or change a tracked file.
+- **Make the forbidden commands impossible, not just forbidden.** The feature-loop hooks guard only a started feature loop, so in this flow nothing else stops a merge or an issue write. In the same step, before any planning, write the target repo's `.claude/settings.local.json` (merge into it if it exists) with:
+
+  ```json
+  {
+    "plansDirectory": "docs/plans",
+    "permissions": { "deny": [
+      "Bash(gh pr merge:*)", "Bash(gh pr ready:*)", "Bash(gh issue create:*)", "Bash(gh issue edit:*)",
+      "Bash(gh issue comment:*)", "Bash(gh issue close:*)", "Bash(gh issue reopen:*)", "Bash(gh label:*)"
+    ] }
+  }
+  ```
+
+  Then ask the owner to restart the session once (`/exit`, then resume) so both settings load before plan mode. Never create `.scratch/gates.json` to get protection: that starts a feature loop and turns on gates this flow does not use.
 
 - **The reviewer's product rules hold too.** The eight rules in `wp-loop` ("The reviewer's product rules") go into the plan: each one the issues touch is a line under `## Decisions` and, where it can break, under `## Failure modes`.
 
@@ -41,7 +55,7 @@ Only the owner's own message approves (the hook signs it); never write an approv
 
 ## 3. Plan in plan mode
 
-After `approve acceptance`, enter plan mode yourself (call the EnterPlanMode tool; load it with ToolSearch if it is deferred), so the owner does not have to switch modes. The plan lives in `docs/plans/`, kept local by the exclude lines above. Set `{ "plansDirectory": "docs/plans" }` in the target repo's `.claude/settings.local.json` (add it if missing, before planning). Never write it into a tracked `.claude/settings.json`, and never put the plan in `.scratch/`.
+After `approve acceptance`, enter plan mode yourself (call the EnterPlanMode tool; load it with ToolSearch if it is deferred), so the owner does not have to switch modes. The plan lives in `docs/plans/`, kept local by the exclude lines above. `plansDirectory` is already set by the rules step above; if the session did not restart since, plan mode may save elsewhere, so check where ExitPlanMode wrote the plan and copy it to `docs/plans/` if needed. Never write it into a tracked `.claude/settings.json`, and never put the plan in `.scratch/`.
 
 1. Fill [plan-template.md](plan-template.md) in plan mode, keeping its headings exactly. A section that does not apply says `n/a: <reason>`. Size by risk (`feature-loop`, "Size it first").
 2. Run the `behavioral-envelope` skill's `scripts/detect-packs.sh --plan <draft>` (read-only, allowed in plan mode) and put the packs and their triggering lines under `## Concerns`.
@@ -53,12 +67,12 @@ When the owner accepts the plan to leave plan mode, the hook tells you this too:
 
 1. Save the plan file, and copy it to `.scratch/plan-at-handoff.md` so stop 2 can show what changed. Never commit it.
 2. Call the Skill tool with `codex-review` in plan mode on the plan file, in the foreground, with `--slug <slug>` (the plan file's name), because the review reports are read by it. It runs `gpt-6-astra` read-only against the real repo and writes `.scratch/review/codex-plan-<slug>.json`.
-3. Fold every CONFIRMED finding into the plan (change the section it concerns) and write each resolution in `.scratch/review/codex-plan-<slug>.resolutions.md`. Fill `## Design challenge` with the report path, the findings and how each is resolved. Run `feature-loop`'s `scripts/check-gates.sh --plan` until it exits 0.
+3. Fold every CONFIRMED finding into the plan (change the section it concerns) and write each resolution in `.scratch/review/codex-plan-<slug>.resolutions.md` as `fixed: plan revised (<section>)` or `rejected: <evidence>`. The plan is never committed, so never write a commit there and never `git add -f` the plan. Fill `## Design challenge` with the report path, the findings and how each is resolved. Run `feature-loop`'s `scripts/check-gates.sh --plan` until it exits 0.
 4. If codex is unavailable, say so to the owner; the fallback is the read-only subagent in [design-challenge.md](design-challenge.md), recorded as a bypass.
 
 ## 5. Stop 2: the reviewed plan
 
-Show the owner, in this order: the codex summary line, every CONFIRMED finding with its resolution, the PLAUSIBLE ones with your decision, and what changed in the plan (`diff .scratch/plan-at-handoff.md <plan file>`). Ask the owner to reply `approve plan` (or say what to change). After `approve plan`, call the Skill tool with `wp-loop` on the first issue in the plan's `## Tickets and seams` order, passing the plan file. Do not call `feature-loop`.
+Show the owner, in this order: the codex summary line, every CONFIRMED finding with its resolution, the PLAUSIBLE ones with your decision, and what changed in the plan (`diff .scratch/plan-at-handoff.md <plan file>`). Ask the owner to reply `approve plan docs/plans/<file>.md` with the file named (a bare `approve plan` is refused when `docs/plans/` holds more than one plan), or say what to change. After `approve plan`, call the Skill tool with `wp-loop` on the first issue in the plan's `## Tickets and seams` order, passing the plan file. Do not call `feature-loop`.
 
 ## After stop 2
 
