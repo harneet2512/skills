@@ -4,7 +4,7 @@ HAR-170 Phase 2 "Done when" asks for one practice run. It runs **in a cloud sess
 
 ## Setup
 
-1. A new private toy repo (for example `harneet2512/plan-first-toy`) from `skills/fork/live-verify/bench/inbox-assist/`, or any small app with a test suite and one runnable entry point. No real keys.
+1. A new private toy repo (for example `harneet2512/plan-first-toy`) from `bench/inbox-assist/` (at the repo root, outside the shipped skills), or any small app with a test suite and one runnable entry point. No real keys.
 2. In the toy repo, `.claude/settings.json`:
    ```json
    { "plansDirectory": "docs/plans" }

@@ -198,7 +198,7 @@ The envelope file goes to `.scratch/envelope/`; the PR carries only the handled 
 
 ### Gates
 
-Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines nine gates (G1 to G9; G9 is section 9) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `skills/fork/live-verify/bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
+Each stage leaves a file under `.scratch/` in the target repo, and `skills/fork/feature-loop/gates.md` defines nine gates (G1 to G9; G9 is section 9) on those files, checked by phase (`build`, `merge`, `close`; section 5). `skills/fork/feature-loop/scripts/check-gates.sh` decides green or red; the agent's own judgment does not. `test-gates.sh` beside it tests the script and the hook against throwaway git repos built from `scripts/fixtures/gates/`. `skills/fork/feature-loop/bench/gates-demo.sh` runs every gate end to end on the reference product, from its loop files in `bench/inbox-assist/loop/` (shape, envelope, review), and breaks one gate at a time.
 
 The plugin enforces the gates with a hook, which is new in this fork (upstream ships no hooks):
 

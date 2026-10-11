@@ -1,6 +1,6 @@
 # Planted-bug bench
 
-Measures whether the loop's proving and attacking stages catch real mistakes in the reference product (`../../live-verify/bench/inbox-assist/`).
+Measures whether the loop's proving and attacking stages catch real mistakes in the reference product (`bench/inbox-assist/` at the repo root).
 
 - `answer-key.json`: 13 planted bugs, one or more per concern topic, with the user-visible failure each causes. Keep it away from reviewers.
 - `patches/bug-NN.patch`: each bug as a patch against the current app.

@@ -10,7 +10,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DEFAULT = resolve(HERE, '../../../live-verify/bench/inbox-assist/src/draft.mjs');
+const DEFAULT = resolve(HERE, '../../../../../bench/inbox-assist/src/draft.mjs');
 const modulePath = process.env.INBOX_DRAFT_MODULE ? resolve(process.env.INBOX_DRAFT_MODULE) : DEFAULT;
 const { draftReplies } = await import(pathToFileURL(modulePath).href);
 

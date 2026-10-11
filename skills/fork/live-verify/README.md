@@ -18,7 +18,7 @@ Zero npm dependencies. Node 22 or later (`node:sqlite`, `node:test`, `fetch`).
   - `standins/llm.mjs`: Anthropic Messages API (`POST /v1/messages`) with scripted rules and Anthropic-shaped errors.
   - `lib/faults.mjs`: per-method fault plans: `status` (429 with Retry-After, 500), `delay`, `slowResponse`, `hang`, `reset`, `timeoutAfterSuccess`, `truncate` (a 2xx whose body stops halfway), and for deliveries `duplicate` and `reorder`. Rules target the nth matching call and can filter by tenant.
   - `runner.mjs`: boots stand-ins and N app instances on free ports with a shared SQLite file, waits for each `/healthz`, runs `<app>/scenarios/*.mjs`, kills only its own child pids, exits non-zero on any failure.
-- `bench/inbox-assist/`: the reference product (a Slack agent that drafts Gmail replies). `live-verify.json` tells the runner how to start it and which env vars point at the stand-ins.
+- `bench/inbox-assist/` (at the repo root, outside the shipped skills): the reference product (a Slack agent that drafts Gmail replies). `live-verify.json` tells the runner how to start it and which env vars point at the stand-ins.
 - `ci/live-verify.yml`: example GitHub Actions workflow. Copy it to `.github/workflows/` to enable it.
 
 ## Writing a scenario

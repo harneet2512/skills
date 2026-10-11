@@ -16,7 +16,7 @@ Unit tests prove functions. This proves the **product**: the real process, start
 
 Happy path runs steps 1 to 4 for the systems on that path only, with a single scenario file whose `meta.journey` names the main journey case when the shape file has one. Write it so it keeps passing as the feature grows: it is the check every later slice merges against. Full mode is the whole skill below.
 
-[README.md](README.md) has the harness commands, the layout, how to write a scenario and the proof standards. The reference product (`bench/inbox-assist/`, a Slack agent that drafts Gmail replies) runs 40 scenarios across 2 app instances in about 50 seconds.
+[README.md](README.md) has the harness commands, the layout, how to write a scenario and the proof standards. The reference product (`bench/inbox-assist/` (at the repo root, outside the shipped skills), a Slack agent that drafts Gmail replies) runs 40 scenarios across 2 app instances in about 50 seconds.
 
 ## 1. Inventory the boundaries
 

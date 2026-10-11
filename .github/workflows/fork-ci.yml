@@ -49,7 +49,7 @@ jobs:
         run: node --test skills/fork/live-verify/harness/test/*.mjs
 
       - name: Live-verify inbox-assist bench
-        run: node --test skills/fork/live-verify/bench/inbox-assist/test/*.mjs
+        run: node --test bench/inbox-assist/test/*.mjs
 
   # The maintainer runs the loop on Windows, so the shell-heavy checks also run under Git Bash there.
   windows:

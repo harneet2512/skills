@@ -30,10 +30,10 @@ jobs:
           node-version: 22
 
       - name: Unit tests
-        run: node --no-warnings --test bench/inbox-assist/test/*.test.mjs harness/test/*.test.mjs
+        run: node --no-warnings --test ../../../bench/inbox-assist/test/*.test.mjs harness/test/*.test.mjs
 
       - name: Live scenarios (2 instances, stand-in LLM)
-        run: node --no-warnings harness/runner.mjs --app bench/inbox-assist --instances 2 --llm stub
+        run: node --no-warnings harness/runner.mjs --app ../../../bench/inbox-assist --instances 2 --llm stub
 
       - name: Upload evidence
         if: always()
