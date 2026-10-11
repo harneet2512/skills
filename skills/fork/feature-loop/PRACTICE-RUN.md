@@ -10,7 +10,7 @@ HAR-170 Phase 2 "Done when" asks for one practice run. It runs **in a cloud sess
    { "plansDirectory": "docs/plans" }
    ```
    `docs/plans/` is **tracked** (never in `.gitignore`), so builders commit the plan's `Changed:` lines with the code and the PR shows the plan diff. `.scratch/` stays ignored.
-3. A cloud session with the fork plugin at `1.3.1-fork.7` or later, attached to the toy repo only.
+3. A cloud session with the fork plugin at `1.3.1-fork.8` or later, attached to the toy repo only.
 4. The feature to build, as a brief (a few lines): a **normal** one with state and a Critical item, so the design challenge runs. Example: "A Regenerate draft button that is safe against double clicks and Slack retries."
 
 ## Steps (one session, in this order)

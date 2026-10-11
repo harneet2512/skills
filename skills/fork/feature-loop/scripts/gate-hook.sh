@@ -5,7 +5,7 @@
 # running the feature loop is never blocked.
 #
 #   push / PR   `git push`, `gh pr create`, or a `gh api` POST to .../pulls (or a createPullRequest mutation): runs
-#               check-gates.sh --phase build, the gates due while building: G1, G2, G8. The first push and the
+#               check-gates.sh --phase build, the gates due while building: G1, G2, G8, G9. The first push and the
 #               draft PR open during Build, before the live run, the review and the metrics exist.
 #   base push   `git push` whose target is the base branch of gates.json ("base"): refused, the merge goes through
 #               the PR so that the merge gate runs.
@@ -14,7 +14,7 @@
 #               not listed under ## Justified in the loop root's .scratch/review/<slug>.md block it.
 #   merge       `gh pr merge`, `gh api -X PUT .../pulls/<n>/merge`, or a mergePullRequest mutation: needs the sha
 #               being merged (--match-head-commit, sha=, expectedHeadOid), the checked-out HEAD equal to that sha,
-#               check-gates.sh --phase merge green (G1 to G6, G8) and green CI on exactly that sha. CI is `gh pr
+#               check-gates.sh --phase merge green (G1 to G6, G8, G9) and green CI on exactly that sha. CI is `gh pr
 #               checks` plus the PR head equal to the sha, or the "merge_check" command in .scratch/gates.json
 #               ({sha} and {pr} are filled in). G7, the metrics line, is the close gate and is not asked here.
 #
@@ -126,13 +126,13 @@ blocked=0
 gate_push() { # <root> <dir> <flag> <reason>
   local root="$1" d="$2" flag="$3" why="$4" out code
   bypass "$root" "$flag" "$why" "" && return 0
-  out="$(cd "$(loop_work_tree "$d" "$root")" && "$here/check-gates.sh" --phase build 2>&1)"; code=$?
+  out="$(cd "$(loop_work_tree "$d" "$root")" && "$here/check-gates.sh" --phase build --require-stages 2>&1)"; code=$?
   [ "$code" -eq 0 ] && return 0
   blocked=1
   {
     if [ "$code" -eq 1 ]; then
       echo "feature-loop gates are red, so this push or PR was blocked (repo: $root)."
-      printf '%s\n' "$out" | grep -E '^G[1-8] red:'
+      printf '%s\n' "$out" | grep -E '^G[1-9] red:'
     else
       echo "feature-loop gates could not run (exit $code), so this push or PR was blocked (repo: $root):"
       printf '%s\n' "$out"
@@ -285,10 +285,10 @@ gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
       *) problems+=("the checked-out HEAD is ${local_head:-unknown}, not $sha: check out the PR head $sha first, because the gates check the local tree") ;;
     esac
   fi
-  out="$(cd "$wt" && "$here/check-gates.sh" --phase merge 2>&1)"; code=$?
+  out="$(cd "$wt" && "$here/check-gates.sh" --phase merge --require-stages 2>&1)"; code=$?
   if [ "$code" -eq 1 ]; then
     problems+=("the feature-loop gates are red:")
-    while IFS= read -r line; do problems+=("  $line"); done < <(printf '%s\n' "$out" | grep -E '^G[1-8] red:')
+    while IFS= read -r line; do problems+=("  $line"); done < <(printf '%s\n' "$out" | grep -E '^G[1-9] red:')
   elif [ "$code" -ne 0 ]; then
     problems+=("the feature-loop gates could not run (exit $code): $(printf '%s' "$out" | head -n 1)")
   fi
@@ -305,12 +305,27 @@ gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
   } >&2
 }
 
+# guard_vanished <dir>: no active loop here, but one was started by the stage hooks (the marker outside the repo): a
+# gates.json that is gone, or closed without a signed close entry, blocks a push or a merge (stage-guard.mjs).
+guard_vanished() {
+  local out code
+  out="$(node "$here/stage-guard.mjs" "$1" 2>&1)"; code=$?
+  [ "$code" -eq 1 ] || return 0
+  blocked=1
+  {
+    echo "feature-loop gate hook: $out"
+    echo "Fix: restore .scratch/gates.json, or run check-gates.sh --phase close until it passes (it signs the close), then set \"status\": \"closed\"."
+  } >&2
+}
+
 # ---- dispatch
 
 if [ "${match:-0}" = 1 ]; then
   if root="$(loop_root "$dir")"; then
     validate_run "$root"
     gate_push "$root" "$dir" "${gates_flag:-}" "${reason:-}"
+  else
+    guard_vanished "$dir"
   fi
 fi
 
@@ -318,7 +333,7 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
   [ -n "${kind:-}" ] || continue
   [ "$aflag" = - ] && aflag=""
   [ "$areason" = - ] && areason=""
-  root="$(loop_root "$adir")" || continue
+  root="$(loop_root "$adir")" || { case "$kind" in pushref|merge) guard_vanished "$adir" ;; esac; continue; }
   validate_run "$root"
   case "$kind" in
     pushref)

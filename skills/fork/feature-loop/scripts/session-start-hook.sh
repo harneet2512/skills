@@ -5,5 +5,8 @@
 # It never fails the session: every error ends in exit 0.
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 command -v node >/dev/null 2>&1 || exit 0
-node "$here/loop-hooks.mjs" session-start || true
+payload="$(cat 2>/dev/null || true)"
+# fork.8: make the loop id and the log key (gate G9) before anything is logged.
+printf '%s' "$payload" | bash "$here/stage-hook.sh" init || true
+printf '%s' "$payload" | node "$here/loop-hooks.mjs" session-start || true
 exit 0
