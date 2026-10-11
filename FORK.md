@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds ten skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.9.1`
+- **Fork version:** `1.3.1-fork.9.3`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -18,8 +18,8 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9.1`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9.1` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9.3`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9.3` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -426,6 +426,13 @@ An Opus adversarial review of fork.9 found places where the flow broke between i
 **Not fixable here, so documented (A1, A5, A10, A11).** The hooks run as the agent's own OS user, so an agent can run the approval hook itself, route a command through arbitrary indirection, or forge an evidence file. `gates.md`, "Limits: tamper-evident, not tamper-proof", says so, and names the hard guarantee for "the owner merges": GitHub branch protection with a required review, and an agent token without merge rights.
 
 **Housekeeping (C1, C2).** `codex-review` is in `skills/fork/README.md`; the stale `bench/inbox-assist` paths now point at the repo root; the duplicated fork.9 sentence in `hooks/hooks.json` is gone.
+
+## 12. Live-run fixes (1.3.1-fork.9.2, 1.3.1-fork.9.3)
+
+Found by live run 2 on `workflow-toy-todo`:
+
+- **fork.9.2, approvals:** a plain `approve acceptance` was refused in any repo that had shipped a feature, because `docs/acceptance/` still held that feature's file. Candidate files the default branch already holds with the same content are dropped before the ambiguity check (`vis-root.mjs` `unshipped`).
+- **fork.9.3, attackers on the wrong code:** the Agent tool's `isolation: "worktree"` cuts the worktree from the default branch, not HEAD. All three topic attackers of adversarial-review ran at `main`, without the feature, and reported no findings. New PreToolUse hook `agent-base-hook.mjs` (matcher `Agent`) refuses an isolated subagent while a loop is active and HEAD is ahead of the default branch, and says to cut the worktree from HEAD. adversarial-review and feature-loop say the same.
 
 ## Install
 
