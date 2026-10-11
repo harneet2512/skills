@@ -1290,8 +1290,15 @@ APPR="$work/approvals.json"
 # The gates read them through gates-approvals.mjs, which takes this file in tests (FEATURE_LOOP_APPROVALS_FIXTURE).
 set_approvals() { printf '%s\n' "$1" > "$APPR"; export FEATURE_LOOP_APPROVALS_FIXTURE="$APPR"; }
 approve() { # <stop> <plan_sha or head>: one approval object
-  case "$1" in pr) printf '{"stop":"pr","head":"%s","at":"2026-10-11T10:00:00Z"}' "$2" ;; *) printf '{"stop":"%s","plan_sha":"%s","at":"2026-10-11T10:00:00Z"}' "$1" "$2" ;; esac
+  case "$1" in
+    pr) printf '{"stop":"pr","head":"%s","at":"2026-10-11T10:00:00Z"}' "$2" ;;
+    acceptance) printf '{"stop":"acceptance","acceptance_sha":"%s","at":"2026-10-11T10:00:00Z"}' "$2" ;;
+    *) printf '{"stop":"%s","plan_sha":"%s","at":"2026-10-11T10:00:00Z"}' "$1" "$2" ;;
+  esac
 }
+# at_key <plan file>: the key of its acceptance tests (acceptance-key.mjs), the subject of "approve acceptance".
+at_key() { node --input-type=module -e "import { acceptanceKeyOf } from '$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/acceptance-key.mjs'; import { readFileSync } from 'node:fs'; process.stdout.write(acceptanceKeyOf(readFileSync(process.argv[1], 'utf8')));" "$1"; }
+AT_KEY=$(at_key "$fx/plan-acceptance.md"); AT_KEY_TWO=$(at_key "$fx/plan-acceptance-two.md")
 gates_json_f9() { mkdir -p "$1/.scratch"; printf '{ "slug": "%s", "size": "%s", "base": "main", "plan_sha": "%s" }\n' "$SLUG" "${2:-normal}" "${3:-$PLAN_SHA}" > "$1/.scratch/gates.json"; }
 
 # codex_report <dir> <kind> <subject_sha> <findings JSON> [exit_code] [model]: the report codex-review.sh writes.
@@ -1324,7 +1331,23 @@ expect "G10 red: model is not the configured one" "$d" 1 "model is \"some-other-
 d_env="$(cd "$d" && CODEX_REVIEW_MODEL=some-other-model "$check" G10 2>&1)"
 pass_if "G10: CODEX_REVIEW_MODEL changes the configured model" test "$(printf '%s' "$d_env" | grep -c '^G10 green')" = 1
 codex_report "$d" plan "$OTHER_SHA" '[]'
-expect "G10 red: the review is of a different plan than plan_sha" "$d" 1 "not the approved plan_sha" 1 G10
+expect "G10 red: the review is of a different plan than plan_sha" "$d" 1 "neither the approved plan nor a committed version" 1 G10
+d2=$(new_repo g10-version); mkdir -p "$d2/docs/plans"; printf '# Plan
+
+first draft
+' > "$d2/docs/plans/$SLUG.md"; git -C "$d2" add -A; git -C "$d2" commit -q -m "plan draft"
+draft_sha=$(sha256sum "$d2/docs/plans/$SLUG.md" | cut -c1-64)
+printf '# Plan
+
+first draft
+
+folded: codex finding P1
+' > "$d2/docs/plans/$SLUG.md"; git -C "$d2" add -A; git -C "$d2" commit -q -m "fold codex findings"
+gates_json_f9 "$d2"; set_approvals "[$(approve plan "$PLAN_SHA")]"; codex_report "$d2" plan "$draft_sha" '[]'
+expect "G10 green: the review is of an earlier committed version of the same plan file (findings folded in since)" "$d2" 0 "G10 green" 0 G10
+codex_report "$d2" plan "$OTHER_SHA" '[]'
+expect "G10 red: a review of a plan that was never committed in this file" "$d2" 1 "neither the approved plan nor a committed version" 1 G10
+set_approvals "[$(approve plan "$PLAN_SHA")]"
 codex_report "$d" code "$PLAN_SHA" '[]'; mv "$d/.scratch/review/codex-code-$SLUG.json" "$d/.scratch/review/codex-plan-$SLUG.json"
 expect "G10 red: a code report cannot stand in for the plan review" "$d" 1 'kind is "code", not "plan"' 1 G10
 codex_report "$d" plan "$PLAN_SHA" "[$(finding P1 HIGH CONFIRMED),$(finding P2 LOW PLAUSIBLE)]"
@@ -1413,7 +1436,7 @@ at_repo() { # <name>: a repo with the plan's acceptance tests mapped and passing
   mkdir -p "$r/tests"; printf 't\n' > "$r/tests/at2.test.js"; printf 't\n' > "$r/tests/at3.test.js"; git -C "$r" add -A; git -C "$r" commit -q -m "acceptance tests"
   put_live "$r" report-pass.json
   sed "s/@SHA@/$(head_of "$r")/" "$fx/acceptance-ok.md" > "$r/.scratch/acceptance.md"
-  set_approvals "[$(approve acceptance "$PLAN_SHA")]"
+  set_approvals "[$(approve acceptance "$AT_KEY")]"
   printf '%s' "$r"
 }
 d=$(at_repo g12)
@@ -1447,8 +1470,12 @@ expect "G12 red: no signed approve acceptance" "$d" 1 'the signed log has no "ap
 set_approvals "[$(approve plan "$PLAN_SHA")]"
 expect "G12 red: approve plan is not approve acceptance" "$d" 1 'no "approve acceptance"' 1 G12
 set_approvals "[$(approve acceptance "$OTHER_SHA")]"
-expect "G12 red: approve acceptance for another plan" "$d" 1 'no "approve acceptance"' 1 G12
-d=$(at_repo g12-two); put "$d" plan-acceptance-two.md "docs/plans/$SLUG.md"
+expect "G12 red: approve acceptance for other acceptance tests" "$d" 1 'no "approve acceptance"' 1 G12
+set_approvals "[$(approve acceptance "$PLAN_SHA")]"
+expect "G12 red: an acceptance approval keyed to the plan file, not the tests, does not count" "$d" 1 'no "approve acceptance"' 1 G12
+d=$(at_repo g12-edited); put "$d" plan-acceptance-two.md "docs/plans/$SLUG.md"
+expect "G12 red: edited acceptance tests need a fresh approval" "$d" 1 'a changed test needs a fresh approval' 1 G12
+d=$(at_repo g12-two); put "$d" plan-acceptance-two.md "docs/plans/$SLUG.md"; set_approvals "[$(approve acceptance "$AT_KEY_TWO")]"
 expect "G12 green: items without an AT id are numbered AT1, AT2 in order; extra rows are ignored" "$d" 0 "G12 green" 0 G12
 d=$(at_repo g12-small); gates_json_f9 "$d" small
 expect "G12 applies to small work too" "$d" 0 "G12 green" 0 G12
@@ -1490,7 +1517,7 @@ pr_repo() { # <name>: a normal-size repo with every gate's evidence on HEAD, app
   sed "s/@SHA@/$(head_of "$r")/" "$fx/acceptance-ok.md" > "$r/.scratch/acceptance.md"
   printf '%s' "$r"
 }
-ALL_APPROVED="[$(approve plan "$PLAN_SHA"),$(approve acceptance "$PLAN_SHA")"
+ALL_APPROVED="[$(approve plan "$PLAN_SHA"),$(approve acceptance "$AT_KEY")"
 CI_OK='[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"success"}]'
 pr_approvals() { set_approvals "$ALL_APPROVED,$(approve pr "$(head_of "$1")")]"; }
 export FAKE_GH_RUNS="$CI_OK"

@@ -11,6 +11,7 @@ import { clean, firstTable, section, splitRow, isSeparator } from './md-table.mj
 import { git } from './stage-detect.mjs';
 import { headFresh, isSha } from './gates-head.mjs';
 import { hasApproval } from './gates-approvals.mjs';
+import { acceptanceKey } from './acceptance-key.mjs';
 
 const red = (msg, file) => ({ state: 'red', msg: `${msg} (${file})` });
 const ACCEPTANCE = '.scratch/acceptance.md';
@@ -99,9 +100,9 @@ export function g12({ root, work, run, appr, readPlan, planFile }) {
   const rows = new Map(table.rows.map((r) => [normId(clean(r[cols.id] ?? '')), r]));
   const scenarios = liveScenarios(root, work);
   const problems = items.map((it) => rowProblem(work, scenarios, it, rows.get(it.id), cols)).filter(Boolean);
-  const planSha = run.plan_sha;
-  const ap = hasApproval(appr, 'acceptance', (a) => typeof planSha === 'string' && String(a.plan_sha).toLowerCase() === planSha.toLowerCase(),
-    `plan ${typeof planSha === 'string' ? planSha.slice(0, 12) : '(no plan_sha in gates.json)'}`);
+  const key = acceptanceKey(items);
+  const ap = hasApproval(appr, 'acceptance', (a) => key !== '' && String(a.acceptance_sha).toLowerCase() === key,
+    `these acceptance tests (${key.slice(0, 12)}); a changed test needs a fresh approval`);
   if (!ap.ok) problems.push(ap.msg);
   if (!problems.length) return { state: 'green' };
   const text = problems.join('; ');

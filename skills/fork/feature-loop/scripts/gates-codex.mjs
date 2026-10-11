@@ -4,13 +4,16 @@
 // repro }] }; the lead's answers are in codex-<kind>-<slug>.resolutions.md, a table `| id | resolution |` whose
 // resolution starts with `fixed: <commit>` or `rejected: <reason>`. Repros: .scratch/review/codex-repros/<id>/.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { clean, tables } from './md-table.mjs';
 import { git, isAncestor } from './stage-detect.mjs';
 import { fullSha, headFresh } from './gates-head.mjs';
 import { hasApproval } from './gates-approvals.mjs';
 
 const DEFAULT_MODEL = 'gpt-6-astra';
+const gitRaw = (dir, args) => { try { return execFileSync('git', ['-C', dir, ...args], { stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; } };
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const TEST_PATH_RE = /(^|\/)(tests?|__tests__|spec|e2e)\/|\.(test|spec)\.[a-z]+$|(^|\/)test[-_][^/]*$|_test\.[a-z]+$/i;
 const list = (xs, n = 4) => (xs.length <= n ? xs.join(', ') : `${xs.slice(0, n).join(', ')} and ${xs.length - n} more`);
@@ -55,14 +58,30 @@ function unanswered(rep, res, severities) {
     .map((f) => `${f?.id} ${String(f?.severity).toUpperCase()}`);
 }
 
-export function g10({ root, run, slug, appr }) {
+// The codex plan review runs on the plan as plan mode wrote it, and its findings are then folded into the same file, so
+// the approved plan differs from the reviewed one. The review counts when it is of the approved plan itself or of a
+// committed version of the same plan file.
+function reviewedVersion(dir, planFile, subject, approved) {
+  const want = String(subject ?? '').toLowerCase();
+  if (!SHA256_RE.test(want)) return false;
+  if (want === String(approved).toLowerCase()) return true;
+  if (!planFile) return false;
+  const rel = relative(dir, planFile).split(sep).join('/');
+  const commits = (git(dir, ['log', '--format=%H', '--', rel]).stdout ?? '').split(/\s+/).filter(Boolean);
+  return commits.some((c) => {
+    const body = gitRaw(dir, ['show', `${c}:${rel}`]);
+    return body !== null && createHash('sha256').update(body).digest('hex') === want;
+  });
+}
+
+export function g10({ root, work, run, slug, appr, planFile }) {
   const planSha = run.plan_sha;
   const r = loadReport(root, slug, 'plan');
   if (r.fail) return r.fail;
   const { rep, file } = r;
   const problems = [];
   if (typeof planSha !== 'string' || !SHA256_RE.test(planSha)) problems.push('.scratch/gates.json has no "plan_sha" (sha256 of the approved plan at loop start)');
-  else if (String(rep.subject_sha).toLowerCase() !== planSha.toLowerCase()) problems.push(`the review is of plan ${String(rep.subject_sha).slice(0, 12)}, not the approved plan_sha ${planSha.slice(0, 12)}: review the plan again`);
+  else if (!reviewedVersion(work ?? root, planFile, rep.subject_sha, planSha)) problems.push(`the review is of plan ${String(rep.subject_sha).slice(0, 12)}, which is neither the approved plan nor a committed version of ${planFile || 'the plan file'}: run the codex plan review on the committed plan`);
   const res = resolutions(root, slug, 'plan');
   const open = unanswered(rep, res);
   if (open.length) problems.push(`CONFIRMED finding${open.length > 1 ? 's' : ''} with no "fixed: <commit>" or "rejected: <reason>" row in .scratch/review/codex-plan-${slug}.resolutions.md: ${list(open)}`);

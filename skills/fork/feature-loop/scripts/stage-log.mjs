@@ -214,8 +214,10 @@ export function approvalReport(root) {
 }
 export const approvals = (root) => approvalReport(root).entries;
 
-// Has the owner approved this stop for exactly this subject? key is the plan sha (acceptance, plan) or the head (pr).
+// Has the owner approved this stop for exactly this subject? key is the acceptance-tests key (acceptance), the plan
+// sha (plan) or the head (pr).
+const SUBJECT = { pr: 'head', acceptance: 'acceptance_sha', plan: 'plan_sha' };
 export function hasApproval(root, stop, key) {
   if (!key) return false;
-  return approvals(root).some((a) => a.stop === stop && (stop === 'pr' ? a.head === key : a.plan_sha === key));
+  return approvals(root).some((a) => a.stop === stop && a[SUBJECT[stop]] === key);
 }
