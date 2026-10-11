@@ -1,5 +1,5 @@
 {
-  "description": "Fork only (see FORK.md): enforce the feature loop when the repo (or its main worktree) has .scratch/gates.json without status closed. PreToolUse on Bash gates git commit (slop in the staged lines), git push and PR creation (build-phase gates; pushes to the base branch refused) and gh pr merge or a GraphQL mergePullRequest (match-head-commit, merge-phase gates, green CI on that sha, HEAD equal to that sha); fails closed while a loop is active. Stop refuses to end a turn while a stage is running. PostToolUse and PostToolUseFailure (every tool) and UserPromptExpansion keep the signed stage log in .scratch/.loop/ (Skill and Agent calls) and record source changes made before the planning skills ran; gate G9 reads it, and the push and merge hooks make G9 mandatory. SessionStart makes the log key and summarizes where the loop stands.",
+  "description": "Fork only (see FORK.md): enforce the feature loop when the repo (or its main worktree) has .scratch/gates.json without status closed. PreToolUse on Bash gates git commit (slop in the staged lines), git push and PR creation (build-phase gates; pushes to the base branch refused) and gh pr merge or a GraphQL mergePullRequest (match-head-commit, merge-phase gates, green CI on that sha, HEAD equal to that sha); fails closed while a loop is active. Stop refuses to end a turn while a stage is running. PostToolUse and PostToolUseFailure (every tool) and UserPromptExpansion keep the signed stage log in .scratch/.loop/ (Skill and Agent calls) and record source changes made before the planning skills ran; gate G9 reads it, and the push and merge hooks make G9 mandatory. SessionStart makes the log key and summarizes where the loop stands. fork.9: the same PostToolUse hook keeps .scratch/timeline.md and prints one systemMessage line per event that matters (ESCALATION: for the loud ones); PostToolUse on ExitPlanMode hands the approved plan to the codex plan review and stop 2 (no implementing); UserPromptSubmit records the owner's `approve acceptance|plan|pr` as signed approvals.",
   "hooks": {
     "PreToolUse": [
       {
@@ -45,6 +45,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/stage-hook.sh\" exit-plan",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "UserPromptExpansion": [
@@ -66,6 +76,17 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/stage-hook.sh\" post-tool",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/stage-hook.sh\" user-prompt",
+            "timeout": 10
           }
         ]
       }
