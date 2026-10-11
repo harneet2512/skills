@@ -9,6 +9,12 @@ A section that does not apply says `n/a: <reason>`. Never leave TBD or a placeho
 <!-- What `grilling` settled with the user: one line each, the requirement or choice and who confirmed it.
 Open questions go in "Open questions" with a recommended default, never in this section. -->
 
+## Acceptance tests
+
+<!-- 3 to 5 checks in the owner's words that say the feature is done, written at the end of grilling and confirmed by
+the owner (stop 1: the owner types `approve acceptance`). One line each: `AT<n>: <observable behaviour>`. Each one
+needs a passing automated test or a live-verify scenario named after it before the PR (gate G12). -->
+
 ## Size and why
 
 <!-- small, normal or large, with the risk reasoning (see feature-loop "Size it first"), and the slug. -->
@@ -36,7 +42,7 @@ seams where its tests attach (existing seams preferred, the highest possible). A
 
 <!-- The skill that runs at each loop stage, so nobody guesses: stage 1 shape, stage 2 deep-engineering, stage 3
 to-spec then to-tickets, stage 4 tdd with code-review per slice, stage 5 evals and live-verify, stage 6
-adversarial-review, stage 7 wp-loop merge gate, stage 9 retro. Say where this feature differs. -->
+codex-review code attack, stage 7 pr gate (owner approves, owner merges), stage 9 retro. Say where this feature differs. -->
 
 ## Verification
 
@@ -58,9 +64,9 @@ the triggering lines. Run it while planning, so the concern checklist is part of
 
 ## Design challenge
 
-<!-- The result of the read-only reviewer subagent that attacked this draft (design-challenge.md): CONFIRMED findings
-with how each was resolved in this plan, PLAUSIBLE ones with the decision, and the cuts accepted. For small work with no
-Critical item: `n/a: <reason>`. This section must be filled before the plan is approved. -->
+<!-- The codex plan review (codex-review skill, plan mode, gpt-6-astra) that ran on this file right after plan mode:
+the report path, each CONFIRMED finding with how this plan now resolves it, PLAUSIBLE ones with the decision, and the
+cuts accepted. Required for every size. Filled before stop 2; the owner approves the plan with `approve plan`. -->
 
 ## Open questions
 

@@ -13,6 +13,8 @@ Size names: Tiny, Normal and Major here are `feature-loop`'s Small, Normal and L
 - **Small work:** the whole loop, steps 1 to 13: one issue, one branch, one PR.
 - **A normal or large feature:** only steps 12 (merge gate) and 13 (report), run on the feature's single PR and issue after `feature-loop` has built and reviewed every ticket on its integration branch.
 
+**Inside `feature-loop` (fork.9), the owner merges.** No PR (not even a draft) is opened before the owner's `approve pr` (feature-loop stage 7, stop 3), and the lead never merges. Step 5 pushes the branch instead of opening a PR; step 12 runs `check-gates.sh --phase pr`, waits for CI on the pushed head, shows the owner the evidence, and opens the PR after `approve pr`; its **Done when** is the PR open from that head. The gate hook enforces both.
+
 Run on its own, it is the whole loop for one issue.
 
 If the user passes an issue reference, fetch it from the issue tracker and state its title before starting. If the reference is ambiguous, ask.

@@ -1,39 +1,46 @@
 ---
 name: plan-first
-description: The planning half of the plan-first workflow for a feature. Use whenever the user grills a feature plan (grilling, "grill me", stress-testing a plan) or enters plan mode (/plan, Shift+Tab) to plan a feature, a change with several files, or a ticket breakdown. Caps the grilling at 3 rounds or 20 minutes, fills the plan template in plan mode (decisions, size, dependencies, files, skeleton ticket, tickets with seams, skill per stage, verification, failure modes, time box), runs pack detection on the draft, has a read-only subagent attack the draft before approval, and writes the plan to a tracked file that feature-loop then follows without re-asking.
+description: The planning half of the owner's workflow for a feature. Use whenever the user grills a feature plan (grill-me, grilling, "grill me", stress-testing a plan) or enters plan mode (/plan, Shift+Tab) to plan a feature, a change with several files, or a ticket breakdown. Caps the grilling, ends it with 3 to 5 acceptance tests the owner confirms (stop 1), fills the plan template in plan mode, hands the plan to the codex plan review (gpt-6-astra) instead of implementing, and shows the owner the findings and the revised plan (stop 2) before feature-loop builds anything.
 ---
 
-The plan-first workflow: **the user's brief, then `grilling` (capped), then plan mode (one plan, attacked before approval), then `feature-loop` follows the approved plan.** This skill is the first two steps. `feature-loop` is user-invoked and is not in context while the user is still grilling or planning, so every rule for those phases lives here.
+The owner's workflow: **brief → grill → acceptance tests (stop 1) → plan mode → codex plan review → revised plan (stop 2) → `feature-loop` builds, attacks and tests everything → evidence (stop 3) → PR. The owner merges.** This skill is everything up to stop 2. The owner is told every step as it happens (the hooks print it and write `.scratch/timeline.md`); the owner decides only at the three stops.
 
-## 1. Cap the grilling
+## 1. Grill, capped
 
-Upstream `grilling` has no limit, so this skill enforces one while grilling a feature plan.
+- Run `date` and say the start time. A **round** is one batch of questions and the owner's answers.
+- Ask with the AskUserQuestion tool where a question has a few clear options, recommended option first and marked `(Recommended)`, so the owner can answer in one click.
+- After **3 rounds or 20 minutes, whichever comes first**, stop asking: list every open question with your recommended default as one numbered list and ask for one reply (`yes` or edits by number). A question whose answer changes the size or an irreversible effect is not capped.
+- Record each settled answer as one line under `## Decisions`. Never reopen an answered question.
 
-- At the start, run `date` and say the start time. A **round** is one batch of questions followed by the user's answers.
-- After **3 rounds or 20 minutes, whichever comes first**, stop asking. List every remaining open question, each with your recommended default, as one numbered list, and ask for one reply: `yes` (take all defaults) or edits by number.
-- Record the answers that settled something as one line each under `## Decisions` in the plan; record unanswered questions you defaulted under `## Open questions` until the user replies.
-- Never reopen a question the user already answered. A question whose answer would change the size or an irreversible effect is not capped: ask it.
+## 2. Acceptance tests: stop 1
 
-## 2. Plan in plan mode
+End the grill with **3 to 5 acceptance tests** in the owner's words, one line each, `AT<n>: <observable behaviour>`: what someone could watch happen to know the feature works. Not implementation details. Show them and ask the owner to reply `approve acceptance` (or edit them). They go into the plan's `## Acceptance tests` section and become the final check: gate G12 refuses the PR until each has a passing test or live-verify scenario named after it.
 
-The plan is a **tracked file** so every builder and the PR see it. Target repos set this in `.claude/settings.json`:
+Only the owner's own message approves (the hook signs it); never write an approval yourself.
 
-```json
-{ "plansDirectory": "docs/plans" }
-```
+## 3. Plan in plan mode
 
-Claude Code picks the file name. Do not put it in `.scratch/` (untracked and not copied to worktrees).
+The plan is a **tracked file**. The target repo's `.claude/settings.json` has `{ "plansDirectory": "docs/plans" }` (add it if missing, before planning). Never put the plan in `.scratch/`.
 
-1. **Fill the template** [plan-template.md](plan-template.md) in plan mode, keeping its headings exactly (the loop finds sections by heading text). Sections: Decisions, Size and why, External dependencies, Files to create or change, Skeleton ticket, Tickets and seams, Skill per stage, Verification, Failure modes, Time box, Concerns, Design challenge, plus Open questions and Changes. A section that does not apply says `n/a: <reason>`. Size by risk (see `feature-loop`, "Size it first"); an AI feature is not large by itself.
-2. **Pack detection.** Run the `behavioral-envelope` skill's `scripts/detect-packs.sh --plan <draft or the brief>` and put the packs and their triggering lines under `## Concerns`. Read-only, so it is allowed in plan mode.
-3. **Design challenge before approval** (large work, and normal work with a Critical Live item; otherwise write `n/a: <reason>`). Follow [design-challenge.md](design-challenge.md): one read-only subagent on the strongest model attacks the draft; fold every CONFIRMED finding into the plan with its resolution; list the accepted cuts. One round. There is no second approval after this.
-4. **Check the plan.** Run the `feature-loop` skill's `scripts/check-gates.sh --plan` until it exits 0. It names every missing or empty section and every `Changed:` line without a reason.
-5. **One approval.** Present the plan. The plan-mode approve prompt switches to a mode that starts editing, outside the loop, so tell the user to choose **No, keep planning** (or reject) at that prompt, then leave plan mode with Shift+Tab to a normal mode (a keep-planning session stays in plan mode, where `/mattpocock-skills:feature-loop` cannot write files; leaving this way gives no second approval prompt), commit the plan file, and start `/mattpocock-skills:feature-loop`. Starting the loop on the plan is the approval. The loop reads the plan and asks only about sections the check names.
+1. Fill [plan-template.md](plan-template.md) in plan mode, keeping its headings exactly. A section that does not apply says `n/a: <reason>`. Size by risk (`feature-loop`, "Size it first").
+2. Run the `behavioral-envelope` skill's `scripts/detect-packs.sh --plan <draft>` (read-only, allowed in plan mode) and put the packs and their triggering lines under `## Concerns`.
+3. Leave `## Design challenge` as `pending: codex plan review` for now. Present the plan with ExitPlanMode.
 
-## 3. After approval
+## 4. Hand-off: review, do not implement
 
-- The lead commits the plan file (on the integration branch, before any builder starts) so it is tracked.
-- When the build finds reality differs from the plan, the lead or builder appends `- Changed: <what> because <why>` under `## Changes` **in the same commit as the code**, so the PR shows the plan diff. Code and plan never silently diverge.
-- `feature-loop` marks the stages the plan covers (0, 1 and 3) as `done, from approved plan` and still runs the deeper check, envelope, skeleton, tests and reviews.
+When the owner accepts the plan to leave plan mode, the hook tells you this too: **do not implement.**
 
-**Done when:** the plan file has every required section filled (`check-gates.sh --plan` exits 0), the design challenge's findings are resolved in it (or it says `n/a: <reason>`), the grilling stopped at its cap with defaults listed, and the user has started the loop on it.
+1. Commit the plan file.
+2. Call the Skill tool with `codex-review` in plan mode on the plan file. It runs `gpt-6-astra` read-only against the real repo and writes `.scratch/review/codex-plan-<slug>.json`.
+3. Fold every CONFIRMED finding into the plan (change the section it concerns) and write each resolution in `.scratch/review/codex-plan-<slug>.resolutions.md`. Fill `## Design challenge` with the report path, the findings and how each is resolved. Run `feature-loop`'s `scripts/check-gates.sh --plan` until it exits 0. Commit.
+4. If codex is unavailable, say so to the owner; the fallback is the read-only subagent in [design-challenge.md](design-challenge.md), recorded as a bypass.
+
+## 5. Stop 2: the reviewed plan
+
+Show the owner, in this order: the codex summary line, every CONFIRMED finding with its resolution, the PLAUSIBLE ones with your decision, and what changed in the plan (the diff of the plan file since the hand-off). Ask the owner to reply `approve plan` (or say what to change). After `approve plan`, call the Skill tool with `feature-loop` on the plan. Starting the loop with an approved plan marks stages 0, 1 and 3 `done, from approved plan`.
+
+## After stop 2
+
+- When the build finds reality differs from the plan, append `- Changed: <what> because <why>` under `## Changes` in the same commit as the code. The owner is told immediately (an escalation line); no approval is needed unless the change touches an acceptance test, which needs a fresh `approve acceptance`.
+
+**Done when:** the acceptance tests are approved, the plan passes `check-gates.sh --plan`, the codex plan review ran on it with every CONFIRMED finding resolved, the owner typed `approve plan`, and `feature-loop` has started on it.
