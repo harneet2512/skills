@@ -12,6 +12,8 @@ export const isAllowed = (p) => ALLOWED.some((a) => (a.endsWith('/') ? p.startsW
 const EXCLUDES = ['.scratch', 'docs/plans', 'docs/agents', 'docs/adr', 'GLOSSARY.md', '.claude/settings.json', '.claude/.loop'].map((p) => `:(exclude)${p}`);
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 export const MARGIN_MS = 2000;
+// A review counts when logged at or after the last source commit time, less one second of clock rounding.
+export const AFTER_MARGIN_MS = 1000;
 const MAX_BLOBS = 40;
 
 export const git = (dir, args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -24,6 +26,12 @@ const revParse = (dir, ref) => { const r = git(dir, ['rev-parse', '--verify', '-
 // The sha `base` names (base, else origin/base), or ''.
 export const baseSha = (dir, base) => (base ? revParse(dir, base) || revParse(dir, `origin/${base}`) : '');
 export const headSha = (dir) => revParse(dir, 'HEAD') || EMPTY_TREE;
+export const isAncestor = (dir, a, b) => !!a && !!b && git(dir, ['merge-base', '--is-ancestor', a, b]).status === 0;
+export function mergeBaseWith(dir, sha) {
+  if (!sha) return '';
+  const r = git(dir, ['merge-base', sha, 'HEAD']);
+  return r.status === 0 ? r.stdout.trim() : '';
+}
 
 // Source paths changed in the working tree and index (including untracked files), not yet committed.
 export function dirtySource(dir) {

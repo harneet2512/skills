@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { appendEntry } from './stage-log.mjs';
+import { appendEntry, recordSessionHead } from './stage-log.mjs';
 import { blobsOf, evasionTraces } from './stage-detect.mjs';
 import { assess, ensureInit } from './stage-state.mjs';
 
@@ -93,6 +93,7 @@ function detect(root, run, session) {
 
 try {
   const start = resolve((typeof input.cwd === 'string' && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  recordSessionHead(typeof input.session_id === 'string' ? input.session_id : '', start, mode === 'init');
   const root = findRoot(start);
   if (!root) finish(0);
   let run = {};

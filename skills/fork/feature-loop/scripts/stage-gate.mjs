@@ -3,8 +3,8 @@
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { storeStatus } from './stage-log.mjs';
-import { MARGIN_MS, baseSha, evasionTraces, lastSourceChangeMs, normSkill } from './stage-detect.mjs';
-import { assess } from './stage-state.mjs';
+import { AFTER_MARGIN_MS, MARGIN_MS, baseSha, evasionTraces, isAncestor, lastSourceChangeMs, normSkill } from './stage-detect.mjs';
+import { assess, baselineOk } from './stage-state.mjs';
 import { planSectionHasBody } from './plan-check.mjs';
 
 const OPUS = /opus/i;
@@ -29,6 +29,10 @@ export function checkStages({ root, work, run, phase, require }) {
   if (!a.baseSha) return red(`base "${a.init.base}" did not resolve to a commit when the loop started, so committed source cannot be seen: fix "base" in gates.json`);
   if (!baseSha(root, run.base)) return red(`base "${run.base ?? ''}" in gates.json does not resolve to a commit`);
 
+  if (!baselineOk(a.init) || (a.init.startSha !== a.init.mergeBase && !isAncestor(root, a.init.mergeBase, a.init.startSha))) {
+    return red('the loop baseline is not the merge-base with base (or the session start commit on top of it), so code written before the loop could be hidden: start the loop from the merge-base');
+  }
+
   const problems = [];
   if (a.open.length) {
     const o = a.open[a.open.length - 1];
@@ -42,7 +46,7 @@ export function checkStages({ root, work, run, phase, require }) {
   // Merge and close: the later stages must have run, after the last source change.
   const last = lastSourceChangeMs(work, a.init.startSha);
   const ofSkill = (s) => a.ep.entries.filter((e) => e.kind === 'skill' && normSkill(e.skill) === s).map(tsMs);
-  const after = (s) => ofSkill(s).some((t) => t + MARGIN_MS >= last);
+  const after = (s) => ofSkill(s).some((t) => t + AFTER_MARGIN_MS >= last);
   const need = a.size === 'small' ? ['code-review', 'live-verify'] : ['code-review', 'live-verify', 'adversarial-review'];
   for (const s of a.size === 'small' ? ['wp-loop'] : []) if (!ofSkill(s).length) problems.push(`not run in this loop (no entry in the log): ${s}`);
   for (const s of need) {

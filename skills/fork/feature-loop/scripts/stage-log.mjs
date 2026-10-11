@@ -67,14 +67,43 @@ export function storeStatus(root) {
 }
 
 // Make the key, its self-ignoring directory and the state for a loop that has none. False when it cannot be written.
+// Idempotent under parallel hooks: the key is created with O_EXCL and the loser keeps (re-reads) the winner's key; the
+// state is written only when no state exists yet.
 export function createStore(root, slug, now) {
   try {
     mkdirSync(keyDirIn(root), { recursive: true });
     writeFileSync(join(keyDirIn(root), '.gitignore'), '*\n');
-    writeFileSync(keyPath(root), randomBytes(32).toString('hex') + '\n', { flag: 'wx', mode: 0o600 });
+    try { writeFileSync(keyPath(root), randomBytes(32).toString('hex') + '\n', { flag: 'wx', mode: 0o600 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
     mkdirSync(loopDir(root), { recursive: true });
-    return writeState(root, { rid: repoId(root), root, slug, ts: now, tip: null }) !== null;
+    if (readState(root)) return readKey(root) !== null;
+    return writeState(root, { rid: repoId(root), root, slug, ts: now, tip: null }) !== null && readKey(root) !== null;
   } catch { return false; }
+}
+
+// ---- the session's starting commit, recorded outside the repo by the SessionStart hook, so code committed in this
+// session before gates.json exists is not the loop's baseline (N1). A record made by a later event (a tool call, when
+// SessionStart did not run, or after the record was deleted) is not trusted: it says nothing about where the session began.
+const sessionPath = (sid) => join(stateBase(), 'sessions', `${String(sid).replace(/[^A-Za-z0-9_.-]/g, '_')}.json`);
+const readSessions = (sid) => { try { return JSON.parse(readFileSync(sessionPath(sid), 'utf8')) ?? {}; } catch { return {}; } };
+
+export function recordSessionHead(sid, dir, trusted) {
+  if (!sid) return;
+  try {
+    if (spawnSync('git', ['-C', dir, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).status !== 0) return;
+    const rid = repoId(dir);
+    const m = readSessions(sid);
+    if (m[rid]) return;
+    const h = spawnSync('git', ['-C', dir, 'rev-parse', '--verify', '--quiet', 'HEAD'], { encoding: 'utf8' });
+    m[rid] = { head: h.status === 0 ? h.stdout.trim() : '', wall: Date.now(), trusted: trusted === true };
+    mkdirSync(join(sessionPath(sid), '..'), { recursive: true });
+    writeFileSync(sessionPath(sid), JSON.stringify(m) + '\n');
+  } catch { /* best effort: without a record the baseline is the merge-base with base, which is stricter */ }
+}
+
+// The commit this session started on in this repository, from a SessionStart record, or ''.
+export function readSessionHead(sid, root) {
+  const r = sid ? readSessions(sid)[repoId(root)] : null;
+  return r && r.trusted === true ? r.head ?? '' : '';
 }
 
 const sign = (key, obj) => createHmac('sha256', key).update(JSON.stringify(obj)).digest('hex');

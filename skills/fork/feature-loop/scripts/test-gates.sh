@@ -113,6 +113,12 @@ stage_hook() {
 log_skill() { stage_hook "$1" Skill "{\"skill\":\"$2\"}" "${3:-$PAST}"; }
 log_agent() { stage_hook "$1" Agent "{\"subagent_type\":\"general-purpose\",\"model\":\"$2\",\"description\":\"${4:-design challenge}\"}" "${3:-$PAST}"; }
 log_many() { local d="$1" s; shift; for s in "$@"; do log_skill "$d" "$s"; done; }
+# The SessionStart hook: records where the session began (outside the repo) and starts the loop when there is one.
+session_start() {
+  local payload
+  payload="$(node -e 'process.stdout.write(JSON.stringify({ session_id: "s1", cwd: process.argv[1], hook_event_name: "SessionStart" }))' "$1")"
+  (cd "$work" && printf '%s' "$payload" | bash "$here/stage-hook.sh" init >/dev/null 2>&1)
+}
 init_loop() { stage_hook "$1" Bash '{"command":"ls"}'; }
 state_file() { node -e 'import(require("url").pathToFileURL(process.argv[1]).href).then((m) => { const r = m.readState(process.argv[2]); process.stdout.write(r ? r.path : ""); })' "$here/stage-log.mjs" "$1"; }
 sign_close() { node -e 'import(require("url").pathToFileURL(process.argv[1]).href).then((m) => { m.appendEntry(process.argv[2], { kind: "close", ts: new Date().toISOString(), slug: "x" }); })' "$here/stage-log.mjs" "$1"; }
@@ -133,9 +139,8 @@ ready_repo() {
   grep -q '"status"[[:space:]]*:[[:space:]]*"closed"' "$d/.scratch/gates.json" && return 0
   node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$d/.scratch/gates.json" 2>/dev/null || return 0
   [ -f "$(log_of "$d")" ] && return 0
-  local payload s
-  payload="$(node -e 'process.stdout.write(JSON.stringify({ session_id: "s1", cwd: process.argv[1], hook_event_name: "SessionStart" }))' "$d")"
-  (cd "$work" && printf '%s' "$payload" | bash "$here/stage-hook.sh" init >/dev/null 2>&1)
+  local s
+  session_start "$d"
   for s in $PLANNING; do expand_skill "$d" "$s"; done
   for s in code-review live-verify adversarial-review wp-loop retro; do expand_skill "$d" "$s" "$FUTURE"; done
   if grep -q '"size"[[:space:]]*:[[:space:]]*"large"' "$d/.scratch/gates.json"; then
@@ -1045,10 +1050,19 @@ expect "G9 is red on source changed before the stages even when no hook caught i
 d=$(loop_repo stage-onecall normal); commit_src "$d"; stage_hook "$d" Bash '{"command":"echo x > src/a.js && git commit -am x"}'
 pass_if "H3: source edited and committed in one call is a violation (diffed from the start sha)" test "$sh_code" = 2
 expect "H3: G9 sees the committed source too" "$d" 1 "G9 red: open violation" 1 --phase build G9
-d=$(new_repo stage-preloop); gates_json "$d" normal; init_loop "$d"
-stage_hook "$d" Bash '{"command":"ls"}'
-pass_if "M5: source committed before the loop started is not a violation" test "$sh_code" = 0
-expect "M5: G9 is green for a branch whose source predates the loop" "$d" 0 "G9 green" 0 --phase build G9
+d=$(new_repo stage-preloop); gates_json "$d" normal; session_start "$d"; init_loop "$d"
+pass_if "M5: pre-loop commits from before this session are allowed" test "$sh_code" = 0
+expect "M5: G9 is green for a branch whose source was committed before the session" "$d" 0 "G9 green" 0 --phase build G9
+# N1: code committed in this session before gates.json exists is a violation (the session's start commit is recorded
+# outside the repo at its first hook event, so it is the baseline, not HEAD at the time gates.json appears).
+d=$(new_repo stage-n1); session_start "$d"
+commit_src "$d"; gates_json "$d" normal; init_loop "$d"
+pass_if "N1: source committed in this session before gates.json is a violation" test "$sh_code" = 2
+expect "N1: G9 is red for it" "$d" 1 "G9 red: open violation" 1 --phase build G9
+rm -rf "$d/.scratch/.loop" "$d/.claude" "$(dirname "$(state_file "$d")")"; init_loop "$d"
+pass_if "N2: deleting every loop store and restarting does not launder the code" test "$sh_code" = 2
+rm -rf "$d/.scratch/.loop" "$d/.claude" "$(dirname "$(state_file "$d")")" "$work/state/sessions"; init_loop "$d"
+pass_if "N2: without any session record the baseline is the merge-base: pre-session commits count too" test "$sh_code" = 2
 d=$(loop_repo stage-settings normal); mkdir -p "$d/.claude"; printf '{ "plansDirectory": "docs/plans" }\n' > "$d/.claude/settings.json"
 stage_hook "$d" Write '{"file_path":".claude/settings.json"}'
 pass_if "M5: .claude/settings.json is not source" test "$sh_code" = 0
@@ -1122,7 +1136,9 @@ log_skill "$d" adversarial-review "$PAST"
 expect "normal: adversarial-review logged before the last source commit does not count" "$d" 1 "adversarial-review was logged before the last source change" 1 --phase merge G9
 ct=$(git -C "$d" log -1 --format=%ct)
 log_skill "$d" adversarial-review "$(date -u -d "@$((ct - 1))" +%Y-%m-%dT%H:%M:%SZ)"
-expect "L3: a review logged one second before the commit time counts (the margin)" "$d" 0 "G9 green" 0 --phase merge G9
+log_skill "$d" adversarial-review "$(date -u -d "@$((ct - 3))" +%Y-%m-%dT%H:%M:%SZ)"
+expect "L3: a review logged three seconds before the commit time does not count" "$d" 1 "adversarial-review was logged before the last source change" 1 --phase merge G9
+expect "L3: a review logged one second before the commit time counts (clock rounding only)" "$d" 0 "G9 green" 0 --phase merge G9
 log_skill "$d" adversarial-review "$FUTURE"
 expect "normal: merge G9 green with every stage logged after the source" "$d" 0 "G9 green" 0 --phase merge G9
 expect "normal: close G9 is red without retro" "$d" 1 "retro" 1 --phase close G9

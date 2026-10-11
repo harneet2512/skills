@@ -1,18 +1,32 @@
 // What the signed log says about the current loop, and how a loop is started in it (fork.8, gates.md "G9 stages").
 // Shared by the hook (stage-hook.mjs) and the gate (stage-gate.mjs).
-import { appendEntry, createStore, epochOf, openViolations, readLog, storeStatus } from './stage-log.mjs';
+import { appendEntry, createStore, epochOf, openViolations, readLog, readSessionHead, storeStatus } from './stage-log.mjs';
 import {
-  SIZES, baseSha, changedSince, headSha, loopFacts, maxSize, missingPlanning, normSkill, planSnapshot, validPlan,
+  SIZES, baseSha, changedSince, headSha, isAncestor, loopFacts, maxSize, mergeBaseWith, missingPlanning, normSkill, planSnapshot, validPlan,
 } from './stage-detect.mjs';
 
 const now = () => process.env.FEATURE_LOOP_NOW || new Date().toISOString();
 
+// The loop's baseline (N1): the merge-base with `base`, so every commit of the branch counts, except that commits from
+// before this session are allowed: the commit this session started on (recorded outside the repo at its first hook
+// event) is the baseline when it descends from the merge-base. With no such record the merge-base itself is used.
+export function chooseBaseline(root, bsha, session) {
+  const mb = mergeBaseWith(root, bsha);
+  const sh = readSessionHead(session, root);
+  const start = mb ? (sh && isAncestor(root, mb, sh) ? sh : mb) : headSha(root);
+  return { mergeBase: mb, sessionHead: sh, startSha: start };
+}
+
+// A recorded baseline is acceptable when it is the merge-base, or the session's start commit descending from it.
+export const baselineOk = (init) => !!init.mergeBase && (init.startSha === init.mergeBase || (!!init.sessionHead && init.startSha === init.sessionHead));
+
 // The init entry's fields: the signed facts every later check starts from.
 export function initFields(root, run, session) {
   const plan = planSnapshot(root, run.slug);
+  const bsha = baseSha(root, run.base);
   return {
     kind: 'init', ts: now(), wall: Date.now(), session, slug: run.slug ?? '', size: SIZES.includes(run.size) ? run.size : 'normal',
-    base: typeof run.base === 'string' ? run.base : '', baseSha: baseSha(root, run.base), startSha: headSha(root),
+    base: typeof run.base === 'string' ? run.base : '', baseSha: bsha, ...chooseBaseline(root, bsha, session),
     planFile: plan.file ?? '', planSha: plan.sha ?? '', ...loopFacts(root),
   };
 }
