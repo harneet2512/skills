@@ -36,6 +36,12 @@ jobs:
       - name: Feature-loop gates and hooks
         run: bash skills/fork/feature-loop/scripts/test-gates.sh
 
+      - name: Feature-loop visibility, hand-off and approvals
+        run: bash skills/fork/feature-loop/scripts/test-visibility.sh
+
+      - name: Codex-review bridge (stub codex)
+        run: bash skills/fork/codex-review/scripts/test-codex-review.sh
+
       - name: Behavioral-envelope pack detection
         run: bash skills/fork/behavioral-envelope/scripts/test-detect.sh
 
@@ -54,7 +60,11 @@ jobs:
   # The maintainer runs the loop on Windows, so the shell-heavy checks also run under Git Bash there.
   windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['0/4', '1/4', '2/4', '3/4']
     defaults:
       run:
         shell: bash
@@ -67,8 +77,18 @@ jobs:
         with:
           node-version: 22
 
-      - name: Feature-loop gates and hooks
+      - name: Feature-loop gates and hooks (shard ${{ matrix.shard }})
+        env:
+          TEST_SHARD: ${{ matrix.shard }}
         run: bash skills/fork/feature-loop/scripts/test-gates.sh
+
+      - name: Feature-loop visibility, hand-off and approvals
+        if: matrix.shard == '0/4'
+        run: bash skills/fork/feature-loop/scripts/test-visibility.sh
+
+      - name: Codex-review bridge (stub codex)
+        if: matrix.shard == '1/4'
+        run: bash skills/fork/codex-review/scripts/test-codex-review.sh
 
       - name: Behavioral-envelope pack detection
         run: bash skills/fork/behavioral-envelope/scripts/test-detect.sh
