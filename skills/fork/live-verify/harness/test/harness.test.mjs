@@ -91,3 +91,16 @@ test('llm stand-in: api key, request validation, scripted rule, error shape', as
     assert.equal((await r.json()).error.type, 'overloaded_error');
   } finally { await llm.close(); }
 });
+
+test('report.json records the commit the run was made on ("head"), which gate G3 compares with HEAD', async () => {
+  const { writeReport, currentHead } = await import('../lib/report.mjs');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'lv-head-'));
+  const run = { runId: 'r', app: 'a', instances: 1, llm: 'stub', startedAt: 'now', durationMs: 1, totals: { passed: 1, failed: 0, assertions: 1 }, scenarios: [{ name: 's', result: 'pass', assertions: [], durationMs: 1 }] };
+  process.env.LIVE_VERIFY_HEAD = 'abc1234def5678';
+  try { writeReport(out, run); } finally { delete process.env.LIVE_VERIFY_HEAD; }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(out, 'report.json'), 'utf8')).head, 'abc1234def5678');
+  assert.match(currentHead(), /^([0-9a-f]{40})?$/);
+});

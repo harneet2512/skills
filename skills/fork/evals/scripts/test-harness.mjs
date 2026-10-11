@@ -100,3 +100,10 @@ test('judge infrastructure errors are excluded and can invalidate the run', () =
   assert.equal(j.cases.find((c) => c.id === 'i').score, null);
   assert.match(j.meta.invalid, /infrastructure errors/);
 });
+
+test('results.json records the commit it ran on ("head"), which gate G4 compares with HEAD', () => {
+  const r = spawnSync(process.execPath, [RUN, '--cases', cases, '--target', target, '--graders', graders, '--client', client, '--trials', '1', '--out', join(dir, 'h1')], { encoding: 'utf8', env: { ...process.env, EVALS_HEAD: 'abc1234def5678' } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(load('h1').head, 'abc1234def5678');
+  assert.match(load('r1').head, /^([0-9a-f]{40})?$/); // the repo's HEAD, or '' outside a git repository
+});
