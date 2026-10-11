@@ -2,7 +2,7 @@
 // repo root, read the last commit time and validated the gate names. Node 22, no dependencies.
 //
 //   node check-gates.mjs --root <dir> [--work <dir>] --last-commit <unix seconds> --slop <slop-check.sh>
-//                        [--phase build|merge|close] [G1 ... G9]
+//                        [--phase build|merge|close] [--require-stages] [G1 ... G9]
 //   node check-gates.mjs --root <dir> --timebox
 //   node check-gates.mjs --root <dir> --plan-check [<plan file>]   (needs no run file; see plan-check.mjs)
 //
@@ -19,7 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { clean, blank, section, firstTable, tables } from './md-table.mjs';
 import { checkPlan, planCitationsOk, PLAN_STAGES_OK } from './plan-check.mjs';
 import { checkStages } from './stage-gate.mjs';
-import { loopDirExists } from './stage-log.mjs';
+import { appendEntry, storeStatus } from './stage-log.mjs';
 import { newestLiveReport, parseDemoBy, parseStarted, timebox } from './timebox.mjs';
 
 const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9'];
@@ -45,7 +45,7 @@ const CASE_RE = /\bJ[0-9]+\.[a-z][a-z0-9-]*\b/g;
 
 // ---- arguments
 const args = process.argv.slice(2);
-let root = process.cwd(), work = '', lastCommit = 0, slop = '', phase = '', timeboxOnly = false, planCheck = null;
+let root = process.cwd(), work = '', lastCommit = 0, slop = '', phase = '', timeboxOnly = false, planCheck = null, requireStages = false;
 const wanted = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -55,13 +55,15 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--last-commit') lastCommit = Number(args[++i]) || 0;
   else if (a === '--slop') slop = args[++i];
   else if (a === '--timebox') timeboxOnly = true;
+  else if (a === '--require-stages') requireStages = true;
   else if (a === '--plan-check') planCheck = args[++i] ?? '';
   else if (/^G[1-9]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
 work = work || root;
-// G9 reads the logs the stage hooks write in .scratch/.loop/. Where no hook has run there, it is left out of a general
-// check (it prints and counts nothing) and says n/a only when asked for by name.
+// G9 reads the signed log the stage hooks write in .scratch/.loop/. Where no hook has run, it is left out of a general
+// check (it prints and counts nothing) and says n/a only when asked for by name; with --require-stages (the push and
+// merge hooks pass it) a loop with no signed init entry is red instead.
 const selected = ALL.filter((g) => (!phase || PHASES[phase].includes(g)) && (!wanted.length || wanted.includes(g)));
 
 // ---- the approved plan: checked before the run file exists, because the plan is written first
@@ -365,25 +367,32 @@ function readPlan(p) {
 }
 
 function G9() {
-  const r = checkStages({ root, work, size, slug, base, phase: phase || 'close', readPlan });
+  const r = checkStages({ root, work, run, phase: phase || 'close', require: requireStages });
   return r.state === 'red' ? red(r.msg, r.file ?? '.scratch/.loop') : r;
 }
 
 const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8, G9 };
 const SIZE_NOTE = 'applies to normal and large only';
 const counts = { green: 0, red: 0, na: 0 };
+let stagesChecked = false;
 for (const g of selected) {
-  if (g === 'G9' && !wanted.includes('G9') && !loopDirExists(root)) continue;
+  if (g === 'G9' && !wanted.includes('G9') && !requireStages && storeStatus(root).kind === 'none') continue;
   let r;
   if (!APPLIES[g](size)) r = na(`${SIZE_NOTE}, size is ${size}`);
   else {
     try { r = IMPL[g](); } catch (e) { r = { state: 'red', msg: `check crashed: ${e.message}` }; }
   }
   counts[r.state]++;
+  if (g === 'G9' && r.state !== 'na') stagesChecked = true;
   if (r.state === 'green') console.log(`${g} green`);
   else if (r.state === 'red') console.log(`${g} red: ${r.msg}`);
   else console.log(`${g} n/a: ${r.msg}`);
 }
 const verdict = counts.red ? 'red' : 'green';
+// A close phase that passes every gate, G9 included, is signed into the log: the hooks accept "status": "closed" only
+// after that entry exists (a loop closed by hand, or a deleted gates.json, is refused at push and merge).
+if (!counts.red && stagesChecked && !wanted.length && (!phase || phase === 'close')) {
+  appendEntry(root, { kind: 'close', ts: process.env.FEATURE_LOOP_NOW || new Date().toISOString(), slug });
+}
 console.log(`gates: ${verdict} for ${slug} (size ${size}): ${counts.green} green, ${counts.red} red, ${counts.na} n/a`);
 process.exit(counts.red ? 1 : 0);

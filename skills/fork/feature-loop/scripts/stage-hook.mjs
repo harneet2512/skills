@@ -1,17 +1,19 @@
-// The PostToolUse, UserPromptExpansion and SessionStart hooks of the feature loop's stage logs (fork.8; see
-// stage-hook.sh and gates.md "G9 stages").
+// The PostToolUse, PostToolUseFailure, UserPromptExpansion and SessionStart hooks of the feature loop's stage log
+// (fork.8; see stage-hook.sh and gates.md "G9 stages").
 //
-//   node stage-hook.mjs post-tool          any tool: log Skill and Agent calls, then look for source changes made
-//                                          before the planning skills ran (exit 2 with the reason on a new violation)
+//   node stage-hook.mjs post-tool          any tool: log Skill and Agent calls (not failed ones), then look for source
+//                                          changes made before the planning skills ran (exit 2 with the reason on a new
+//                                          violation, and on a loop whose key or state is missing)
 //   node stage-hook.mjs prompt-expansion   a typed /skill: log it (typing a skill bypasses the Skill tool); never blocks
-//   node stage-hook.mjs init               SessionStart: make the loop's id and key when a loop is active
+//   node stage-hook.mjs init               SessionStart: make the key, the state and the signed init entry
 //
 // Does nothing, and writes nothing, when no loop is active. Never fails the session on its own error (exit 0).
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { AGENTS, SKILLS, VIOLATIONS, appendEntry, ensureLoop, openViolations, readLog } from './stage-log.mjs';
-import { missingPlanning, normSkill, sourceChanges } from './stage-detect.mjs';
+import { appendEntry } from './stage-log.mjs';
+import { blobsOf, evasionTraces } from './stage-detect.mjs';
+import { assess, ensureInit } from './stage-state.mjs';
 
 const mode = process.argv[2];
 let raw = '';
@@ -42,41 +44,49 @@ function findRoot(start) {
 
 function logInvocations(root, session) {
   if (mode === 'prompt-expansion') {
-    if (input.command_name) appendEntry(root, SKILLS, { skill: String(input.command_name), ts: now(), session, via: 'slash' });
+    if (input.command_name) appendEntry(root, { kind: 'skill', skill: String(input.command_name), ts: now(), session, via: 'slash' });
     return;
   }
+  if (input.hook_event_name === 'PostToolUseFailure') return; // a failed Skill or Agent call did not run
   const ti = input.tool_input ?? {};
   if (input.tool_name === 'Skill') {
     const name = ti.skill ?? ti.command ?? ti.name;
-    if (name) appendEntry(root, SKILLS, { skill: String(name), ts: now(), session });
+    if (name) appendEntry(root, { kind: 'skill', skill: String(name), ts: now(), session });
   } else if (input.tool_name === 'Agent' || input.tool_name === 'Task') {
-    appendEntry(root, AGENTS, {
-      subagent_type: ti.subagent_type ?? '', model: ti.model ?? '', resolved: input.tool_response?.resolvedModel ?? '',
+    appendEntry(root, {
+      kind: 'agent', subagent_type: ti.subagent_type ?? '', model: ti.model ?? '', resolved: input.tool_response?.resolvedModel ?? '',
       description: ti.description ?? '', ts: now(), session,
     });
   }
 }
 
-// Record a violation when source changed before the planning skills ran, and clear it when the tree is clean of source
-// again with every planning skill logged. Returns the message for the model when a new violation was recorded.
-function detect(root, run) {
-  const size = ['small', 'normal', 'large'].includes(run?.size) ? run.size : 'normal';
-  const base = typeof run?.base === 'string' ? run.base : '';
+const VIOLATION_TAIL = 'Gate G9 is red until you revert that code (git stash, a throwaway branch or a copy elsewhere does not count), run the missing skills with the Skill tool, and write the code again.';
+
+// Record a violation when source changed before the planning skills ran, reopen it when the same content comes back,
+// and clear it when the tree is clean of source with every planning skill logged and nothing hidden away.
+function detect(root, run, session) {
   const dirs = new Set([root]);
   const cwd = typeof input.cwd === 'string' ? input.cwd : '';
   const top = cwd && gitOut(cwd, ['rev-parse', '--show-toplevel']);
   if (top) dirs.add(top);
-  const bad = [...new Set([...dirs].flatMap((d) => sourceChanges(d, base)))].sort();
-  const logged = new Set(readLog(root, SKILLS).entries.map((e) => normSkill(e.skill)));
-  const missing = missingPlanning(root, size, logged);
-  const open = openViolations(readLog(root, VIOLATIONS).entries);
-  if (open.length && !bad.length && !missing.length) {
-    for (const o of open) appendEntry(root, VIOLATIONS, { kind: 'cleared', of: o.seq, ts: now() });
+  const a = assess(root, run, dirs);
+  if (!a.init || a.errors.length) return '';
+  if (a.open.length) {
+    if (!a.bad.length && !a.missing.length && !evasionTraces(root, a.init).length) {
+      for (const o of a.open) appendEntry(root, { kind: 'cleared', of: o.seq, ts: now(), session });
+    }
     return '';
   }
-  if (bad.length && missing.length && !open.length) {
-    appendEntry(root, VIOLATIONS, { kind: 'violation', ts: now(), paths: bad.slice(0, 20), missing });
-    return `feature-loop: source changed before the planning skills for a ${size} change had run (missing: ${missing.join(', ')}; changed: ${bad.slice(0, 5).join(', ')}). Gate G9 is red until you revert that code, run the missing skills with the Skill tool, and write the code again.\n`;
+  if (!a.bad.length) return '';
+  const blobs = blobsOf([...dirs], a.bad);
+  if (a.missing.length) {
+    appendEntry(root, { kind: 'violation', ts: now(), paths: a.bad.slice(0, 20), missing: a.missing, blobs, session });
+    return `feature-loop: source changed before the planning skills for a ${a.size} change had run (missing: ${a.missing.join(', ')}; changed: ${a.bad.slice(0, 5).join(', ')}). ${VIOLATION_TAIL}\n`;
+  }
+  const seen = new Set(a.ep.entries.filter((e) => e.kind === 'violation').flatMap((e) => Object.values(e.blobs ?? {})));
+  if (Object.values(blobs).some((h) => seen.has(h))) {
+    appendEntry(root, { kind: 'violation', ts: now(), paths: a.bad.slice(0, 20), missing: [], blobs, reopened: true, session });
+    return `feature-loop: code written before the planning skills ran is back with the same content (${a.bad.slice(0, 5).join(', ')}), so the violation is reopened. Write it again, not restore it. ${VIOLATION_TAIL}\n`;
   }
   return '';
 }
@@ -84,12 +94,16 @@ function detect(root, run) {
 try {
   const start = resolve((typeof input.cwd === 'string' && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd());
   const root = findRoot(start);
-  if (!root || !ensureLoop(root) || mode === 'init') finish(0);
-  logInvocations(root, typeof input.session_id === 'string' ? input.session_id : '');
-  if (mode !== 'post-tool') finish(0);
+  if (!root) finish(0);
   let run = {};
-  try { run = JSON.parse(readFileSync(join(root, '.scratch', 'gates.json'), 'utf8')); } catch { /* sized later */ }
-  const msg = detect(root, run);
+  try { run = JSON.parse(readFileSync(join(root, '.scratch', 'gates.json'), 'utf8')) ?? {}; } catch { /* not JSON: the other hooks say so */ }
+  const session = typeof input.session_id === 'string' ? input.session_id : '';
+  const why = ensureInit(root, run, session);
+  if (why) finish(mode === 'post-tool' ? 2 : 0, `feature-loop: ${why}. Gate G9 is red until this is fixed; the loop key is never regenerated.\n`);
+  if (mode === 'init') finish(0);
+  logInvocations(root, session);
+  if (mode !== 'post-tool') finish(0);
+  const msg = detect(root, run, session);
   finish(msg ? 2 : 0, msg);
 } catch {
   finish(0);

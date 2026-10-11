@@ -126,7 +126,7 @@ blocked=0
 gate_push() { # <root> <dir> <flag> <reason>
   local root="$1" d="$2" flag="$3" why="$4" out code
   bypass "$root" "$flag" "$why" "" && return 0
-  out="$(cd "$(loop_work_tree "$d" "$root")" && "$here/check-gates.sh" --phase build 2>&1)"; code=$?
+  out="$(cd "$(loop_work_tree "$d" "$root")" && "$here/check-gates.sh" --phase build --require-stages 2>&1)"; code=$?
   [ "$code" -eq 0 ] && return 0
   blocked=1
   {
@@ -285,7 +285,7 @@ gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
       *) problems+=("the checked-out HEAD is ${local_head:-unknown}, not $sha: check out the PR head $sha first, because the gates check the local tree") ;;
     esac
   fi
-  out="$(cd "$wt" && "$here/check-gates.sh" --phase merge 2>&1)"; code=$?
+  out="$(cd "$wt" && "$here/check-gates.sh" --phase merge --require-stages 2>&1)"; code=$?
   if [ "$code" -eq 1 ]; then
     problems+=("the feature-loop gates are red:")
     while IFS= read -r line; do problems+=("  $line"); done < <(printf '%s\n' "$out" | grep -E '^G[1-9] red:')
@@ -305,12 +305,27 @@ gate_merge() { # <root> <dir> <flag> <reason> <sha> <pr> <repo>
   } >&2
 }
 
+# guard_vanished <dir>: no active loop here, but one was started by the stage hooks (the marker outside the repo): a
+# gates.json that is gone, or closed without a signed close entry, blocks a push or a merge (stage-guard.mjs).
+guard_vanished() {
+  local out code
+  out="$(node "$here/stage-guard.mjs" "$1" 2>&1)"; code=$?
+  [ "$code" -eq 1 ] || return 0
+  blocked=1
+  {
+    echo "feature-loop gate hook: $out"
+    echo "Fix: restore .scratch/gates.json, or run check-gates.sh --phase close until it passes (it signs the close), then set \"status\": \"closed\"."
+  } >&2
+}
+
 # ---- dispatch
 
 if [ "${match:-0}" = 1 ]; then
   if root="$(loop_root "$dir")"; then
     validate_run "$root"
     gate_push "$root" "$dir" "${gates_flag:-}" "${reason:-}"
+  else
+    guard_vanished "$dir"
   fi
 fi
 
@@ -318,7 +333,7 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
   [ -n "${kind:-}" ] || continue
   [ "$aflag" = - ] && aflag=""
   [ "$areason" = - ] && areason=""
-  root="$(loop_root "$adir")" || continue
+  root="$(loop_root "$adir")" || { case "$kind" in pushref|merge) guard_vanished "$adir" ;; esac; continue; }
   validate_run "$root"
   case "$kind" in
     pushref)
