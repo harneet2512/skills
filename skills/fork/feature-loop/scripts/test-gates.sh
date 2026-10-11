@@ -1053,6 +1053,12 @@ expect "H3: G9 sees the committed source too" "$d" 1 "G9 red: open violation" 1 
 d=$(new_repo stage-preloop); gates_json "$d" normal; session_start "$d"; init_loop "$d"
 pass_if "M5: pre-loop commits from before this session are allowed" test "$sh_code" = 0
 expect "M5: G9 is green for a branch whose source was committed before the session" "$d" 0 "G9 green" 0 --phase build G9
+# N1, local base: the session starts on main at M, the agent commits src on main, branches, and only then writes gates.json
+d="$work/stage-n1-main"; mkdir -p "$d"
+(cd "$d" && git init -q -b main && printf '.scratch/\n' > .gitignore && printf '# demo\n' > README.md && git add -A && git commit -q -m base)
+session_start "$d"; commit_src "$d"; git -C "$d" checkout -q -b feature; gates_json "$d" normal; init_loop "$d"
+pass_if "N1: code committed on main, then a branch, then gates.json is a violation" test "$sh_code" = 2
+expect "N1: G9 is red for it (the baseline is the session start, not the code commit)" "$d" 1 "G9 red: open violation" 1 --phase build G9
 # N1: code committed in this session before gates.json exists is a violation (the session's start commit is recorded
 # outside the repo at its first hook event, so it is the baseline, not HEAD at the time gates.json appears).
 d=$(new_repo stage-n1); session_start "$d"

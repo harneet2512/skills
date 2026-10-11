@@ -2,23 +2,31 @@
 // Shared by the hook (stage-hook.mjs) and the gate (stage-gate.mjs).
 import { appendEntry, createStore, epochOf, openViolations, readLog, readSessionHead, storeStatus } from './stage-log.mjs';
 import {
-  SIZES, baseSha, changedSince, headSha, isAncestor, loopFacts, maxSize, mergeBaseWith, missingPlanning, normSkill, planSnapshot, validPlan,
+  SIZES, baseSha, changedSince, headSha, isAncestor, loopFacts, maxSize, mergeBaseOf, mergeBaseWith, missingPlanning, normSkill, planSnapshot, validPlan,
 } from './stage-detect.mjs';
 
 const now = () => process.env.FEATURE_LOOP_NOW || new Date().toISOString();
 
 // The loop's baseline (N1): the merge-base with `base`, so every commit of the branch counts, except that commits from
-// before this session are allowed: the commit this session started on (recorded outside the repo at its first hook
-// event) is the baseline when it descends from the merge-base. With no such record the merge-base itself is used.
+// before this session are allowed. With a SessionStart record (the commit the session began on) the baseline is that
+// commit when it descends from the merge-base, else the merge-base of the two (code committed on a local base branch in
+// this session moves the merge-base past the session start, so the session start wins). Without a record: the merge-base.
 export function chooseBaseline(root, bsha, session) {
   const mb = mergeBaseWith(root, bsha);
   const sh = readSessionHead(session, root);
-  const start = mb ? (sh && isAncestor(root, mb, sh) ? sh : mb) : headSha(root);
+  let start = mb || headSha(root);
+  if (mb && sh) start = isAncestor(root, mb, sh) ? sh : (mergeBaseOf(root, sh, mb) || mb);
   return { mergeBase: mb, sessionHead: sh, startSha: start };
 }
 
-// A recorded baseline is acceptable when it is the merge-base, or the session's start commit descending from it.
-export const baselineOk = (init) => !!init.mergeBase && (init.startSha === init.mergeBase || (!!init.sessionHead && init.startSha === init.sessionHead));
+// A recorded baseline is acceptable when it is what chooseBaseline would have chosen from the recorded facts.
+export function baselineOk(root, init) {
+  const { mergeBase: mb, sessionHead: sh, startSha: st } = init;
+  if (!mb) return false;
+  if (st === mb) return true;
+  if (!sh) return false;
+  return isAncestor(root, mb, sh) ? st === sh : st === mergeBaseOf(root, sh, mb);
+}
 
 // The init entry's fields: the signed facts every later check starts from.
 export function initFields(root, run, session) {

@@ -23,15 +23,16 @@ export const maxSize = (...xs) => xs.filter((x) => SIZES.includes(x)).sort((a, b
 
 const resolves = (dir, ref) => !!ref && git(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).status === 0;
 const revParse = (dir, ref) => { const r = git(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return r.status === 0 ? r.stdout.trim() : ''; };
-// The sha `base` names (base, else origin/base), or ''.
-export const baseSha = (dir, base) => (base ? revParse(dir, base) || revParse(dir, `origin/${base}`) : '');
+// The sha `base` names: origin/base first (a local base branch can carry code the agent committed itself), else base; or ''.
+export const baseSha = (dir, base) => (base ? revParse(dir, `origin/${base}`) || revParse(dir, base) : '');
 export const headSha = (dir) => revParse(dir, 'HEAD') || EMPTY_TREE;
 export const isAncestor = (dir, a, b) => !!a && !!b && git(dir, ['merge-base', '--is-ancestor', a, b]).status === 0;
-export function mergeBaseWith(dir, sha) {
-  if (!sha) return '';
-  const r = git(dir, ['merge-base', sha, 'HEAD']);
+export function mergeBaseOf(dir, a, b) {
+  if (!a || !b) return '';
+  const r = git(dir, ['merge-base', a, b]);
   return r.status === 0 ? r.stdout.trim() : '';
 }
+export const mergeBaseWith = (dir, sha) => mergeBaseOf(dir, sha, 'HEAD');
 
 // Source paths changed in the working tree and index (including untracked files), not yet committed.
 export function dirtySource(dir) {

@@ -3,7 +3,7 @@
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { storeStatus } from './stage-log.mjs';
-import { AFTER_MARGIN_MS, MARGIN_MS, baseSha, evasionTraces, isAncestor, lastSourceChangeMs, normSkill } from './stage-detect.mjs';
+import { AFTER_MARGIN_MS, MARGIN_MS, baseSha, evasionTraces, lastSourceChangeMs, normSkill } from './stage-detect.mjs';
 import { assess, baselineOk } from './stage-state.mjs';
 import { planSectionHasBody } from './plan-check.mjs';
 
@@ -29,7 +29,7 @@ export function checkStages({ root, work, run, phase, require }) {
   if (!a.baseSha) return red(`base "${a.init.base}" did not resolve to a commit when the loop started, so committed source cannot be seen: fix "base" in gates.json`);
   if (!baseSha(root, run.base)) return red(`base "${run.base ?? ''}" in gates.json does not resolve to a commit`);
 
-  if (!baselineOk(a.init) || (a.init.startSha !== a.init.mergeBase && !isAncestor(root, a.init.mergeBase, a.init.startSha))) {
+  if (!baselineOk(root, a.init)) {
     return red('the loop baseline is not the merge-base with base (or the session start commit on top of it), so code written before the loop could be hidden: start the loop from the merge-base');
   }
 

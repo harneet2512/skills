@@ -42,6 +42,19 @@ export function readState(root) {
   return null;
 }
 
+// Create the state exclusively (O_EXCL): a racing creator that lost keeps the winner's state, so a `tip: null` write can
+// never replace a state that already holds a tip. True when the state exists afterwards.
+function createState(root, state) {
+  for (const p of statePaths(root)) {
+    try {
+      mkdirSync(join(p, '..'), { recursive: true });
+      writeFileSync(p, JSON.stringify(state) + '\n', { flag: 'wx' });
+      return true;
+    } catch (e) { if (e.code === 'EEXIST') return true; }
+  }
+  return false;
+}
+
 function writeState(root, state, path) {
   const targets = path ? [path] : statePaths(root);
   for (const p of targets) {
@@ -75,8 +88,7 @@ export function createStore(root, slug, now) {
     writeFileSync(join(keyDirIn(root), '.gitignore'), '*\n');
     try { writeFileSync(keyPath(root), randomBytes(32).toString('hex') + '\n', { flag: 'wx', mode: 0o600 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
     mkdirSync(loopDir(root), { recursive: true });
-    if (readState(root)) return readKey(root) !== null;
-    return writeState(root, { rid: repoId(root), root, slug, ts: now, tip: null }) !== null && readKey(root) !== null;
+    return createState(root, { rid: repoId(root), root, slug, ts: now, tip: null }) && readKey(root) !== null;
   } catch { return false; }
 }
 
