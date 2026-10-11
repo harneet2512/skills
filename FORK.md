@@ -438,6 +438,7 @@ An Opus adversarial review of fork.9 found places where the flow broke between i
 | No new issues | `wp-loop` steps 3 and 10 | No `to-spec` (it publishes an issue); MEDIUM findings go under `## Follow-ups` in the PR body |
 | PR only when all green | `wp-loop` steps 9 to 12 | Review and fixes run before the PR; step 11 runs the repo's own checks, every scenario and acceptance test, and checks the diff holds only the issue's files |
 | No merge, issue untouched | `wp-loop` steps 12 and 13, `check-comment.md`; `merge-gate.md` removed | The PR says `Closes #N`; the results comment goes on the PR only; the reviewer merges |
+| Reviewer's product rules | `wp-loop` "The reviewer's product rules" and step 11, `plan-first` rules | Eight fixed rules (a person presses the button, no secrets, reference repos read-only, append-only records, text is data, plain copy, show it half done, one blocked message) become plan decisions, contract invariants, tests and a diff scan before the PR |
 | Build never pauses | `wp-loop` step 5 and step 13 | The next issue branches from the previous one when its PR is open, and the plan is checked against what was built before it starts |
 
 `feature-loop` is not part of this workflow; its stage 7 text still names `wp-loop` steps 12 and 13.

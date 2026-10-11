@@ -23,6 +23,8 @@ These hold through planning and through every `wp-loop` run that follows:
 
   Skip `CLAUDE.md` when the target repo already tracks one (`git ls-files CLAUDE.md` prints it): never hide or change a tracked file.
 
+- **The reviewer's product rules hold too.** The eight rules in `wp-loop` ("The reviewer's product rules") go into the plan: each one the issues touch is a line under `## Decisions` and, where it can break, under `## Failure modes`.
+
 ## 1. Grill, capped
 
 - Run `date` and say the start time. A **round** is one batch of questions and the owner's answers.
