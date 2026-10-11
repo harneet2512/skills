@@ -269,6 +269,43 @@ prompt "$s" "approve plan docs/plans/q.md
 approve pr"
 check "S5: one prompt, a named plan and a pr approval" "$(has "$(msg_of)" 'plan (docs/plans/q.md' && has "$(msg_of)" "pr (head $s_head)" && echo 0 || echo 1)" "$(msg_of)"
 
+# B1 (live run 2): files an earlier feature shipped on the default branch are not candidates, so the second feature in a
+# repo needs no file name
+u="$(new_repo b1)"; git init -q --bare "$work/b1-origin.git"
+mkdir -p "$u/docs/acceptance"; printf '# Old
+
+## Acceptance tests
+
+- old item
+' > "$u/docs/acceptance/old.md"
+(cd "$u" && git add -A && git commit -q -m old && git remote add origin "$work/b1-origin.git" && git push -q origin main && git remote set-head origin main) >/dev/null 2>&1
+printf '# New
+
+## Acceptance tests
+
+- new item
+' > "$u/docs/acceptance/new.md"
+prompt "$u" "approve acceptance"
+check "B1: a shipped acceptance file is skipped; the new one is approved" "$(has "$(msg_of)" 'approval recorded: acceptance (docs/acceptance/new.md, key ' && echo 0 || echo 1)" "$(msg_of)"
+printf '# Plan N
+
+## Acceptance tests
+
+- new item
+
+## Changes
+
+- none
+' > "$u/docs/plans/n.md"
+(cd "$u" && git add -A && git commit -q -m plan) >/dev/null 2>&1
+prompt "$u" "approve plan"
+check "B1: a committed but unpushed plan is chosen over the shipped one" "$(has "$(msg_of)" 'approval recorded: plan (docs/plans/n.md, sha256 ' && echo 0 || echo 1)" "$(msg_of)"
+printf '
+- edited
+' >> "$u/docs/acceptance/old.md"
+prompt "$u" "approve acceptance"
+check "B1: two unshipped acceptance files are still ambiguous" "$(has "$(msg_of)" 'approval NOT recorded: acceptance: 2 files in docs/acceptance/' && echo 0 || echo 1)" "$(msg_of)"
+
 # approvals before the loop survive its start
 printf '{ "slug": "demo", "size": "normal", "base": "main" }\n' > "$a/.scratch/gates.json"
 hook post-tool "$(payload "$a" PostToolUse Bash '{"command":"ls"}' '{"stdout":""}')"

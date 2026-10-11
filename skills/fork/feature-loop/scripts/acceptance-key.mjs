@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { acceptanceItems } from './gates-acceptance.mjs';
-import { mdCandidates } from './vis-root.mjs';
+import { mdCandidates, unshipped } from './vis-root.mjs';
 
 const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
 const withoutId = (text) => norm(text).replace(/^\**`?AT-?\d+`?\**\s*[:.)-]?\s*/i, '');
@@ -28,13 +28,14 @@ export const acceptanceKeyOf = (md) => acceptanceKey(acceptanceItems(md));
 export function chooseAcceptance(dirs, named = '') {
   const keyOf = (c) => { try { return acceptanceKeyOf(readFileSync(c.file, 'utf8')); } catch { return ''; } };
   const sources = [mdCandidates(dirs, 'acceptance'), mdCandidates(dirs, 'plans')];
+  const live = sources.map(unshipped);
   if (named) {
     const pick = sources.flat().find((c) => c.rel === named);
     if (!pick) return { error: `${named} is not a file in docs/acceptance/ or docs/plans/` };
     const key = keyOf(pick);
     return key ? { at: { file: pick.file, rel: pick.rel, key } } : { error: `${named} has no "## Acceptance tests" items` };
   }
-  for (const cands of sources) {
+  for (const cands of live) {
     if (cands.length > 1) {
       const names = cands.map((c) => c.rel).sort().join(', ');
       return { error: `${cands.length} files in ${cands[0].rel.replace(/\/[^/]*$/, '/')} (${names}): name the one you approve, for example "approve acceptance ${[...cands].sort((a, b) => b.m - a.m)[0].rel}"` };

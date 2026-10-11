@@ -48,11 +48,32 @@ export function mdCandidates(dirs, sub) {
       const rel = `docs/${sub}/${n}`;
       try {
         const m = statSync(file).mtimeMs;
-        if (!byRel.has(rel) || m > byRel.get(rel).m) byRel.set(rel, { file, rel, m });
+        if (!byRel.has(rel) || m > byRel.get(rel).m) byRel.set(rel, { file, rel, m, dir: d });
       } catch { /* vanished */ }
     }
   }
   return [...byRel.values()];
+}
+
+// The default branch the repo ships from (origin/HEAD, else origin/main, origin/master), or ''.
+function baseRef(dir) {
+  const head = gitOut(dir, ['rev-parse', '--abbrev-ref', 'origin/HEAD']);
+  if (head && head !== 'origin/HEAD') return head;
+  return ['origin/main', 'origin/master'].find((r) => gitOut(dir, ['rev-parse', '--verify', '--quiet', r])) ?? '';
+}
+
+// With several candidates, the ones this feature is about: not on the default branch with the same content (new, or
+// changed since). A file an earlier feature shipped is not a candidate for this approval. Returns `cands` unchanged
+// when there is no default branch to compare with or when every candidate is shipped.
+export function unshipped(cands) {
+  if (cands.length < 2) return cands;
+  const live = cands.filter((c) => {
+    const base = c.dir ? baseRef(c.dir) : '';
+    if (!base) return true;
+    const shipped = gitOut(c.dir, ['rev-parse', '--verify', '--quiet', `${base}:${c.rel}`]);
+    return !shipped || shipped !== gitOut(c.dir, ['hash-object', '--', c.rel]);
+  });
+  return live.length ? live : cands;
 }
 
 // The file an approval prompt names ("approve plan docs/plans/x.md"), as a relative docs/ path, or ''.
@@ -71,7 +92,8 @@ const nameList = (cands) => cands.map((c) => c.rel).sort().join(', ');
 // The plan an "approve plan" is for: { plan: { file, rel, sha } } or { error }. With one docs/plans/*.md that is the plan;
 // with several the owner must name one (`approve plan docs/plans/x.md`), so the approval never lands on a guess.
 export function choosePlan(dirs, named = '') {
-  const cands = mdCandidates(dirs, 'plans');
+  const all = mdCandidates(dirs, 'plans');
+  const cands = named ? all : unshipped(all);
   if (!cands.length) return { error: 'no docs/plans/*.md' };
   let pick = cands[0];
   if (named) {
