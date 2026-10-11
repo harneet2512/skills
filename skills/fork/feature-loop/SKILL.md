@@ -1,7 +1,6 @@
 ---
 name: feature-loop
 description: "Take one feature from request to merged and shipped, end to end, optimized for quality and speed together: Matt's main flow (understand, spec, tracer-bullet tickets, TDD build, review, retro) with this fork's upgrades at every step: journey shape, engineering contract, behavioral envelope, concern topics, evals, a walking skeleton proven live first, adversarial plan and code review, an optional time box, gates enforced by hooks, and one PR per feature."
-disable-model-invocation: true
 ---
 
 Take one feature from request to shipped, without stopping except for decisions only the user can make.
