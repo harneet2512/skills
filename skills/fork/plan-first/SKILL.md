@@ -14,13 +14,13 @@ The owner's workflow: **brief → grill → acceptance tests (stop 1) → plan m
 
 ## 2. Acceptance tests: stop 1
 
-End the grill with **3 to 5 acceptance tests** in the owner's words, one line each, `AT<n>: <observable behaviour>`: what someone could watch happen to know the feature works. Not implementation details. Show them and ask the owner to reply `approve acceptance` (or edit them). They go into the plan's `## Acceptance tests` section and become the final check: gate G12 refuses the PR until each has a passing test or live-verify scenario named after it.
+End the grill with **3 to 5 acceptance tests** in the owner's words, one line each, `AT<n>: <observable behaviour>`: what someone could watch happen to know the feature works. Not implementation details. Write them to `docs/acceptance/<slug>.md` under a `## Acceptance tests` heading (the approval is keyed to that file's items), show them, and ask the owner to reply `approve acceptance` (or edit them). They go into the plan's `## Acceptance tests` section and become the final check: gate G12 refuses the PR until each has a passing test or live-verify scenario named after it.
 
 Only the owner's own message approves (the hook signs it); never write an approval yourself.
 
 ## 3. Plan in plan mode
 
-The plan is a **tracked file**. The target repo's `.claude/settings.json` has `{ "plansDirectory": "docs/plans" }` (add it if missing, before planning). Never put the plan in `.scratch/`.
+After `approve acceptance`, enter plan mode yourself (call the EnterPlanMode tool; load it with ToolSearch if it is deferred), so the owner does not have to switch modes. The plan is a **tracked file**. The target repo's `.claude/settings.json` has `{ "plansDirectory": "docs/plans" }` (add it if missing, before planning). Never put the plan in `.scratch/`.
 
 1. Fill [plan-template.md](plan-template.md) in plan mode, keeping its headings exactly. A section that does not apply says `n/a: <reason>`. Size by risk (`feature-loop`, "Size it first").
 2. Run the `behavioral-envelope` skill's `scripts/detect-packs.sh --plan <draft>` (read-only, allowed in plan mode) and put the packs and their triggering lines under `## Concerns`.
