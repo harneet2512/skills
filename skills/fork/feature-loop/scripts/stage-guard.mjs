@@ -19,7 +19,11 @@ try {
   const gates = join(root, '.scratch', 'gates.json');
   let closedFlag = false;
   if (existsSync(gates)) {
-    try { closedFlag = JSON.parse(readFileSync(gates, 'utf8'))?.status === 'closed'; } catch { process.exit(0); }
+    try { closedFlag = JSON.parse(readFileSync(gates, 'utf8'))?.status === 'closed'; } catch (e) {
+      // A run file that does not parse is no proof the loop closed: fail closed, say why.
+      console.log(`.scratch/gates.json is not valid JSON (${e.message}), so the loop "${found.state.slug}" cannot be shown to have closed`);
+      process.exit(1);
+    }
     if (!closedFlag) process.exit(0);
   }
   const log = readLog(root);

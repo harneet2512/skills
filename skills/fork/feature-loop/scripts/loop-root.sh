@@ -9,12 +9,16 @@
 # to. The last one matters because .scratch/ is untracked, so `git worktree add` does not copy it: a builder working
 # in a linked worktree still answers to the loop of the main worktree.
 #
-# Pure shell, no node: the hooks use it to decide whether to fail closed when node is missing, and a closed loop is
-# read with grep for the same reason.
+# Shell, with node only to confirm a closed loop: the hooks use it to decide whether to fail closed when node is missing, so
+# without node a closed loop is read with grep, as before.
 
-# loop_run_closed <gates.json>: does the run file say "status": "closed"?
+# loop_run_closed <gates.json>: does the TOP-LEVEL "status" of the run file say "closed"? A grep can match a nested key or a
+# string value, so a match is confirmed by parsing the file; a file that does not parse is not closed (the hooks then
+# treat the loop as active and say the file is not valid JSON).
 loop_run_closed() {
-  grep -Eq '"status"[[:space:]]*:[[:space:]]*"closed"' "$1" 2>/dev/null
+  grep -Eq '"status"[[:space:]]*:[[:space:]]*"closed"' "$1" 2>/dev/null || return 1
+  command -v node >/dev/null 2>&1 || return 0
+  node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))?.status === "closed" ? 0 : 1)' "$1" 2>/dev/null
 }
 
 # loop_main_worktree <dir>: the top level of the main worktree of <dir>'s repository, or nothing.

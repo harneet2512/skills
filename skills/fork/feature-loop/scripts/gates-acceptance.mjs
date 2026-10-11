@@ -61,18 +61,25 @@ function liveScenarios(root, work) {
 
 const looksLikePath = (v) => /[\\/]/.test(v) || /\.[A-Za-z0-9]{1,5}(?:$|[:#])/.test(v);
 const pathOf = (v) => v.replace(/(::|#|:\d+).*$/, '').trim();
+const FORMS = 'a tracked test path, "path::test name", or a live scenario name';
 
-// '' when the target is a real test file or a passing live scenario, else why not.
+// Is this path a tracked file (or one on disk)?
+const isFile = (work, p) => git(work, ['ls-files', '--error-unmatch', '--', p]).status === 0 || existsSync(join(work, p));
+
+// '' when the cell names a passing live scenario or a real test file, else why not. A cell is one of: a live scenario name
+// (matched first, so a name with a dot or a slash in it is still a name), a tracked test path (`tests/a.test.js`, also
+// with `:line`), or `path::test name` (also `path#name`, or a path followed by prose).
 function mapped(work, scenarios, target) {
   if (!target) return 'maps to no test or scenario';
+  const s = scenarios.get(target);
+  if (s) return s.pass ? '' : `live-verify scenario "${target}" has no passing result on HEAD`;
   if (looksLikePath(target)) {
     const p = pathOf(target);
-    const tracked = git(work, ['ls-files', '--error-unmatch', '--', p]).status === 0;
-    return tracked || existsSync(join(work, p)) ? '' : `its test ${p} does not exist`;
+    if (isFile(work, p)) return '';
+    const first = p.split(/\s+/)[0];
+    return first !== p && isFile(work, first) ? '' : `its test ${p} does not exist`;
   }
-  const s = scenarios.get(target);
-  if (!s) return `has no live-verify scenario named "${target}" in a report`;
-  return s.pass ? '' : `live-verify scenario "${target}" has no passing result on HEAD`;
+  return `has no live-verify scenario named "${target}" in a report, and is no test path (a test cell is ${FORMS})`;
 }
 
 function rowProblem(work, scenarios, it, r, cols) {

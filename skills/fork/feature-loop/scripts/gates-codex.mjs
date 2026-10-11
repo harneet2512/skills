@@ -4,13 +4,12 @@
 // repro }] }; the lead's answers are in codex-<kind>-<slug>.resolutions.md, a table `| id | resolution |` whose
 // resolution starts with `fixed: <commit>` or `rejected: <reason>`. Repros: .scratch/review/codex-repros/<id>/.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
-import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { clean, tables } from './md-table.mjs';
-import { git, isAncestor } from './stage-detect.mjs';
+import { git, isAncestor, stripChanges } from './stage-detect.mjs';
 import { fullSha, headFresh } from './gates-head.mjs';
-import { hasApproval } from './gates-approvals.mjs';
+import { sha256Lf } from './lf-sha.mjs';
 
 const DEFAULT_MODEL = 'gpt-6-astra';
 const gitRaw = (dir, args) => { try { return execFileSync('git', ['-C', dir, ...args], { stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; } };
@@ -58,35 +57,65 @@ function unanswered(rep, res, severities) {
     .map((f) => `${f?.id} ${String(f?.severity).toUpperCase()}`);
 }
 
-// The codex plan review runs on the plan as plan mode wrote it, and its findings are then folded into the same file, so
-// the approved plan differs from the reviewed one. The review counts when it is of the approved plan itself or of a
-// committed version of the same plan file.
-function reviewedVersion(dir, planFile, subject, approved) {
-  const want = String(subject ?? '').toLowerCase();
-  if (!SHA256_RE.test(want)) return false;
-  if (want === String(approved).toLowerCase()) return true;
-  if (!planFile) return false;
-  const rel = relative(dir, planFile).split(sep).join('/');
+// The approved plan is whatever a signed `approve plan` entry holds (fork.9.1): the plan file legitimately changes after
+// the owner approves it (the loop requires `Changed:` lines under `## Changes`), so asking for approval of the file as it
+// is now would send the owner the same plan again and again. `plan_sha` in gates.json is informational and plays no part.
+//
+// G10's plan check is green when some signed `approve plan` holds the sha of a COMMITTED version of the plan file, the
+// codex plan review is of a committed version at or before that one, and the plan file now differs from the approved
+// version only inside `## Changes`.
+
+// Every committed version of `rel`, newest first: [{ commit, sha (of the LF form), text }].
+function planHistory(dir, rel) {
   const commits = (git(dir, ['log', '--format=%H', '--', rel]).stdout ?? '').split(/\s+/).filter(Boolean);
-  return commits.some((c) => {
-    const body = gitRaw(dir, ['show', `${c}:${rel}`]);
-    return body !== null && createHash('sha256').update(body).digest('hex') === want;
+  return commits.flatMap((commit) => {
+    const body = gitRaw(dir, ['show', `${commit}:${rel}`]);
+    return body === null ? [] : [{ commit, sha: sha256Lf(body), text: body.toString('utf8') }];
   });
 }
 
-export function g10({ root, work, run, slug, appr, planFile }) {
-  const planSha = run.plan_sha;
+const short12 = (s) => String(s ?? '').slice(0, 12);
+const normRel = (p) => String(p ?? '').replaceAll('\\', '/').replace(/^\.\//, '');
+
+// '' when the plan check passes, else the reason.
+function planProblem(dir, approvals, planFile, subject) {
+  const want = String(subject ?? '').toLowerCase();
+  let reviewFail = '', changedFail = '', unmatched = '';
+  for (const a of [...approvals].reverse()) {
+    const rel = normRel(a.plan_file) || normRel(planFile);
+    if (!rel) { unmatched = 'there is no plan file (docs/plans/*.md)'; continue; }
+    const hist = planHistory(dir, rel);
+    const approved = hist.filter((v) => v.sha === String(a.plan_sha).toLowerCase());
+    if (!approved.length) { unmatched = `${rel} has no committed version that hashes to ${short12(a.plan_sha)}: commit the plan before the owner approves it`; continue; }
+    let current = null;
+    try { current = readFileSync(join(dir, rel), 'utf8'); } catch { /* missing */ }
+    for (const v of approved) {
+      const reviewed = SHA256_RE.test(want) && hist.some((h) => h.sha === want && isAncestor(dir, h.commit, v.commit));
+      const unchanged = current !== null && stripChanges(current) === stripChanges(v.text);
+      if (reviewed && unchanged) return '';
+      if (!reviewed) reviewFail = `the review is of plan ${short12(want)}, which is not a committed version of ${rel} at or before the approved one (${short12(a.plan_sha)}): run the codex plan review on the committed plan`;
+      if (!unchanged) changedFail = `the plan file ${rel} changed outside "## Changes" since the owner approved it (${short12(a.plan_sha)}): a changed plan needs "approve plan" again`;
+    }
+  }
+  if (changedFail) return changedFail;
+  if (reviewFail) return reviewFail;
+  return `the signed log has no "approve plan" for a committed version of the plan${unmatched ? ` (${unmatched})` : ''}: only the owner can give it, in a prompt`;
+}
+
+export function g10({ root, work, slug, appr, planFile }) {
   const r = loadReport(root, slug, 'plan');
   if (r.fail) return r.fail;
   const { rep, file } = r;
   const problems = [];
-  if (typeof planSha !== 'string' || !SHA256_RE.test(planSha)) problems.push('.scratch/gates.json has no "plan_sha" (sha256 of the approved plan at loop start)');
-  else if (!reviewedVersion(work ?? root, planFile, rep.subject_sha, planSha)) problems.push(`the review is of plan ${String(rep.subject_sha).slice(0, 12)}, which is neither the approved plan nor a committed version of ${planFile || 'the plan file'}: run the codex plan review on the committed plan`);
+  if (!appr.ok) problems.push(appr.why);
+  else {
+    const plans = appr.list.filter((a) => a?.stop === 'plan' && SHA256_RE.test(String(a.plan_sha)));
+    const why = planProblem(work ?? root, plans, planFile, rep.subject_sha);
+    if (why) problems.push(why);
+  }
   const res = resolutions(root, slug, 'plan');
   const open = unanswered(rep, res);
   if (open.length) problems.push(`CONFIRMED finding${open.length > 1 ? 's' : ''} with no "fixed: <commit>" or "rejected: <reason>" row in .scratch/review/codex-plan-${slug}.resolutions.md: ${list(open)}`);
-  const ap = hasApproval(appr, 'plan', (a) => typeof planSha === 'string' && String(a.plan_sha).toLowerCase() === planSha.toLowerCase(), `plan ${String(planSha ?? '').slice(0, 12)}`);
-  if (!ap.ok) problems.push(ap.msg);
   return problems.length ? red(problems.join('; '), file) : green();
 }
 

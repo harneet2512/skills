@@ -6,10 +6,13 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { clean, tables } from './md-table.mjs';
 
-// Paths that are not source: the loop's own notes, the planning documents and the Claude settings file.
-const ALLOWED = ['.scratch/', 'docs/plans/', 'docs/agents/', 'docs/adr/', 'GLOSSARY.md', '.claude/settings.json', '.claude/.loop/'];
+// Paths that are not source: the loop's own notes, the planning documents (the owner's acceptance tests are written and
+// approved at stop 1, before the loop starts), the Claude settings file and the caches tools leave in the repository.
+// Paths Git ignores (.gitignore, .git/info/exclude) never show in `git status`, so they are not source either.
+const CACHES = ['.groundtruth/', '.cache/', '.pytest_cache/', '.mypy_cache/', '.ruff_cache/', '.tox/', '.nyc_output/', '.turbo/', '.parcel-cache/'];
+const ALLOWED = ['.scratch/', 'docs/plans/', 'docs/acceptance/', 'docs/agents/', 'docs/adr/', 'GLOSSARY.md', '.claude/settings.json', '.claude/.loop/', ...CACHES];
 export const isAllowed = (p) => ALLOWED.some((a) => (a.endsWith('/') ? p.startsWith(a) : p === a));
-const EXCLUDES = ['.scratch', 'docs/plans', 'docs/agents', 'docs/adr', 'GLOSSARY.md', '.claude/settings.json', '.claude/.loop'].map((p) => `:(exclude)${p}`);
+const EXCLUDES = ['.scratch', 'docs/plans', 'docs/acceptance', 'docs/agents', 'docs/adr', 'GLOSSARY.md', '.claude/settings.json', '.claude/.loop', ...CACHES.map((c) => c.replace(/\/$/, ''))].map((p) => `:(exclude)${p}`);
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 export const MARGIN_MS = 2000;
 // A review counts when logged at or after the last source commit time, less one second of clock rounding.
@@ -115,7 +118,7 @@ export function loopFacts(root) {
 }
 
 // ---- the plan, as a snapshot hashed at init: plan waivers are honoured only for a plan that existed then and is unchanged
-const stripChanges = (md) => md.replace(/\r\n/g, '\n').replace(/^##[ \t]+Changes\b[^\n]*\n[\s\S]*?(?=^##[ \t]|(?![\s\S]))/gim, '');
+export const stripChanges = (md) => md.replace(/\r\n/g, '\n').replace(/^##[ \t]+Changes\b[^\n]*\n[\s\S]*?(?=^##[ \t]|(?![\s\S]))/gim, '');
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
 // The plan file the loop would start from: docs/plans/<slug>.md, else the newest docs/plans/*.md. { file, sha } or {}.

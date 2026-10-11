@@ -2,12 +2,12 @@
 // before any plan file exists, so an approval is keyed to the tests themselves, not to a plan: the same items under the
 // plan's `## Acceptance tests` later give the same key, and any change to an item gives a new one.
 //
-// Source at approval time: the newest docs/acceptance/*.md, else the newest docs/plans/*.md. Both use the same
+// Source at approval time: docs/acceptance/*.md, else docs/plans/*.md. Both use the same
 // `## Acceptance tests` section format (see ../../plan-first/plan-template.md).
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { acceptanceItems } from './gates-acceptance.mjs';
+import { mdCandidates } from './vis-root.mjs';
 
 const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
 const withoutId = (text) => norm(text).replace(/^\**`?AT-?\d+`?\**\s*[:.)-]?\s*/i, '');
@@ -22,29 +22,25 @@ export function acceptanceKey(items) {
 // The key of the acceptance tests in a markdown text, or ''.
 export const acceptanceKeyOf = (md) => acceptanceKey(acceptanceItems(md));
 
-function newestMd(dir) {
-  let best = null;
-  let names = [];
-  try { names = readdirSync(dir).filter((n) => n.endsWith('.md')); } catch { return null; }
-  for (const n of names) {
-    try {
-      const m = statSync(join(dir, n)).mtimeMs;
-      if (!best || m > best.m) best = { file: join(dir, n), m };
-    } catch { /* vanished */ }
+// The acceptance tests an "approve acceptance" is for: { at: { file, rel, key } } or { error }. Source: docs/acceptance/*.md,
+// else docs/plans/*.md. With one candidate file in the directory that is the one; with several the owner must name one
+// (`approve acceptance docs/acceptance/x.md`), so the approval never lands on a guess.
+export function chooseAcceptance(dirs, named = '') {
+  const keyOf = (c) => { try { return acceptanceKeyOf(readFileSync(c.file, 'utf8')); } catch { return ''; } };
+  const sources = [mdCandidates(dirs, 'acceptance'), mdCandidates(dirs, 'plans')];
+  if (named) {
+    const pick = sources.flat().find((c) => c.rel === named);
+    if (!pick) return { error: `${named} is not a file in docs/acceptance/ or docs/plans/` };
+    const key = keyOf(pick);
+    return key ? { at: { file: pick.file, rel: pick.rel, key } } : { error: `${named} has no "## Acceptance tests" items` };
   }
-  return best?.file ?? null;
-}
-
-// The acceptance tests the owner is looking at now: { file, key } or null.
-export function currentAcceptance(dirs) {
-  for (const sub of [['docs', 'acceptance'], ['docs', 'plans']]) {
-    for (const d of new Set(dirs.filter(Boolean))) {
-      const file = newestMd(join(d, ...sub));
-      if (!file) continue;
-      let key = '';
-      try { key = acceptanceKeyOf(readFileSync(file, 'utf8')); } catch { /* unreadable */ }
-      if (key) return { file, key };
+  for (const cands of sources) {
+    if (cands.length > 1) {
+      const names = cands.map((c) => c.rel).sort().join(', ');
+      return { error: `${cands.length} files in ${cands[0].rel.replace(/\/[^/]*$/, '/')} (${names}): name the one you approve, for example "approve acceptance ${[...cands].sort((a, b) => b.m - a.m)[0].rel}"` };
     }
+    const key = cands.length ? keyOf(cands[0]) : '';
+    if (key) return { at: { file: cands[0].file, rel: cands[0].rel, key } };
   }
-  return null;
+  return { error: 'no "## Acceptance tests" items in docs/acceptance/*.md or docs/plans/*.md' };
 }
