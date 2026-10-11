@@ -10,9 +10,10 @@ import { appendTimeline } from './timeline.mjs';
 import { changesSection, gitOut, newestPlan } from './vis-root.mjs';
 
 const now = () => process.env.FEATURE_LOOP_NOW || new Date().toISOString();
-const PATTERNS = [['acceptance', /\bapprove\s+acceptance\b/i], ['plan', /\bapprove\s+plan\b/i], ['pr', /\bapprove\s+pr\b/i]];
+const PATTERNS = [['acceptance', /^[ \t]*approve\s+acceptance\b/im], ['plan', /^[ \t]*approve\s+plan\b/im], ['pr', /^[ \t]*approve\s+pr\b/im]];
 
-// The stops a prompt approves, in a fixed order. Matches anywhere in the prompt, case-insensitive.
+// The stops a prompt approves, in a fixed order. Case-insensitive, and only when a line STARTS with the phrase, so
+// "don't approve plan" or "should I approve plan?" in the middle of a sentence approves nothing.
 export const stopsIn = (prompt) => PATTERNS.filter(([, re]) => re.test(String(prompt ?? ''))).map(([s]) => s);
 
 // Sign one entry, making the store first when no loop ever started here. Returns '' or the reason it was not written.
