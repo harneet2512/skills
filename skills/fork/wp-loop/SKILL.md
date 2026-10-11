@@ -17,6 +17,7 @@ If the user passes an issue reference, fetch it from the issue tracker and state
 - **The reviewer merges.** Never merge, enable auto-merge, or push to the default branch.
 - **One issue, one PR, opened only when everything is green.** No early or draft PR. Nothing goes in it that the issue does not need: plans, specs, reviews and logs stay in `.scratch/` and `docs/plans/`, which `.git/info/exclude` keeps out of git (`plan-first` writes those lines; add them if missing).
 - **Build never pauses for a PR.** While this PR waits for review, the next issue starts on a branch stacked on this one.
+- **When the reviewer merges a PR in the stack, move the rest of the stack onto it.** Fetch the default branch, then for the next open PR's branch run `git rebase --onto origin/<default branch> <merged branch's old head>` (this works after a squash or rebase merge too, when the merged commits have new ids), rerun step 11's checks, push with `--force-with-lease` (the owner is told; this is expected), and set the PR's base to the default branch if GitHub did not do it already. Repeat up the stack. Never merge anything yourself, and never rebase a branch the reviewer is reviewing without saying so in the PR.
 
 ## The reviewer's product rules
 

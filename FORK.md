@@ -453,6 +453,7 @@ Found by live run 2 on `workflow-toy-todo`:
 | Adversarial review at every size | `wp-loop` step 9 | `adversarial-review` runs on every issue, Tiny included; a missing shape file is `n/a`, not a stop |
 | Results comment and status update right away | `wp-loop` step 13 | Posted with `gh pr comment` and confirmed as soon as the PR opens; the status update is handed over before the next issue starts |
 | Live-check helpers outside the evidence folder | `wp-loop` step 7 and step 9 | Helpers go in `.scratch/live-checks/<slug>/`; nothing writes, copies or redirects into `.scratch/live/` or a codex report by hand, so the tamper escalation stays quiet unless something is wrong |
+| Restack after a merge | `wp-loop` "The reviewer's rules" | When the reviewer merges a PR, the next branch is rebased onto the default branch with `--onto` (safe after squash merges), rechecked, pushed with `--force-with-lease` and retargeted |
 | Baseline once per stack | `wp-loop` step 11 | When the default branch is already red, its failures are recorded once in `.scratch/baseline.md` and each issue shows the set is unchanged |
 
 `feature-loop` is not part of this workflow; its stage 7 text still names `wp-loop` steps 12 and 13.
