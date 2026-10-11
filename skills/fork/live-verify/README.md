@@ -3,9 +3,9 @@
 Run the real app process against high-fidelity stand-ins for every external system, drive real user journeys end to end, and keep the evidence. Nothing reaches a real Slack workspace or Gmail mailbox, and nobody has to read a Slack message to know the product works.
 
 ```
-node harness/runner.mjs --app bench/inbox-assist --instances 2 --llm stub
-node harness/runner.mjs --app bench/inbox-assist --llm claude --only 03-     # real model for drafting
-node --no-warnings --test bench/inbox-assist/test/*.test.mjs harness/test/*.test.mjs
+node harness/runner.mjs --app ../../../bench/inbox-assist --instances 2 --llm stub
+node harness/runner.mjs --app ../../../bench/inbox-assist --llm claude --only 03-     # real model for drafting
+node --no-warnings --test ../../../bench/inbox-assist/test/*.test.mjs harness/test/*.test.mjs
 ```
 
 Zero npm dependencies. Node 22 or later (`node:sqlite`, `node:test`, `fetch`).
@@ -17,9 +17,19 @@ Zero npm dependencies. Node 22 or later (`node:sqlite`, `node:test`, `fetch`).
   - `standins/gmail.mjs`: Gmail API subset (profile, history, messages get/list/send, threads get, drafts create, `users.stop`) and Google OAuth token revocation (`POST /revoke`), per-mailbox history ids, Gmail's threading rules on send, `rfc822msgid:` search with optional index lag. Also Pub/Sub push with a bearer token.
   - `standins/llm.mjs`: Anthropic Messages API (`POST /v1/messages`) with scripted rules and Anthropic-shaped errors.
   - `lib/faults.mjs`: per-method fault plans: `status` (429 with Retry-After, 500), `delay`, `slowResponse`, `hang`, `reset`, `timeoutAfterSuccess`, `truncate` (a 2xx whose body stops halfway), and for deliveries `duplicate` and `reorder`. Rules target the nth matching call and can filter by tenant.
-  - `runner.mjs`: boots stand-ins and N app instances on free ports with a shared SQLite file, waits for each `/healthz`, runs `<app>/scenarios/*.mjs`, kills only its own child pids, exits non-zero on any failure.
+  - `runner.mjs`: boots stand-ins and N app instances on free ports, waits for each to be ready, runs `<app>/scenarios/*.mjs`, kills only its own child pids, exits non-zero on any failure. Readiness and the database are both optional (see `live-verify.json` below).
 - `bench/inbox-assist/` (at the repo root, outside the shipped skills): the reference product (a Slack agent that drafts Gmail replies). `live-verify.json` tells the runner how to start it and which env vars point at the stand-ins.
 - `ci/live-verify.yml`: example GitHub Actions workflow. Copy it to `.github/workflows/` to enable it.
+
+## live-verify.json
+
+```json
+{ "start": ["node", "src/server.mjs"], "healthz": "/healthz", "env": { "PORT": "{{port}}", "DATABASE_PATH": "{{db}}" } }
+```
+
+- `start`: the command, run in the app directory. `env`: its environment; `{{port}}`, `{{instance}}`, `{{db}}`, `{{slack.url}}`, `{{gmail.url}}`, `{{llm.url}}`, `{{secrets.*}}` are filled in per instance.
+- **Readiness.** `"healthz"` is the HTTP path that must answer 200 (default `/healthz`). For an app with no such endpoint set `"healthz": null`: the app is ready when its output (its log file) matches the regex in `"ready"` (`"ready": "listening on"`), or, with no `"ready"`, when its port accepts a TCP connection. The port is the `{{port}}` the app was given.
+- **Database.** There is none unless the manifest says so. `"db": true` (or a file name) creates the shared SQLite file, passes its path as `{{db}}`, opens it read-only as `ctx.db` and snapshots it into the evidence folder. Without `"db"`, `ctx.db` is `undefined` and `{{db}}` is unknown. For compatibility an older manifest that uses `{{db}}` in `env` and has no `"db"` key still gets the file. Set `"db": false` to be explicit.
 
 ## Writing a scenario
 

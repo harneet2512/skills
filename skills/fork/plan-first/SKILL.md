@@ -31,7 +31,7 @@ After `approve acceptance`, enter plan mode yourself (call the EnterPlanMode too
 When the owner accepts the plan to leave plan mode, the hook tells you this too: **do not implement.**
 
 1. Commit the plan file.
-2. Call the Skill tool with `codex-review` in plan mode on the plan file. It runs `gpt-6-astra` read-only against the real repo and writes `.scratch/review/codex-plan-<slug>.json`.
+2. Call the Skill tool with `codex-review` in plan mode on the plan file, in the foreground, with `--slug <slug>`: the `slug` that `.scratch/gates.json` will hold (the plan file's name unless the loop already has one), because gates G10 and G11 read the report by it. It runs `gpt-6-astra` read-only against the real repo and writes `.scratch/review/codex-plan-<slug>.json`.
 3. Fold every CONFIRMED finding into the plan (change the section it concerns) and write each resolution in `.scratch/review/codex-plan-<slug>.resolutions.md`. Fill `## Design challenge` with the report path, the findings and how each is resolved. Run `feature-loop`'s `scripts/check-gates.sh --plan` until it exits 0. Commit.
 4. If codex is unavailable, say so to the owner; the fallback is the read-only subagent in [design-challenge.md](design-challenge.md), recorded as a bypass.
 
@@ -42,5 +42,7 @@ Show the owner, in this order: the codex summary line, every CONFIRMED finding w
 ## After stop 2
 
 - When the build finds reality differs from the plan, append `- Changed: <what> because <why>` under `## Changes` in the same commit as the code. The owner is told immediately (an escalation line); no approval is needed unless the change touches an acceptance test, which needs a fresh `approve acceptance`.
+
+**The acceptance map (`.scratch/acceptance.md`, gate G12).** One row per acceptance test, `| AT id | test path or scenario name | last result on <sha> |`. The test cell is exactly one of: a live-verify scenario name; a tracked test file path (`tests/a.test.js`, optionally `:line`); or `path::test name`. The result cell is `pass <sha>` for the HEAD it ran on.
 
 **Done when:** the acceptance tests are approved, the plan passes `check-gates.sh --plan`, the codex plan review ran on it with every CONFIRMED finding resolved, the owner typed `approve plan`, and `feature-loop` has started on it.

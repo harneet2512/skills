@@ -2,15 +2,16 @@
 
 Skills this fork adds on top of upstream. Each one is shipped in the plugin. See [FORK.md](../../FORK.md) for what each one builds on and why it exists.
 
-How they fit: `feature-loop` runs a feature through `shape`, `deep-engineering` (which calls `behavioral-envelope`, `concern-topics` and `evals`), Matt's `to-spec` and `to-tickets`, `wp-loop` per ticket (which calls `tdd`, `live-verify` and `adversarial-review`), then ship and Matt's `retro`.
+How they fit: `plan-first` plans, `codex-review` attacks the plan, and `feature-loop` runs the feature through `shape`, `deep-engineering` (which calls `behavioral-envelope`, `concern-topics` and `evals`), Matt's `to-spec` and `to-tickets`, `wp-loop` per ticket (which calls `tdd`, `live-verify` and `adversarial-review`), then ship and Matt's `retro`.
 
 ## User-invoked
 
-- **[feature-loop](./feature-loop/SKILL.md)**: Take one feature from request to shipped, quality and speed together: shape, design from concerns with an adversarial plan review, plan, a walking skeleton proven live first, build, prove (tests, evals, live verification), attack, staged ship, learn, with an optional time box.
+- **[feature-loop](./feature-loop/SKILL.md)**: Take one feature from an approved plan to a PR the owner merges, telling the owner every step (fork.9): shape, design from concerns, a walking skeleton proven live first, build, prove (tests, evals, live verification), a codex code attack, then the owner's three stops. Hooks print each step and enforce gates G1 to G12; the owner merges.
 
 ## Model-invoked
 
-- **[plan-first](./plan-first/SKILL.md)**: The planning half of the plan-first workflow: caps the grilling at 3 rounds or 20 minutes, fills the plan template in plan mode, runs pack detection and a read-only design challenge before approval, and writes the plan to a tracked file for `feature-loop` to follow.
+- **[plan-first](./plan-first/SKILL.md)**: The planning half of the owner's workflow (fork.9): caps the grilling, ends it with 3 to 5 acceptance tests the owner confirms (stop 1), fills the plan template in plan mode, hands the plan to the codex plan review instead of implementing, and shows the owner the revised plan (stop 2) before `feature-loop` builds.
+- **[codex-review](./codex-review/SKILL.md)**: A second model (OpenAI `gpt-6-astra`, through the local codex CLI) attacks the plan (read-only, before anything is built) or the finished branch (in a throwaway worktree, with a repro test for every claim). Reports are stamped with the plan hash or HEAD and feed gates G10 and G11.
 - **[wp-loop](./wp-loop/SKILL.md)**: Ship one work package end to end: issue, engineering contract, branch, TDD, PR, green CI, two-axis review, verified fixes, gated merge, results comment.
 - **[shape](./shape/SKILL.md)**: Intent, actors and surfaces, a journey map crossed with interaction cases, the success metric and the scope line, before any design.
 - **[deep-engineering](./deep-engineering/SKILL.md)**: Build a system model from repo evidence, derive invariants and risks, and write an engineering contract before any spec or code.
