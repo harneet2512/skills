@@ -21,6 +21,15 @@
             "timeout": 120
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/fork/feature-loop/scripts/agent-base-hook.mjs\""
+          }
+        ]
       }
     ],
     "Stop": [
