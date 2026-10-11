@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Check the feature-loop gates (G1 to G9 in ../gates.md) for the feature named in .scratch/gates.json.
+# Check the feature-loop gates (G1 to G12 in ../gates.md) for the feature named in .scratch/gates.json.
 #
 # Usage (run from the target repo's root):
 #   check-gates.sh                    every gate that applies to the feature's size (the close phase)
 #   check-gates.sh G2 G6              only these gates
 #   check-gates.sh --phase build      G1 G2 G8 G9: what must hold before the first push or PR (during Build)
-#   check-gates.sh --phase merge      G1 to G6, G8 and G9: what must hold before the merge
+#   check-gates.sh --phase merge      G1 to G6, G8, G9 (and G10 to G12 in a loop with a plan_sha): the fork.8 merge phase
+#   check-gates.sh --phase pr         G1 to G6, G8 to G12, CI green on the exact HEAD (gh run list --commit) and the owner's
+#                                     signed "approve pr" for HEAD: what must hold before the PR is opened (the owner merges)
 #   check-gates.sh --phase close      every gate, G7 (the metrics line, written after the merge) included
 #   (a phase and gate IDs together check the gates that are in both)
 #   check-gates.sh --plan [FILE]      only the approved plan (default: the newest docs/plans/*.md): lists each missing or
@@ -26,7 +28,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=loop-root.sh
 . "$here/loop-root.sh"
 
-usage() { sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 gates=()
 phase=""
@@ -37,16 +39,16 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --phase)
-      [ "$#" -ge 2 ] || { echo "check-gates: --phase needs build, merge or close" >&2; exit 2; }
+      [ "$#" -ge 2 ] || { echo "check-gates: --phase needs build, merge, pr or close" >&2; exit 2; }
       phase="$2"; shift 2
-      case "$phase" in build|merge|close) ;; *) echo "check-gates: unknown phase: $phase (expected build, merge or close)" >&2; exit 2 ;; esac ;;
+      case "$phase" in build|merge|pr|close) ;; *) echo "check-gates: unknown phase: $phase (expected build, merge, pr or close)" >&2; exit 2 ;; esac ;;
     --timebox) timebox=1; shift ;;
     --require-stages) require=1; shift ;;
     --plan)
       plan=1; shift
-      case "${1:-}" in ""|-*|[Gg][1-9]) ;; *) planfile="$1"; shift ;; esac ;;
-    [Gg][1-9]) gates+=("G${1:1}"); shift ;;
-    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G9, --phase build|merge|close, --timebox, or --plan [FILE])" >&2; usage >&2; exit 2 ;;
+      case "${1:-}" in ""|-*|[Gg][1-9]|[Gg]1[0-2]) ;; *) planfile="$1"; shift ;; esac ;;
+    [Gg][1-9]|[Gg]1[0-2]) gates+=("G${1:1}"); shift ;;
+    *) echo "check-gates: unknown argument: $1 (expected gate IDs G1 to G12, --phase build|merge|pr|close, --timebox, or --plan [FILE])" >&2; usage >&2; exit 2 ;;
   esac
 done
 

@@ -1,8 +1,7 @@
 // Reads a Claude Code PreToolUse hook payload on stdin and classifies the Bash command for gate-hook.sh.
 // Node 22, no dependencies.
 //
-// Shipping code: `git push`, `gh pr create` (or its alias `gh pr new`), a POST to a `.../pulls` endpoint through
-// `gh api`, or a `createPullRequest` mutation through `gh api graphql`. Reported on lines 1 to 4, unchanged:
+// Shipping code: `git push`. (Opening a PR is its own action, `create`, below.) Reported on lines 1 to 4, unchanged:
 //   1. 1 when the command ships code, else 0
 //   2. the directory to check: the session cwd, moved by any `cd <dir>` or `git -C <dir>` before the push
 //   3. the effective FEATURE_LOOP_GATES value (an assignment in the command wins over the environment)
@@ -14,6 +13,10 @@
 //       `git commit` (not --dry-run), including `git -C <dir> commit`, `-a`/`-am` (all = 1) and `commit` chained
 //       after `git add ...` (adds = the earlier add commands in that directory, commands joined by U+001E, the
 //       arguments of a command by U+001F, interactive flags dropped), so the hook can judge the index as it will be
+//   create <dir> <gates> <reason> <draft>
+//       `gh pr create` (or `gh pr new`), a POST to a `.../pulls` endpoint through `gh api`, or a `createPullRequest`
+//       mutation through `gh api graphql` (fork.9: gated by the pr phase); draft = 1 for a draft PR (--draft/-d, `draft=true`,
+//       `isDraft: true`)
 //   merge <dir> <gates> <reason> <sha> <pr> <repo>
 //       `gh pr merge [<pr>]`, `gh api -X PUT .../pulls/<n>/merge`, or a `mergePullRequest` mutation through
 //       `gh api graphql`; sha is the --match-head-commit value (the `sha=` field of the REST call, the
@@ -213,6 +216,11 @@ function isGhCreate(args) {
   return method === 'POST' && /(^|\/)pulls$/.test(path);
 }
 
+// Is the PR being opened a draft? `gh pr create --draft`/`-d`, `-f draft=true` on the REST call, `isDraft` in the mutation.
+function isDraftCreate(args) {
+  return args.includes('--draft') || args.includes('-d') || /draft\W{0,4}true/i.test(args.join(' '));
+}
+
 // A merge through `gh pr merge`, the REST endpoint or a GraphQL mergePullRequest mutation, or null.
 function ghMerge(args) {
   const { pos, opt } = ghParse(args);
@@ -281,7 +289,7 @@ function analyze(cmd, dir, depth) {
           adds: adds.filter((a) => a.dir === call.dir).map((a) => a.args) });
       }
     } else if (name === 'gh') {
-      if (isGhCreate(args)) { if (!push) push = { dir, ...bypassFor(local) }; continue; }
+      if (isGhCreate(args)) { actions.push({ kind: 'create', dir, ...bypassFor(local), draft: isDraftCreate(args) }); continue; }
       const merge = ghMerge(args);
       if (merge) actions.push({ kind: 'merge', dir, ...bypassFor(local), ...merge });
     }
@@ -302,6 +310,8 @@ for (const a of actions) {
   const common = [a.kind, a.dir, a.gates, a.reason].map(field);
   if (a.kind === 'pushref') {
     out.push([...common, a.refs.map((x) => x.replace(/[\t\r\n\u001e\u001f]+/g, ' ')).join('\u001f') || '-'].join('\t'));
+  } else if (a.kind === 'create') {
+    out.push([...common, a.draft ? '1' : '0'].join('	'));
   } else if (a.kind === 'commit') {
     const addField = a.adds.map((args) => args.map((x) => x.replace(/[\t\r\n\u001e\u001f]+/g, ' ')).join('\u001f')).join('\u001e');
     out.push([...common, a.all ? '1' : '0', addField || '-'].join('\t'));

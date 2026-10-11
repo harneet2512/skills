@@ -6,13 +6,14 @@ import { storeStatus } from './stage-log.mjs';
 import { AFTER_MARGIN_MS, MARGIN_MS, baseSha, evasionTraces, lastSourceChangeMs, normSkill } from './stage-detect.mjs';
 import { assess, baselineOk } from './stage-state.mjs';
 import { planSectionHasBody } from './plan-check.mjs';
+import { liveProblem, reviewProblem } from './gates-evidence.mjs';
 
 const OPUS = /opus/i;
 const list = (xs, n = 4) => (xs.length <= n ? xs.join(', ') : `${xs.slice(0, n).join(', ')} and ${xs.length - n} more`);
 const tsMs = (e) => Date.parse(e.ts);
 const red = (msg) => ({ state: 'red', msg, file: '.scratch/.loop' });
 
-// opts: { root, work, run, phase: build|merge|close, require } where `require` is set by the merge and push hooks:
+// opts: { root, work, run, phase: build|merge|pr|close, require } where `require` is set by the merge and push hooks:
 // then a loop with no signed init entry is red instead of n/a. Returns { state, msg, file } like the other gates.
 export function checkStages({ root, work, run, phase, require }) {
   const st = storeStatus(root);
@@ -47,11 +48,18 @@ export function checkStages({ root, work, run, phase, require }) {
   const last = lastSourceChangeMs(work, a.init.startSha);
   const ofSkill = (s) => a.ep.entries.filter((e) => e.kind === 'skill' && normSkill(e.skill) === s).map(tsMs);
   const after = (s) => ofSkill(s).some((t) => t + AFTER_MARGIN_MS >= last);
-  const need = a.size === 'small' ? ['code-review', 'live-verify'] : ['code-review', 'live-verify', 'adversarial-review'];
+  // fork.9: a Skill call alone no longer counts for the review and verification stages. code-review needs its review file
+  // naming the head, live-verify a live report on the head (gates-evidence.mjs). In a loop with a plan_sha, the codex code
+  // attack (G11) replaces adversarial-review.
+  const evidence = { 'code-review': () => reviewProblem(root, work, slug), 'live-verify': () => (run.live ? '' : liveProblem(root, work)) };
+  const adversarial = typeof run.plan_sha === 'string' ? [] : ['adversarial-review'];
+  const need = a.size === 'small' ? ['code-review', 'live-verify'] : ['code-review', 'live-verify', ...adversarial];
   for (const s of a.size === 'small' ? ['wp-loop'] : []) if (!ofSkill(s).length) problems.push(`not run in this loop (no entry in the log): ${s}`);
   for (const s of need) {
-    if (!ofSkill(s).length) problems.push(`not run in this loop (no entry in the log): ${s}`);
-    else if (!after(s)) problems.push(`${s} was logged before the last source change; run it again on the final code`);
+    if (!ofSkill(s).length) { problems.push(`not run in this loop (no entry in the log): ${s}`); continue; }
+    const why = evidence[s]?.();
+    if (why) problems.push(`${s} was logged but left no evidence on the head: ${why}`);
+    else if (!evidence[s] && !after(s)) problems.push(`${s} was logged before the last source change; run it again on the final code`);
   }
   if (a.size === 'large') {
     if (!(a.plan !== null && planSectionHasBody(a.plan, 'Design challenge'))) {
