@@ -332,6 +332,27 @@ t="$work/cli"; mkdir -p "$t"
 node "$here/timeline.mjs" "$t" "codex" "plan review | done" "x" && node "$here/timeline.mjs" "$t" "codex" "second" ""
 check "timeline.mjs appends rows, header once, pipes escaped" "$([ "$(grep -c '^| time UTC' "$t/.scratch/timeline.md")" = 1 ] && [ "$(rows "$t")" = 2 ] && grep -qF 'plan review \| done' "$t/.scratch/timeline.md" && echo 0 || echo 1)"
 
+# Agent isolation (live run 2): an isolated worktree starts at the default branch, not HEAD, so with a loop active and HEAD
+# ahead of it the Agent call is refused
+agent_hook() { # agent_hook <cwd> <tool_input json>; sets out, code
+  out="$(node -e 'process.stdout.write(JSON.stringify({session_id:"s1",cwd:process.argv[1],hook_event_name:"PreToolUse",tool_name:"Agent",tool_input:JSON.parse(process.argv[2])}))' "$1" "$2" | node "$here/agent-base-hook.mjs" 2>&1)"; code=$?
+}
+w="$(loop_repo agentbase)"; git init -q --bare "$work/agentbase-origin.git"
+(cd "$w" && git remote add origin "$work/agentbase-origin.git" && git push -q origin main && git remote set-head origin main) >/dev/null 2>&1
+agent_hook "$w" '{"prompt":"x","isolation":"worktree"}'
+check "agent isolation: HEAD is the default tip, so an isolated worktree passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+(cd "$w" && git checkout -q -b feat && printf 'x
+' > f.txt && git add f.txt && git commit -q -m feat) >/dev/null 2>&1
+agent_hook "$w" '{"prompt":"x","isolation":"worktree"}'
+check "agent isolation: HEAD ahead of the default branch, so it is refused and told to cut from HEAD" "$([ "$code" = 2 ] && has "$out" 'git worktree add --detach <dir> HEAD' && echo 0 || echo 1)" "$out"
+agent_hook "$w" '{"prompt":"x"}'
+check "agent isolation: a subagent without isolation passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+printf '{ "slug": "demo", "status": "closed" }
+' > "$w/.scratch/gates.json"
+agent_hook "$w" '{"prompt":"x","isolation":"worktree"}'
+check "agent isolation: no active loop, so it passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+check "hooks.json wires the Agent hook" "$(node -e 'const h=require(process.argv[1]).hooks.PreToolUse;process.exit(h.some(m=>m.matcher==="Agent"&&m.hooks.some(x=>x.command.includes("agent-base-hook.mjs")))?0:1)' "$plugin/hooks/hooks.json"; echo $?)"
+
 echo
 echo "test-visibility: $total checks, $([ "$fail" = 0 ] && echo 'all passed' || echo 'FAILURES')"
 exit "$fail"
