@@ -70,7 +70,7 @@ echo "ok   identical output on repeat runs"
 paths_got=$("$detect" --paths "$here/fixtures/llm-reply.diff" | cut -f1 | tr '\n' ' ')
 case " $paths_got" in *" llm "*) echo "ok   --paths: $paths_got" ;; *) echo "FAIL --paths: expected llm, got: $paths_got"; fail=1 ;; esac
 
-# --diff mode in a throwaway repo: bad base fails, untracked files count, .scratch/ is ignored.
+# --diff mode in a throwaway repo: bad base fails, untracked files count, .scratch/ and docs/plans/ are ignored.
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 (
@@ -83,10 +83,14 @@ trap 'rm -rf "$tmp"' EXIT
   mkdir -p .scratch/envelope src
   printf 'OUT-01 sent once; LLM-02; tenant session; price refund\n' > .scratch/envelope/x.md
   printf 'await mailer.sendEmail({ to })\n' > src/send.ts
+  mkdir -p docs/plans
+  printf 'OUT-01 sent once; LLM-02; tenant session; price refund\n' > docs/plans/staged.md
+  git add docs/plans/staged.md
+  printf 'OUT-01 sent once; LLM-02; tenant session; price refund\n' > docs/plans/untracked.md
   got=$("$detect" --diff "$base" | cut -f1 | tr '\n' ' ')
   case " $got" in *" outbound "*) ;; *) echo "FAIL --diff: untracked src/send.ts not scanned, got: $got"; exit 1 ;; esac
-  case " $got" in *" money "*|*" llm "*) echo "FAIL --diff: .scratch/ was scanned, got: $got"; exit 1 ;; esac
-  echo "ok   --diff: $got(.scratch ignored)"
+  case " $got" in *" money "*|*" llm "*) echo "FAIL --diff: .scratch/ or docs/plans/ was scanned, got: $got"; exit 1 ;; esac
+  echo "ok   --diff: $got(.scratch and docs/plans ignored)"
 ) || fail=1
 
 if [ "$fail" -ne 0 ]; then echo "detect-packs tests failed"; exit 1; fi

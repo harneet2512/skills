@@ -19,6 +19,21 @@ Take one feature from request to shipped, without stopping except for decisions 
 
 The issue tracker should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
 
+## The approved plan (plan-first workflow)
+
+The intended path is: the user's brief, then `grilling` (shared understanding, capped), then **plan mode** (files to create or change, and which skill runs at each stage, challenged and approved once), then this loop follows the approved plan. Nothing the plan settled is asked again.
+
+**The planning half is the `plan-first` skill** ([plan-first](../plan-first/SKILL.md), model-invoked, so it is in context while the user grills and plans; this skill is user-invoked and is not). It holds the grilling cap (3 rounds or 20 minutes), the plan template, pack detection with `detect-packs.sh --plan`, the read-only design challenge before approval, and the rule that the plan is a **tracked file** (`"plansDirectory": "docs/plans"` in the target repo's `.claude/settings.json`), so builders and the PR see it. Claude Code chooses the file name, so the loop uses the newest file in `docs/plans/`, or the one the user names. Starting this loop on the plan is the approval: the plan-mode approve prompt starts editing outside the loop, so the user chooses "No, keep planning" there, leaves plan mode with Shift+Tab to a normal mode (plan mode cannot write files, and leaving this way gives no second approval prompt), and runs `/mattpocock-skills:feature-loop`.
+
+**When an approved plan exists** (`docs/plans/<file>.md`), start from it:
+1. Run `scripts/check-gates.sh --plan`. For each section it names as missing or empty, ask the user about that section only, say which one, and write the answer into the plan. Never re-ask a section that is filled. Commit the plan file on the integration branch before any builder starts.
+2. Write the files of the stages the plan covers: **stage 0 (baseline), stage 1 (shape) and stage 3 (to-tickets)** only. Record each in the ledger with the status `done, from approved plan` and the evidence `inferred: docs/plans/<file>.md#<Section>` (several citations are separated by `;`). Gate G8 checks that the stage is one of those three, that every cited file and section exist and have content, and that the evidence says `inferred:`. Write `gates.json` from Size and why and Time box.
+3. These stops do **not** run again: `grilling` in stage 1, in `shape` and in `wp-loop` step 1; the seam checks in `to-spec` and `wp-loop` step 4 (tell `to-spec` the seams are confirmed in the plan); the `to-tickets` quiz (it stops only when the tickets it cuts differ from the plan's, and then only to ask about the difference); re-sizing; and the stage 0 request for dependencies (the plan's list is the request, already answered or open).
+4. These still run, starting from the plan's facts, and are never marked from the plan: stage 2 (`deep-engineering`'s deeper check against the code, and the envelope written from the plan's Concerns and Failure modes), the walking skeleton, the tests, the live run and the reviews (stages 4 to 9). The plan lowers the number of questions, never the number of checks.
+5. **Deviations are written back.** When the build finds reality differs from the plan (a file shaped differently, a seam that does not exist), append `- Changed: <what> because <why>` under `## Changes` in the plan file, in the same commit as the code, whoever writes it (lead or builder). The PR shows the plan file's diff. Code and plan never silently diverge. `check-gates.sh --plan` refuses a `Changed:` line without a reason.
+
+Without an approved plan, the loop runs as the stages below describe.
+
 ## Size it first
 
 Size by **risk**: what breaks, for whom, and whether it can be undone. The kind of feature does not decide the size; an AI feature is sized like any other.
@@ -29,7 +44,7 @@ Size by **risk**: what breaks, for whom, and whether it can be undone. The kind 
 | **Normal** | A user-visible behavior with state, an API, a job or an integration; an AI feature whose output a person sees before anything acts on it | All stages |
 | **Large** | An irreversible external effect (sending, paying, deleting), money, tenancy, auth or identity, a new subsystem, or an AI feature that acts with no person in between | All stages, plus the design challenge in stage 2 |
 
-Say the size and why in one line, and write `.scratch/gates.json` as gates.md specifies: `{ "slug": "<slug>", "size": "<size>", "base": "<branch>", "started": "<now>" }`. `started` (an ISO time with a zone) marks when this loop began, so a live run left over from an earlier feature never counts for this one.
+Say the size and why in one line (when an approved plan has a Size and why section, use it and do not re-size), and write `.scratch/gates.json` as gates.md specifies: `{ "slug": "<slug>", "size": "<size>", "base": "<branch>", "started": "<now>" }`. `started` (an ISO time with a zone) marks when this loop began, so a live run left over from an earlier feature never counts for this one.
 - Add `"demo_by"` whenever the user names a deadline, a demo or a time-boxed trial; ask for it in one line when the work is clearly time-boxed and no time was given. Write it with the UTC offset in force on the deadline's own date (daylight saving may differ from today's), or in UTC with `Z`.
 - Add `"evals": "full"` only when the user asks for a full eval suite; the default is `smoke` (see `evals`, "Tiers").
 - Add `"max_builders"` when the machine or the user's rate limits call for fewer or more than 3.
@@ -118,21 +133,21 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 
 0. **Baseline.**
    - Once per product: read the tenancy model, auth, deploy path, observability and flags. Note each missing enterprise need (tenant scoping, audit log, SSO hook, staged rollout). The first feature that depends on one builds it as a foundation ticket.
-   - Every feature: list each external dependency the live run needs (API keys, sandbox accounts, test workspaces, inboxes, model providers) and check that each is present, by name only, never by printing a secret. Ask the user for every missing one in a single message, now. For each, name the local stand-in the live run uses until it arrives (a `live-verify` stand-in, a local inbox, a local model endpoint), so a missing key never blocks the skeleton.
+   - Every feature (with an approved plan, its External dependencies section is this list and this request already happened; check only that each present item is still present): list each external dependency the live run needs (API keys, sandbox accounts, test workspaces, inboxes, model providers) and check that each is present, by name only, never by printing a secret. Ask the user for every missing one in a single message, now. For each, name the local stand-in the live run uses until it arrives (a `live-verify` stand-in, a local inbox, a local model endpoint), so a missing key never blocks the skeleton.
 
    **Done when:** each of the five is located or marked missing, each missing one this feature depends on is a ticket, and every external dependency is present or has a named stand-in and an open request to the user.
 
 1. **Understand** (Matt: `grill-with-docs`; fork: `shape`).
-   - When any requirement is a guess, call the Skill tool twice, for `grilling` and `domain-modeling`, so the answers land in the glossary and ADRs.
+   - With an approved plan, its Decisions section is the settled understanding: do not grill again; ask only about a requirement the plan leaves a guess. Otherwise, when any requirement is a guess, call the Skill tool twice, for `grilling` and `domain-modeling`, so the answers land in the glossary and ADRs.
    - When a question needs running code to settle (state, business logic, a UI you have to see), call the Skill tool with `prototype` and fold its answer in.
-   - Then call the Skill tool with `shape`.
+   - Then call the Skill tool with `shape` (with an approved plan, write the shape file from the plan's Decisions, Skeleton ticket and Tickets and seams; the stage is `done, from approved plan` once the shape file passes G1).
    - Keep stages 1 to 3 in one context window (Matt's context hygiene). Compact only at a stage boundary.
 
    **Done when:** `.scratch/shape/<slug>.md` has intent, actors and surfaces, the journey map, the success metric, the scope line, and at least one journey case ID `J<n>.<case>` (gate G1).
 
 2. **Design** (fork). **Requires:** the shape file.
    - Call the Skill tool with `deep-engineering`. It builds the system model from repo evidence and calls `behavioral-envelope` (gate G2), `concern-topics` (journey × topic matrix and safety arguments) and, when the envelope's `**Packs:**` line names `llm` or `retrieval`, `evals` (the eval plan, before any prompt exists). It ends with the engineering contract.
-   - **Design challenge (adversarial plan review).** For Large work, and for Normal work whose envelope has a Critical Live item (Small work with a Critical item is not Small: escalate it to Normal, so it gets a contract to challenge): before the spec, one reviewer subagent on the strongest model, with a fresh context, attacks the contract. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and list what to cut to reach a working live demo sooner without losing a Critical item. One round: fold every CONFIRMED finding into the contract with its resolution, say which ones changed the design, and take the cuts the user would accept (ask in one line when unsure).
+   - **Design challenge (adversarial plan review).** With an approved plan this already ran in plan mode ([design-challenge.md](../plan-first/design-challenge.md)) and its findings are in the plan's Design challenge section: do not run it again; fold the plan's resolutions into the contract. Otherwise, for Large work, and for Normal work whose envelope has a Critical Live item (Small work with a Critical item is not Small: escalate it to Normal, so it gets a contract to challenge): before the spec, one reviewer subagent on the strongest model, with a fresh context, attacks the contract. Its brief: break the design against the code, report CONFIRMED and PLAUSIBLE findings with evidence, and list what to cut to reach a working live demo sooner without losing a Critical item. One round: fold every CONFIRMED finding into the contract with its resolution, say which ones changed the design, and take the cuts the user would accept (ask in one line when unsure).
 
    **Done when:**
    - the contract gives every Live item a mechanism, an enforcement point and a proof, plus the build order;
@@ -144,11 +159,12 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
 3. **Plan** (Matt: `to-spec`, `to-tickets`). **Requires:** the contract.
    - Call the Skill tool with `to-spec`, with the contract as input. Then call the Skill tool with `to-tickets`.
    - Tickets are tracer-bullet vertical slices with blocking edges. **Ticket 1 is the walking skeleton**: the thinnest path through the whole journey from the shape file, real at every layer it touches, ending in one `live-verify` happy-path scenario. The prefactor and the shared-contract change come before it only when the skeleton cannot run without them. Each ticket names its journey cases, Live items, topic categories and seams (from the contract's Verification required).
-   - `to-tickets`' quiz is the one planned stop: the user approves the breakdown and confirms the seams in the same step. Then the tickets are published as sub-issues of the feature's issue.
+   - `to-tickets`' quiz is the one planned stop: the user approves the breakdown and confirms the seams in the same step. Then the tickets are published as sub-issues of the feature's issue. With an approved plan, the plan's Tickets and seams section already holds that approval: publish the tickets without the quiz, and stop only when the tickets differ from the plan, asking only about the difference.
 
    **Done when:** the tickets are published, every Critical item's mechanism is in a ticket before any slice that relies on it, and the seams are confirmed.
 
 4. **Build** (Matt: `implement-spec`, `tdd`, `code-review`; fork: attack tests, topic patterns, slice review). **Requires:** the published tickets.
+   - When reality differs from the approved plan, write a `Changed:` line in the plan file (see "The approved plan"), in the same commit as the code.
    - Create the integration branch from the latest default branch: `<issue>-<slug>`, or the repo's own branch convention. Open a draft PR after the first slice merges.
    - **The skeleton first.** Build ticket 1 alone, run its happy-path scenario with `live-verify`, and report it to the user (Speed rules). Nothing else is built until it passes, or until it is `blocked:` on something only the user can give.
    - Then for each ticket on the frontier, in parallel where blocking edges allow, up to `max_builders` at once:
@@ -239,6 +255,7 @@ All of them apply only to a repo whose main worktree has `.scratch/gates.json` w
 | From | File | Read by |
 |---|---|---|
 | feature-loop | `.scratch/gates.json`, `.scratch/loop-status.md` | `check-gates.sh`, the hooks |
+| plan mode (grilling, design challenge) | `docs/plans/<file>.md` (see [plan-template.md](../plan-first/plan-template.md)) | every stage the plan covers, `check-gates.sh --plan`, G8 |
 | shape | `.scratch/shape/<slug>.md` | envelope (properties), deep-engineering (journey steps), live-verify (journey cases), evals (criteria) |
 | behavioral-envelope | `.scratch/envelope/<slug>.md` | deep-engineering, slice review, adversarial-review |
 | deep-engineering | contract | to-spec, to-tickets, builder briefs, reviewers' spec, design challenge |

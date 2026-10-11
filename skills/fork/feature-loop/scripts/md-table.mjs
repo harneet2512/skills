@@ -43,12 +43,14 @@ export const blank = (cell) => { const s = clean(cell); return s === '' || PLACE
 
 // Lines of a section whose heading text is `title` (any level), up to the next heading of the same or higher level.
 // Fenced code blocks are skipped so an example inside ``` does not count.
-export function section(md, title) {
+// With keepFences, the fenced lines stay in the returned text (a heading-looking line inside a fence still never
+// ends the section), so a caller that asks "is there any content?" counts a code block as content.
+export function section(md, title, keepFences = false) {
   const lines = md.split(/\r?\n/);
   let level = 0, out = null, fence = false;
   for (const line of lines) {
-    if (/^\s{0,3}(```|~~~)/.test(line)) { fence = !fence; if (out) out.push(''); continue; }
-    if (fence) { if (out) out.push(''); continue; }
+    if (/^\s{0,3}(```|~~~)/.test(line)) { fence = !fence; if (out) out.push(keepFences ? line : ''); continue; }
+    if (fence) { if (out) out.push(keepFences ? line : ''); continue; }
     const h = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
     if (h) {
       if (out) { if (h[1].length <= level) break; out.push(line); continue; }

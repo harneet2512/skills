@@ -10,6 +10,7 @@ How they fit: `feature-loop` runs a feature through `shape`, `deep-engineering` 
 
 ## Model-invoked
 
+- **[plan-first](./plan-first/SKILL.md)**: The planning half of the plan-first workflow: caps the grilling at 3 rounds or 20 minutes, fills the plan template in plan mode, runs pack detection and a read-only design challenge before approval, and writes the plan to a tracked file for `feature-loop` to follow.
 - **[wp-loop](./wp-loop/SKILL.md)**: Ship one work package end to end: issue, engineering contract, branch, TDD, PR, green CI, two-axis review, verified fixes, gated merge, results comment.
 - **[shape](./shape/SKILL.md)**: Intent, actors and surfaces, a journey map crossed with interaction cases, the success metric and the scope line, before any design.
 - **[deep-engineering](./deep-engineering/SKILL.md)**: Build a system model from repo evidence, derive invariants and risks, and write an engineering contract before any spec or code.

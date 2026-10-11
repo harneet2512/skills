@@ -4,6 +4,7 @@
 //   node check-gates.mjs --root <dir> [--work <dir>] --last-commit <unix seconds> --slop <slop-check.sh>
 //                        [--phase build|merge|close] [G1 ... G8]
 //   node check-gates.mjs --root <dir> --timebox
+//   node check-gates.mjs --root <dir> --plan-check [<plan file>]   (needs no run file; see plan-check.mjs)
 //
 // --root holds .scratch/; --work is the git worktree whose code G6 scans (default: --root). A phase narrows the
 // gates to those due at that point of the loop; gate IDs narrow them further.
@@ -11,10 +12,12 @@
 // running or not set, 1 when it is overdue.
 //
 // Exit: 0 every evaluated gate green (or n/a), 1 any red, 2 the run file is invalid.
+// --plan-check: 0 plan complete, 1 sections missing or empty or a Changed line without a reason, 2 no plan file.
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { clean, blank, section, firstTable, tables } from './md-table.mjs';
+import { checkPlan, planCitationsOk, PLAN_STAGES_OK } from './plan-check.mjs';
 import { newestLiveReport, parseDemoBy, parseStarted, timebox } from './timebox.mjs';
 
 const ALL = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
@@ -39,7 +42,7 @@ const CASE_RE = /\bJ[0-9]+\.[a-z][a-z0-9-]*\b/g;
 
 // ---- arguments
 const args = process.argv.slice(2);
-let root = process.cwd(), work = '', lastCommit = 0, slop = '', phase = '', timeboxOnly = false;
+let root = process.cwd(), work = '', lastCommit = 0, slop = '', phase = '', timeboxOnly = false, planCheck = null;
 const wanted = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -49,11 +52,19 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--last-commit') lastCommit = Number(args[++i]) || 0;
   else if (a === '--slop') slop = args[++i];
   else if (a === '--timebox') timeboxOnly = true;
+  else if (a === '--plan-check') planCheck = args[++i] ?? '';
   else if (/^G[1-8]$/.test(a)) { if (!wanted.includes(a)) wanted.push(a); }
   else { console.error(`check-gates: unknown argument: ${a}`); process.exit(2); }
 }
 work = work || root;
 const selected = ALL.filter((g) => (!phase || PHASES[phase].includes(g)) && (!wanted.length || wanted.includes(g)));
+
+// ---- the approved plan: checked before the run file exists, because the plan is written first
+if (planCheck !== null) {
+  const r = checkPlan(root, planCheck);
+  for (const l of r.lines) console.log(l);
+  process.exit(r.code);
+}
 
 // ---- the run file
 const runPath = join(root, '.scratch', 'gates.json');
@@ -317,11 +328,18 @@ function G8() {
   const table = tables(md.split(/\r?\n/)).find((t) => t.header.includes('status') && t.header.includes('evidence'));
   if (!table) return red('no stage table with Status and Evidence columns', P.status);
   const col = (n) => table.header.indexOf(n);
-  const unmarked = [], assumed = [];
+  const unmarked = [], assumed = [], planless = [], wrongStage = [];
   for (const r of table.rows) {
-    if (!/^done\b/i.test(clean(r[col('status')] ?? ''))) continue; // running rows are the Stop hook's business
+    const statusText = clean(r[col('status')] ?? '');
+    if (!/^done\b/i.test(statusText)) continue; // running rows are the Stop hook's business
     const name = [clean(r[col('stage')] ?? ''), clean(r[col('skill')] ?? '')].filter(Boolean).join(' ') || `row ${table.rows.indexOf(r) + 1}`;
     const ev = clean(r[col('evidence')] ?? '');
+    // "done, from approved plan": the stage was written from the approved plan, so the evidence must name a plan
+    // section that exists and has content: `inferred: docs/plans/<file>.md#<Section>`.
+    if (/^done\b.*\bfrom approved plan\b/i.test(statusText)) {
+      if (!PLAN_STAGES_OK(clean(r[col('stage')] ?? ''), clean(r[col('skill')] ?? ''))) wrongStage.push(name);
+      else if (!planCitationsOk(ev, readPlan)) planless.push(`${name} (${ev === '' ? 'empty' : JSON.stringify(ev)})`);
+    }
     const tag = ev.replace(/^[`*_\s]+/, ''); // `measured:` or **measured:** still counts
     if (!/^(measured|inferred|assumed):/i.test(tag)) unmarked.push(`${name} (${ev === '' ? 'empty' : JSON.stringify(ev)})`);
     else if (/^assumed:/i.test(tag) && !/(^|[^A-Za-z])(measured|inferred):/i.test(tag)) assumed.push(name);
@@ -329,7 +347,16 @@ function G8() {
   const problems = [];
   if (unmarked.length) problems.push(`done stage without evidence (measured:, inferred: or assumed:): ${listShort(unmarked, 4)}`);
   if (assumed.length) problems.push(`a stage cannot be done on an assumption: ${listShort(assumed, 4)}`);
+  if (wrongStage.length) problems.push(`"done, from approved plan" is only for stages 0, 1 and 3 (baseline, shape, to-tickets); stage 2 and every build, prove and later stage still run: ${listShort(wrongStage, 4)}`);
+  if (planless.length) problems.push(`"done, from approved plan" without an existing plan section as evidence (inferred: docs/plans/<file>.md#<Section>): ${listShort(planless, 4)}`);
   return problems.length ? red(problems.join('; '), P.status) : green();
+}
+
+// The plan is a tracked file (docs/plans/), so read it from the loop root, else from the worktree being checked.
+function readPlan(p) {
+  const fromRoot = read(p);
+  if (fromRoot !== null || work === root) return fromRoot;
+  try { return readFileSync(join(work, p), 'utf8'); } catch { return null; }
 }
 
 const IMPL = { G1, G2, G3, G4, G5, G6, G7, G8 };

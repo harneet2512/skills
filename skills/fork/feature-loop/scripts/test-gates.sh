@@ -849,6 +849,75 @@ rm -f "$par/.scratch/review/$SLUG.md"
 (cd "$par" && "$check" G6 >/dev/null 2>&1); g=$?; c="$(hook_code "$par" "git commit -m x")"
 pass_if "parity: a missing review file blocks both" test "$g/$c" = "1/2"
 
+# ---- the approved plan (plan-first workflow): stages it covers are done from it, not re-run
+
+plan_repo() { # <name> <plan fixture> <ledger fixture>: a normal loop with the plan and the ledger in place
+  local d; d=$(new_repo "$1"); green_normal "$d"
+  put "$d" "$2" "docs/plans/$SLUG.md"; put "$d" "$3" .scratch/loop-status.md
+  printf '%s' "$d"
+}
+
+d=$(plan_repo plan-ledger plan-complete.md loop-status-from-plan.md)
+expect "a loop with an approved plan marks those stages done instead of re-running them" "$d" 0 "G8 green" 0 G8
+sp="$(printf '%s' "$(start_payload "$d")" | bash "$here/session-start-hook.sh" 2>&1)"
+pass_if "the loop resumes after the stages the plan covered, at stage 4" bash -c 'printf "%s\n" "$1" | grep -qF -- "Resume at: stage 4 tdd (pending)"' _ "$sp"
+pass_if "stages done from the plan are not listed as open" test -z "$(printf '%s\n' "$sp" | grep -F -- '- 1 shape')"
+ev_stop="$(printf '%s' "$(stop_payload "$d" false)" | bash "$here/stop-hook.sh" 2>&1)"; code=$?
+pass_if "stages done from the plan never hold the Stop hook" test "$code" = 0 -a -z "$ev_stop"
+
+d=$(plan_repo plan-ledger-nosection plan-complete.md loop-status-from-plan-no-section.md)
+expect "G8 red: from approved plan citing a section the plan lacks" "$d" 1 '"done, from approved plan" without an existing plan section as evidence' 1 G8
+d=$(plan_repo plan-ledger-nofile plan-complete.md loop-status-from-plan-no-file.md)
+expect "G8 red: from approved plan citing a plan file that does not exist" "$d" 1 '3 to-tickets' 1 G8
+d=$(plan_repo plan-ledger-nocite plan-complete.md loop-status-from-plan-no-cite.md)
+expect "G8 red: from approved plan with evidence that names no plan section" "$d" 1 '1 shape ("inferred: the approved plan covers it")' 1 G8
+d=$(plan_repo plan-ledger-assumed plan-complete.md loop-status-from-plan-assumed.md)
+expect "G8 red: from approved plan on an assumption is still not done" "$d" 1 "a stage cannot be done on an assumption: 1 shape" 1 G8
+d=$(plan_repo plan-ledger-empty plan-missing.md loop-status-from-plan-empty-section.md)
+expect "G8 red: from approved plan citing a section that is only TBD" "$d" 1 '1 shape ("inferred: docs/plans/reply-options.md#Failure modes")' 1 G8
+d=$(plan_repo plan-ledger-measured plan-complete.md loop-status-from-plan-measured.md)
+expect "G8 red: from approved plan needs inferred: evidence, not measured:" "$d" 1 '1 shape ("measured: docs/plans/reply-options.md#Decisions")' 1 G8
+d=$(plan_repo plan-ledger-second plan-complete.md loop-status-from-plan-second-bad.md)
+expect "G8 red: every citation is checked, not only the first" "$d" 1 "without an existing plan section as evidence" 1 G8
+d=$(plan_repo plan-ledger-stage plan-complete.md loop-status-from-plan-wrong-stage.md)
+expect "G8 red: from approved plan on stage 2 or the build is refused" "$d" 1 "is only for stages 0, 1 and 3 (baseline, shape, to-tickets); stage 2 and every build, prove and later stage still run: 2 deep-engineering, 4 tdd" 1 G8
+d=$(plan_repo plan-ledger-fenced plan-fenced.md loop-status-from-plan.md)
+expect "G8 green: a plan section that is only a fenced block counts as content" "$d" 0 "G8 green" 0 G8
+d=$(plan_repo plan-ledger-plain plan-complete.md loop-status.md)
+expect "G8: a plain done row needs no plan" "$d" 0 "G8 green" 0 G8
+
+# check-gates.sh --plan: names each missing section, needs no run file
+d=$(new_repo plan-check); mkdir -p "$d/docs/plans"
+expect "--plan: no plan file is a usage-level error" "$d" 2 "plan: no plan file" - --plan
+put "$d" plan-complete.md docs/plans/reply-options.md
+expect "--plan: a complete plan is green, with no run file" "$d" 0 "plan: complete (12 sections, 0 deviation lines)" - --plan
+expect "--plan: an explicit file" "$d" 0 "plan: complete" - --plan docs/plans/reply-options.md
+put "$d" plan-missing.md docs/plans/reply-options.md
+expect "--plan: names the missing section" "$d" 1 'plan red: missing section "Time box"' - --plan
+expect "--plan: names the empty section" "$d" 1 'plan red: empty section "Failure modes"' - --plan
+expect "--plan: summary lists both" "$d" 1 "plan: red, 2 sections missing or empty (Failure modes, Time box)" - --plan
+put "$d" plan-with-changes.md docs/plans/reply-options.md
+expect "--plan: counts Changed lines" "$d" 0 "plan: complete (12 sections, 2 deviation lines)" - --plan
+put "$d" plan-changed-no-reason.md docs/plans/reply-options.md
+expect "--plan: a Changed line without because is red" "$d" 1 'plan red: Changed line without "because <reason>": "dropped the retry queue"' - --plan
+cp "$here/../../plan-first/plan-template.md" "$d/docs/plans/reply-options.md"
+expect "--plan: the unfilled template is red in every section" "$d" 1 "plan: red, 12 sections missing or empty" - --plan
+put "$d" plan-fenced.md docs/plans/reply-options.md
+expect "--plan: a section holding only a fenced block (with a heading-like line inside) is not empty" "$d" 0 "plan: complete (12 sections" - --plan
+put "$d" plan-header-only-table.md docs/plans/reply-options.md
+expect "--plan: a header-only table is an empty section" "$d" 1 'plan red: empty section "Tickets and seams"' - --plan
+mkdir -p "$d/src/deep"; put "$d" plan-complete.md docs/plans/reply-options.md
+expect "--plan: a relative file resolves from the repo root when run from a subdirectory" "$d/src/deep" 0 "plan: complete" - --plan docs/plans/reply-options.md
+expect "--plan: a run from a subdirectory finds the newest plan" "$d/src/deep" 0 "plan: complete" - --plan
+cp "$here/../../plan-first/plan-template.md" "$d/docs/plans/reply-options.md"
+d2=$(new_repo plan-slug); gates_json "$d2" normal
+put "$d2" plan-complete.md "docs/plans/$SLUG.md"; put "$d2" plan-missing.md docs/plans/zz-newer.md; newer "$d2" docs/plans/zz-newer.md
+expect "--plan: picks the plan named for the loop's slug over a newer file" "$d2" 0 "plan: complete" - --plan
+rm "$d2/.scratch/gates.json"
+expect "--plan: without a loop it falls back to the newest plan" "$d2" 1 "plan red" - --plan
+expect "--plan with gate IDs is a usage error" "$d" 2 "--plan checks only the approved plan" - --plan G1
+expect "--plan with --phase is a usage error" "$d" 2 "--plan checks only the approved plan" - --plan --phase build
+
 # ---- errors are not hidden
 
 fa=$(new_repo add-fails); gates_json "$fa" normal
