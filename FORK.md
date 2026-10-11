@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds ten skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.9.3`
+- **Fork version:** `1.3.1-fork.9.4`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -18,8 +18,8 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9.3`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9.3` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9.4`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9.4` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -447,6 +447,13 @@ Found by live run 2 on `workflow-toy-todo`:
 | No merge, issue untouched | `wp-loop` steps 12 and 13, `check-comment.md`; `merge-gate.md` removed | The PR says `Closes #N`; the results comment goes on the PR only; the reviewer merges |
 | Reviewer's product rules | `wp-loop` "The reviewer's product rules" and step 11, `plan-first` rules | Eight fixed rules (a person presses the button, no secrets, reference repos read-only, append-only records, text is data, plain copy, show it half done, one blocked message) become plan decisions, contract invariants, tests and a diff scan before the PR |
 | Build never pauses | `wp-loop` step 5 and step 13 | The next issue branches from the previous one when its PR is open, and the plan is checked against what was built before it starts |
+
+| Approvals alone are not a loop (fork.9.4) | `feature-loop/scripts/stage-guard.mjs`, `test-gates.sh` A3 | `approve acceptance` and `approve plan` create the signed store, but `wp-loop` never starts a feature loop. A store with no signed `init` entry passes the push and PR guard; a started loop whose `gates.json` is deleted is still refused (H5). Found by the HAR-180 dry run, where every push and PR was refused |
+| PR body from the record | `wp-loop` steps 11 and 12 | Check output is saved under `.scratch/checks/<slug>/`; every check the PR body lists is copied from its file, and a check with no file is `not run`. Found when a PR body claimed a review that had not run |
+| Adversarial review at every size | `wp-loop` step 9 | `adversarial-review` runs on every issue, Tiny included; a missing shape file is `n/a`, not a stop |
+| Results comment and status update right away | `wp-loop` step 13 | Posted with `gh pr comment` and confirmed as soon as the PR opens; the status update is handed over before the next issue starts |
+| Live-check helpers outside the evidence folder | `wp-loop` step 7 and step 9 | Helpers go in `.scratch/live-checks/<slug>/`; nothing writes, copies or redirects into `.scratch/live/` or a codex report by hand, so the tamper escalation stays quiet unless something is wrong |
+| Baseline once per stack | `wp-loop` step 11 | When the default branch is already red, its failures are recorded once in `.scratch/baseline.md` and each issue shows the set is unchanged |
 
 `feature-loop` is not part of this workflow; its stage 7 text still names `wp-loop` steps 12 and 13.
 

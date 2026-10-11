@@ -2,7 +2,8 @@
 // stage hooks and then made to vanish? The out-of-repo state.json marks a loop that was started; this refuses a push or
 // a merge when its .scratch/gates.json is gone, or says "closed" without a signed close entry from a passing close phase.
 //
-//   node stage-guard.mjs <dir>     exit 0 nothing to refuse (no loop was ever started here, or it closed properly),
+//   node stage-guard.mjs <dir>     exit 0 nothing to refuse (no loop was ever started here, only approvals were
+//                                  signed, or it closed properly),
 //                                  exit 1 with the reason on stdout
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -31,6 +32,9 @@ try {
     console.log(`the loop "${found.state.slug}" has no readable record (${log.errors[0]}), so it cannot be shown to have closed properly`);
     process.exit(1);
   }
+  // A store with no signed init was made by the owner's approvals (approve acceptance, plan or pr) for a loop that
+  // never started here, such as wp-loop on its own: nothing was started, so nothing can have vanished.
+  if (!log.entries.some((e) => e.kind === 'init')) process.exit(0);
   const closedSigned = epochOf(log.entries).closed;
   if (closedSigned) process.exit(0);
   console.log(closedFlag

@@ -1323,6 +1323,13 @@ printf '{ "slug": "%s", "size": "small", "base": "main", "status": "closed" }\n'
 hook_case "H5: a loop closed after its signed close entry is silent" "$d" "git push -u origin feature" 0 ""
 rm -f "$d/.scratch/gates.json"
 hook_case "H5: a deleted gates.json after a signed close is fine" "$d" "git push -u origin feature" 0 ""
+# fork.9.4: wp-loop on its own. The owner's approvals create the signed store but no loop ever starts (no init entry),
+# so a push or a PR is not a vanished loop. A started loop whose gates.json is deleted is still refused (H5 above).
+d=$(new_repo stage-approvals-only)
+node -e 'import(require("url").pathToFileURL(process.argv[1]).href).then((m) => { const why = m.recordSigned(process.argv[2], { kind: "approval", stop: "plan", plan_sha: "abc", plan_file: "docs/plans/p.md", ts: new Date().toISOString(), session: "s1" }); if (why) { console.error(why); process.exit(1); } })' "$here/approval.mjs" "$d"
+pass_if "A3: approvals alone make a signed store with no init entry" bash -c 'test -s "$1" && grep -qF "\"kind\":\"approval\"" "$1" && ! grep -qF "\"kind\":\"init\"" "$1"' _ "$(log_of "$d")"
+pass_if "A3: stage-guard passes a store with approvals and no init" bash -c 'node "$1" "$2"' _ "$here/stage-guard.mjs" "$d"
+HOOK_NOREADY=1 hook_case "A3: a push with only approvals signed is not a vanished loop" "$d" "git push -u origin feature" 0 ""
 
 # ---- errors are not hidden
 
