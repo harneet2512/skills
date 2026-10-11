@@ -14,13 +14,13 @@ The owner's workflow: **brief → grill → acceptance tests (stop 1) → plan m
 
 ## 2. Acceptance tests: stop 1
 
-End the grill with **3 to 5 acceptance tests** in the owner's words, one line each, `AT<n>: <observable behaviour>`: what someone could watch happen to know the feature works. Not implementation details. Show them and ask the owner to reply `approve acceptance` (or edit them). They go into the plan's `## Acceptance tests` section and become the final check: gate G12 refuses the PR until each has a passing test or live-verify scenario named after it.
+End the grill with **3 to 5 acceptance tests** in the owner's words, one line each, `AT<n>: <observable behaviour>`: what someone could watch happen to know the feature works. Not implementation details. Write them to `docs/acceptance/<slug>.md` under a `## Acceptance tests` heading (the approval is keyed to that file's items), show them, and ask the owner to reply `approve acceptance` (or edit them). They go into the plan's `## Acceptance tests` section and become the final check: gate G12 refuses the PR until each has a passing test or live-verify scenario named after it.
 
 Only the owner's own message approves (the hook signs it); never write an approval yourself.
 
 ## 3. Plan in plan mode
 
-The plan is a **tracked file**. The target repo's `.claude/settings.json` has `{ "plansDirectory": "docs/plans" }` (add it if missing, before planning). Never put the plan in `.scratch/`.
+After `approve acceptance`, enter plan mode yourself (call the EnterPlanMode tool; load it with ToolSearch if it is deferred), so the owner does not have to switch modes. The plan is a **tracked file**. The target repo's `.claude/settings.json` has `{ "plansDirectory": "docs/plans" }` (add it if missing, before planning). Never put the plan in `.scratch/`.
 
 1. Fill [plan-template.md](plan-template.md) in plan mode, keeping its headings exactly. A section that does not apply says `n/a: <reason>`. Size by risk (`feature-loop`, "Size it first").
 2. Run the `behavioral-envelope` skill's `scripts/detect-packs.sh --plan <draft>` (read-only, allowed in plan mode) and put the packs and their triggering lines under `## Concerns`.
@@ -31,7 +31,7 @@ The plan is a **tracked file**. The target repo's `.claude/settings.json` has `{
 When the owner accepts the plan to leave plan mode, the hook tells you this too: **do not implement.**
 
 1. Commit the plan file.
-2. Call the Skill tool with `codex-review` in plan mode on the plan file. It runs `gpt-6-astra` read-only against the real repo and writes `.scratch/review/codex-plan-<slug>.json`.
+2. Call the Skill tool with `codex-review` in plan mode on the plan file, in the foreground, with `--slug <slug>`: the `slug` that `.scratch/gates.json` will hold (the plan file's name unless the loop already has one), because gates G10 and G11 read the report by it. It runs `gpt-6-astra` read-only against the real repo and writes `.scratch/review/codex-plan-<slug>.json`.
 3. Fold every CONFIRMED finding into the plan (change the section it concerns) and write each resolution in `.scratch/review/codex-plan-<slug>.resolutions.md`. Fill `## Design challenge` with the report path, the findings and how each is resolved. Run `feature-loop`'s `scripts/check-gates.sh --plan` until it exits 0. Commit.
 4. If codex is unavailable, say so to the owner; the fallback is the read-only subagent in [design-challenge.md](design-challenge.md), recorded as a bypass.
 
@@ -42,5 +42,7 @@ Show the owner, in this order: the codex summary line, every CONFIRMED finding w
 ## After stop 2
 
 - When the build finds reality differs from the plan, append `- Changed: <what> because <why>` under `## Changes` in the same commit as the code. The owner is told immediately (an escalation line); no approval is needed unless the change touches an acceptance test, which needs a fresh `approve acceptance`.
+
+**The acceptance map (`.scratch/acceptance.md`, gate G12).** One row per acceptance test, `| AT id | test path or scenario name | last result on <sha> |`. The test cell is exactly one of: a live-verify scenario name; a tracked test file path (`tests/a.test.js`, optionally `:line`); or `path::test name`. The result cell is `pass <sha>` for the HEAD it ran on.
 
 **Done when:** the acceptance tests are approved, the plan passes `check-gates.sh --plan`, the codex plan review ran on it with every CONFIRMED finding resolved, the owner typed `approve plan`, and `feature-loop` has started on it.

@@ -371,7 +371,7 @@ if (phase === 'pr' && !wanted.length) {
     let r;
     try { r = check(codexCtx); } catch (e) { r = { state: 'red', msg: `check crashed: ${e.message}` }; }
     counts[r.state]++;
-    console.log(r.state === 'green' ? `${name} green` : `${name} red: ${r.msg}`);
+    console.log(r.state === 'green' ? `${name} green${r.note ? ` ${r.note}` : ''}` : `${name} red: ${r.msg}`);
   }
 }
 const verdict = counts.red ? 'red' : 'green';

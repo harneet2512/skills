@@ -193,7 +193,7 @@ The build follows Matt's `implement-spec`: the whole feature lands on one integr
    **Done when:** G3, G4 (when evals apply) and G6 are green, and CI is green on the head.
 
 6. **Attack** (fork, codex). **Requires:** gate G3 green (`check-gates.sh G3`). A product that has not passed its live run is not attacked yet: its first failures are cheaper to find by running it.
-   - Commit everything, then call the Skill tool with `codex-review` in **code** mode with the integration base: `gpt-6-astra` reviews the diff adversarially and writes a repro test for every suspected defect in a throwaway worktree, so a finding is CONFIRMED only when its repro fails on HEAD. It writes `.scratch/review/codex-code-<slug>.json` stamped with HEAD.
+   - Commit everything, then call the Skill tool with `codex-review` in **code** mode, in the foreground, with the integration base and `--slug <the slug of .scratch/gates.json>` (G11 reads the report by it): `gpt-6-astra` reviews the diff adversarially and writes a repro test for every suspected defect in a throwaway worktree, so a finding is CONFIRMED only when its repro fails on HEAD. It writes `.scratch/review/codex-code-<slug>.json` stamped with HEAD.
    - Fix every CONFIRMED CRITICAL and HIGH as a commit on the branch: bring its repro into the repo's tests, see it fail, fix, see it pass. Write each resolution (`fixed: <commit>` or `rejected: <reason>`) in `.scratch/review/codex-code-<slug>.resolutions.md`. MEDIUM and LOW are fixed or filed.
    - Fixes are new commits, so rerun `live-verify` and the codex code attack on the new head (G3 and G11 need reports on HEAD). One fix round; a CONFIRMED HIGH that survives it is `blocked:` for the owner.
    - Record each CONFIRMED finding as an escape from stage 2 or 4.

@@ -111,12 +111,13 @@ check "plan: codex_version stamped" '[ "$(jq_ "$j" codex_version)" = "codex-cli 
 check "plan: exit_code stamped 0" '[ "$(jq_ "$j" exit_code)" = 0 ]'
 check "plan: findings preserved, no resolution key" '[ "$(jq_ "$j" findings.length)" = 2 ] && ! grep -q resolution "$j"'
 check "plan: markdown rendered" 'grep -q "missing rollback" "$repo/.scratch/review/codex-plan-demo.md"'
-check "plan: one-line summary" '[ "$(lines "$work/stdout")" = 1 ] && grep -q "1 CONFIRMED (1 HIGH), 1 PLAUSIBLE" "$work/stdout"'
-check "plan: timeline line appended" 'grep -q "codex plan review" "$repo/.scratch/timeline.md" && [ "$(lines "$repo/.scratch/timeline.md")" = 1 ]'
+check "plan: one-line summary first" 'head -n 1 "$work/stdout" | grep -q "1 CONFIRMED (1 HIGH), 1 PLAUSIBLE"'
+check "plan: a CONFIRMED HIGH prints an ESCALATION line (A13)" '[ "$(lines "$work/stdout")" = 2 ] && sed -n 2p "$work/stdout" | grep -q "^ESCALATION: 1 CONFIRMED CRITICAL or HIGH"'
+check "plan: timeline row is a table row in timeline.mjs format (S2)" 'rows="$(grep -c "^| 20" "$repo/.scratch/timeline.md")"; [ "$rows" = 1 ] && head -n 1 "$repo/.scratch/timeline.md" | grep -qF "| time UTC | event | detail | evidence |" && grep -q "^| 20[0-9:TZ-]* | codex-review | codex plan review.*| .scratch/review/codex-plan-demo.md |$" "$repo/.scratch/timeline.md" && ! grep -q "^- " "$repo/.scratch/timeline.md"'
 check "plan: no resolutions file written" '! ls "$repo/.scratch/review/"*resolutions* >/dev/null 2>&1'
 check "plan: working tree untouched" '[ "$(git -C "$repo" status --porcelain)" = "$before" ]'
 STUB_MODE=ok STUB_CANNED="$canned_plan" run "$repo" plan plan.md --slug demo
-check "plan: second run appends a second timeline line" '[ "$(lines "$repo/.scratch/timeline.md")" = 2 ]'
+check "plan: second run appends a second timeline row" '[ "$(grep -c "^| 20" "$repo/.scratch/timeline.md")" = 2 ]'
 STUB_MODE=ok STUB_CANNED="$canned_plan" CODEX_REVIEW_MODEL=other-model run "$repo" plan plan.md
 check "plan: CODEX_REVIEW_MODEL overrides, slug defaults to file stem" 'grep -qx "model=other-model" "$STUB_LOG" && [ -f "$repo/.scratch/review/codex-plan-plan.json" ]'
 
@@ -138,7 +139,49 @@ check "code: no repro dir for PLAUSIBLE" '[ ! -d "$repo/.scratch/review/codex-re
 check "code: summary line" 'grep -q "codex code attack on ${head:0:7} by gpt-6-astra: 2 CONFIRMED (1 CRITICAL, 1 HIGH), 1 PLAUSIBLE" "$work/stdout"'
 check "code: target working tree untouched" '[ "$(git -C "$repo" status --porcelain)" = "$before" ]'
 check "code: target has no repro file in tests/" '[ ! -e "$repo/tests/repro_c1.test.js" ]'
-check "code: timeline line" 'grep -q "codex code attack" "$repo/.scratch/timeline.md"'
+check "code: timeline row" 'grep -q "^| 20.*| codex-review | codex code attack" "$repo/.scratch/timeline.md"'
+check "code: CRITICAL/HIGH prints ESCALATION with the count" 'grep -q "^ESCALATION: 2 CONFIRMED CRITICAL or HIGH" "$work/stdout"'
+
+# --- the default slug is the loop's slug (S1) ------------------------------------------------------------------
+repo="$(new_repo)"; mkdir -p "$repo/.scratch"; printf '{ "slug": "loop-slug", "size": "normal", "base": "main" }
+' > "$repo/.scratch/gates.json"
+STUB_MODE=ok STUB_CANNED="$canned_plan" run "$repo" plan plan.md
+check "slug: plan mode defaults to the slug of .scratch/gates.json" '[ "$(rc)" = 0 ] && [ -f "$repo/.scratch/review/codex-plan-loop-slug.json" ] && [ ! -e "$repo/.scratch/review/codex-plan-plan.json" ]'
+STUB_MODE=ok STUB_CANNED="$canned_code" run "$repo" code HEAD~1
+check "slug: code mode defaults to the slug of .scratch/gates.json" '[ "$(rc)" = 0 ] && [ -f "$repo/.scratch/review/codex-code-loop-slug.json" ]'
+STUB_MODE=ok STUB_CANNED="$canned_plan" run "$repo" plan plan.md --slug explicit
+check "slug: --slug still wins" '[ -f "$repo/.scratch/review/codex-plan-explicit.json" ]'
+printf '{ "slug": "loop-slug", "status": "closed" }
+' > "$repo/.scratch/gates.json"
+STUB_MODE=ok STUB_CANNED="$canned_plan" run "$repo" plan plan.md
+check "slug: a closed loop's slug is not used" '[ -f "$repo/.scratch/review/codex-plan-plan.json" ]'
+printf '{ broken' > "$repo/.scratch/gates.json"; rm -f "$repo/.scratch/review/codex-plan-plan.json"
+STUB_MODE=ok STUB_CANNED="$canned_plan" run "$repo" plan plan.md
+check "slug: an unreadable gates.json falls back to the old default" '[ "$(rc)" = 0 ] && [ -f "$repo/.scratch/review/codex-plan-plan.json" ]'
+
+# --- CRLF: the hash is of the LF form (S3) ------------------------------------------------------------------------
+repo="$(new_repo)"; printf '# Plan
+step
+' > "$repo/plan.md"
+STUB_MODE=ok STUB_CANNED="$canned_plan" run "$repo" plan plan.md --slug crlf
+lf_sha="$(printf '# Plan
+step
+' | { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; } | cut -d' ' -f1)"
+check "crlf: subject_sha of a CRLF plan is the sha256 of its LF form" '[ "$(jq_ "$repo/.scratch/review/codex-plan-crlf.json" subject_sha)" = "$lf_sha" ]'
+repo="$(new_repo)"
+STUB_MODE=ok STUB_CANNED="$canned_plan" run "$repo" plan plan.md --slug lf
+check "crlf: an LF plan hashes to the same" '[ "$(jq_ "$repo/.scratch/review/codex-plan-lf.json" subject_sha)" = "$lf_sha" ]'
+
+# --- no ESCALATION without a CONFIRMED CRITICAL/HIGH; fallback timeline row without timeline.mjs (S2) ---------------
+canned_low="$work/canned-low.json"
+printf '%s' '{"summary":"fine","findings":[{"id":"P1","severity":"LOW","status":"CONFIRMED","title":"t","where":"plan.md:1","evidence":"e","repro":null}]}' > "$canned_low"
+repo="$(new_repo)"
+STUB_MODE=ok STUB_CANNED="$canned_low" run "$repo" plan plan.md --slug low
+check "escalation: a CONFIRMED LOW prints no ESCALATION" '[ "$(rc)" = 0 ] && ! grep -q "^ESCALATION:" "$work/stdout" && [ "$(lines "$work/stdout")" = 1 ]'
+iso="$work/iso"; mkdir -p "$iso"; cp -r "$here/.." "$iso/codex-review"
+repo="$(new_repo)"
+( cd "$repo" && echo x | STUB_MODE=ok STUB_CANNED="$canned_low" "$iso/codex-review/scripts/codex-review.sh" plan plan.md --slug fb ) > "$work/stdout" 2> "$work/stderr"; echo $? > "$work/rc"
+check "fallback: with no timeline.mjs it writes a well-formed table row" '[ "$(rc)" = 0 ] && head -n 1 "$repo/.scratch/timeline.md" | grep -qF "| time UTC | event | detail | evidence |" && [ "$(grep -c "^| 20[0-9:TZ-]* | codex-review | " "$repo/.scratch/timeline.md")" = 1 ]'
 
 # --- failures: never fake a report ------------------------------------------------------------------------------
 repo="$(new_repo)"

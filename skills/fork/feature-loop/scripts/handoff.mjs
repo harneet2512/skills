@@ -3,14 +3,25 @@
 import { appendTimeline } from './timeline.mjs';
 import { changesSha, recordSigned } from './approval.mjs';
 import { newestPlan } from './vis-root.mjs';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const now = () => process.env.FEATURE_LOOP_NOW || new Date().toISOString();
 
-export const handoffText = (planRel) => [
+// The slug the codex review and gates.json share: G10 and G11 read .scratch/review/codex-<kind>-<slug>.json for the slug in
+// .scratch/gates.json, so the review is run with that slug (the plan file's name is the natural one).
+export const slugOf = (planRel) => (planRel ? planRel.split('/').pop().replace(/\.md$/i, '') : '<slug>');
+
+// The slug of .scratch/gates.json when a loop's run file already exists, else the plan file's name.
+const gatesSlug = (root) => { try { const s = JSON.parse(readFileSync(join(root, '.scratch', 'gates.json'), 'utf8'))?.slug; return typeof s === 'string' ? s : ''; } catch { return ''; } };
+
+export const handoffText = (planRel, slug = '') => [
   `feature-loop hand-off: the plan was approved in plan mode${planRel ? ` (${planRel})` : ''}. Do NOT implement anything yet.`,
   '1. Commit the plan file.',
-  '2. Run the `codex-review` skill in plan mode on the plan file (`scripts/codex-review.sh plan <plan-file>`).',
-  '3. Fold every CONFIRMED finding into the plan, and write each resolution to `.scratch/review/codex-plan-<slug>.resolutions.md` (`fixed: <commit>` or `rejected: <reason>`).',
+  '2. Run the `codex-review` skill in plan mode on the plan file, in the foreground (`scripts/codex-review.sh plan <plan-file> --slug ' + (slug || slugOf(planRel))
+    + '`). The slug must be the `slug` of .scratch/gates.json, which G10 and G11 read the reports by: use the same one when you start the loop.',
+  '3. Fold every CONFIRMED finding into the plan, and write each resolution to `.scratch/review/codex-plan-' + (slug || slugOf(planRel))
+    + '.resolutions.md` (`fixed: <commit>` or `rejected: <reason>`).',
   '4. Present the findings and the revised plan to the owner. This is stop 2: STOP and wait.',
   '5. Only when the owner types "approve plan", invoke the `feature-loop` skill on the plan. Nothing else waits for approval.',
 ].join('\n');
@@ -26,6 +37,6 @@ export function handoff(root, dirs, session, sha256) {
   const note = why ? ` (hand-off NOT recorded in the signed log: ${why})` : '';
   return {
     message: `plan approved in plan mode: handed off to codex plan review, then stop 2 (your go) before any build${note}`,
-    context: handoffText(plan?.rel ?? ''),
+    context: handoffText(plan?.rel ?? '', gatesSlug(root)),
   };
 }

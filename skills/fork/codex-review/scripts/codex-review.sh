@@ -26,16 +26,40 @@ now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # native <path>: the path form node and codex understand (Windows drive form under Git Bash, unchanged elsewhere).
 native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
+# sha256_file <file>: the sha256 of the file with CRLF turned into LF, so a plan checked out with autocrlf on Windows
+# hashes like the blob Git stores (gate G10 hashes committed LF blobs).
 sha256_file() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+  if command -v sha256sum >/dev/null 2>&1; then tr -d '\r' < "$1" | sha256sum | cut -d' ' -f1; else tr -d '\r' < "$1" | shasum -a 256 | cut -d' ' -f1; fi
 }
 
 slugify() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//; s/-*$//' | cut -c1-60; }
 
-# timeline <text>: one append-only row for the owner's visibility.
+# timeline <text> [evidence]: one append-only table row for the owner's visibility, written by the feature loop's own
+# timeline.mjs (the two skills are siblings); a correctly formatted row by hand only when node or timeline.mjs is missing.
 timeline() {
+  local tl="$skill/../feature-loop/scripts/timeline.mjs" tf="$ROOT/.scratch/timeline.md"
   mkdir -p "$ROOT/.scratch"
-  printf -- '- %s %s\n' "$(now)" "$1" >> "$ROOT/.scratch/timeline.md"
+  if command -v node >/dev/null 2>&1 && [ -f "$tl" ]; then
+    node "$(native "$tl")" "$(native "$ROOT")" codex-review "$1" "${2:-}" && return 0
+  fi
+  [ -f "$tf" ] || printf '| time UTC | event | detail | evidence |\n|---|---|---|---|\n' >> "$tf"
+  printf '| %s | codex-review | %s | %s |\n' "$(now)" "$(cell "$1")" "$(cell "${2:-}")" >> "$tf"
+}
+cell() { printf '%s' "$1" | tr '\r\n' '  ' | sed 's/|/\\|/g'; }
+
+# gates_slug: the "slug" of the loop's .scratch/gates.json (the repo's, or its main worktree's), or nothing. G10 and G11
+# read codex-<kind>-<that slug>.json, so it is the default slug whenever a loop runs.
+gates_slug() {
+  local lr="$skill/../feature-loop/scripts/loop-root.sh" r="" rc=0
+  command -v node >/dev/null 2>&1 || return 0
+  if [ -f "$lr" ]; then
+    # shellcheck source=/dev/null
+    . "$lr"
+    r="$(loop_root "$ROOT")" || rc=$?
+    [ "$rc" -eq 0 ] || r=""
+  elif [ -f "$ROOT/.scratch/gates.json" ]; then r="$ROOT"; fi
+  [ -n "$r" ] || return 0
+  node -e 'try { const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).slug; if (typeof s === "string") process.stdout.write(s); } catch {}' "$(native "$r/.scratch/gates.json")"
 }
 
 parse_args() {
@@ -58,11 +82,13 @@ resolve_subject() {
     [ -f "$TARGET" ] || die "plan file not found: $TARGET"
     PLAN_ABS="$(cd "$(dirname "$TARGET")" && pwd)/$(basename "$TARGET")"
     SUBJECT_SHA="$(sha256_file "$PLAN_ABS")"
+    [ -n "$SLUG" ] || SLUG="$(gates_slug)"
     [ -n "$SLUG" ] || SLUG="$(basename "${TARGET%.*}")"
   else
     git -C "$ROOT" rev-parse --verify --quiet "$TARGET^{commit}" >/dev/null || die "base is not a commit: $TARGET"
     BASE="$TARGET"
     SUBJECT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+    [ -n "$SLUG" ] || SLUG="$(gates_slug)"
     [ -n "$SLUG" ] || SLUG="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
     case "$SLUG" in ""|HEAD) SLUG="${SUBJECT_SHA:0:7}" ;; esac
   fi
@@ -103,7 +129,7 @@ run_codex() {
 # <repro-dir>/<id>/ for each CONFIRMED finding whose repro names them; the rest go to _unassigned.
 collect_repros() {
   local wt="$1" report="$2" dest="$3" f id
-  local -a ids files
+  local -a ids=() files=()
   while IFS= read -r f; do
     [ -f "$wt/$f" ] && files+=("$f")
   done < <(git -C "$wt" ls-files -m -o --exclude-standard)
@@ -116,6 +142,14 @@ collect_repros() {
     done < <(node "$(native "$here/repro-ids.mjs")" "$(native "$report")" "$f")
     if [ "$matched" = 0 ]; then mkdir -p "$dest/_unassigned/$(dirname "$f")"; cp "$wt/$f" "$dest/_unassigned/$f"; fi
   done
+}
+
+# escalate <report.json>: a CONFIRMED CRITICAL or HIGH finding is told to the owner at once, on a line of its own.
+escalate() {
+  local n
+  n="$(node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(String((r.findings || []).filter((f) => f.status === "CONFIRMED" && /^(CRITICAL|HIGH)$/.test(f.severity)).length));' "$(native "$1")" 2>/dev/null || echo 0)"
+  [ "${n:-0}" -gt 0 ] || return 0
+  printf 'ESCALATION: %s CONFIRMED CRITICAL or HIGH finding(s) in .scratch/review/codex-%s-%s.md: tell the owner now, then fix or reject each with a reason\n' "$n" "$KIND" "$SLUG"
 }
 
 fail_run() { # fail_run <exit> <message>
@@ -158,8 +192,9 @@ main() {
   summary="$(node "$(native "$here/report.mjs")" build "$(native "$skill/schemas/findings.schema.json")" "$(native "$raw")" "$(native "$meta")" \
     "$(native "$json")" "$(native "$out_dir/codex-$KIND-$SLUG.md")")" || fail_run "$EXIT_FAIL" "could not write the report"
   [ "$KIND" = code ] && collect_repros "$wt" "$json" "$out_dir/codex-repros"
-  timeline "$summary -> .scratch/review/codex-$KIND-$SLUG.md"
+  timeline "$summary" ".scratch/review/codex-$KIND-$SLUG.md"
   printf '%s\n' "$summary"
+  escalate "$json"
 }
 
 main "$@"

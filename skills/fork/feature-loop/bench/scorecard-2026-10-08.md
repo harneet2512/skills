@@ -1,6 +1,6 @@
 # Scorecard, 2026-10-08
 
-The first measured run of the feature loop's proving and attacking stages, on the reference product in `live-verify/bench/inbox-assist/`: a multi-tenant Slack agent that watches a Gmail inbox, drafts three reply options with an LLM, and sends the chosen one in the same thread. Everything below comes from runs in this session; the raw outputs are in `adversarial-review/bench/` and `evals/examples/inbox-assist/`.
+The first measured run of the feature loop's proving and attacking stages, on the reference product in `bench/inbox-assist/` (at the repo root; it moved out of the shipped skills in fork.9): a multi-tenant Slack agent that watches a Gmail inbox, drafts three reply options with an LLM, and sends the chosen one in the same thread. Everything below comes from runs in this session; the raw outputs are in `adversarial-review/bench/` and `evals/examples/inbox-assist/`.
 
 ## What was measured
 
@@ -102,7 +102,7 @@ The rules were rewritten so each step ends on a checkable **Done when** line, pr
 ## How to rerun
 
 ```
-cd skills/fork/live-verify && node harness/runner.mjs --app bench/inbox-assist --instances 2 --llm stub
+cd skills/fork/live-verify && node harness/runner.mjs --app ../../../bench/inbox-assist --instances 2 --llm stub
 skills/fork/adversarial-review/bench/run-mutants.sh            # control plus every planted bug
 node skills/fork/evals/scripts/run-evals.mjs --help             # see evals/examples/inbox-assist/iteration-1.md for the exact run
 ```

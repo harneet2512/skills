@@ -33,6 +33,7 @@ check celery-task.diff      "core jobs-time data"                               
 check stripe-charge.diff    "core money data"                                       "ui-visual llm"
 check go-handler.diff       "core api"                                              "ui-visual llm money"
 check deps.diff             "core dependencies"                                     "ui-visual llm money"
+check chunks-reader.diff    "core"                                                  "retrieval llm money ui-visual"
 
 # --plan mode: plain-language requests, including packs implied by others.
 check_plan() {

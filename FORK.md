@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds ten skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.9`
+- **Fork version:** `1.3.1-fork.9.1`
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
@@ -18,8 +18,8 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
-| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9.1`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
+| `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9.1` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
 | `CLAUDE.md` | upstream | `## Fork` section at the end |
@@ -392,6 +392,40 @@ The owner's flow, enforced: **grill → acceptance tests (stop 1) → plan mode 
   - the eval gate switched off by editing the envelope.
 
   The owner also asked for a flow they can see end to end, with a cross-vendor adversary.
+
+## 11. Closing the seams the adversarial review found (1.3.1-fork.9.1)
+
+An Opus adversarial review of fork.9 found places where the flow broke between its own parts, and places where a gate could be walked around with one cheap command. This release fixes what can be fixed on the client, and says plainly what cannot.
+
+**The flow broke here, now fixed:**
+
+- **The report slug (S1).** `codex-review.sh` named its report after the plan file or branch, but G10 and G11 read it by the `slug` of `.scratch/gates.json`. The default slug is now that one when a loop's run file exists, and the hand-off, `plan-first` and `codex-review` all say `--slug <slug>`.
+- **The timeline (S2).** `codex-review.sh` appended `- time text` bullets into a table. It now calls `timeline.mjs`, with a correctly formatted row if node or the script is missing.
+- **CRLF (S3).** On Windows with autocrlf the working plan has CRLF and the Git blob LF, so the report's hash never matched G10's committed-version check. Every plan hash (`codex-review.sh`, G10 on both sides, the approval's `plan_sha`) is now of the LF form.
+- **`approve pr` (S4)** must match the exact HEAD. A later commit of a file that is not source no longer counts.
+- **`approve plan` and `approve acceptance` (S5)** name the file and the full sha, and are refused when several candidate files exist unless the prompt names one.
+- **`codex-review` (A13)** is run in the foreground, and prints an `ESCALATION:` line for a CONFIRMED CRITICAL or HIGH. A review with no repro files no longer dies on an empty array.
+
+**Holes closed:**
+
+- **Closed loops (A2).** `status: closed` is read from the top level of the parsed JSON, not by grep: a nested `{"notes":{"status":"closed"}}` no longer disables the gates, and a run file that does not parse is an active loop, not a closed one.
+- **Pushes (A4).** A push to the base branch has no bypass. `git -C`, `--git-dir`, `--work-tree` and `GIT_DIR=` / `GIT_WORK_TREE=` are followed to the repository they name. The `FEATURE_LOOP_GATES=off` escalation is read from lexed tokens, so `of''f` and the like are caught.
+- **GraphQL and REST (A6).** A `gh api graphql` query read from a file or stdin is refused while a loop is active; `enablePullRequestAutoMerge` and `POST .../merges` count as merges.
+- **MCP (A7, A8).** The matcher covers every GitHub MCP tool; auto-merge, `update_pull_request_branch` and writes to the base branch (or an unnamed branch) are refused; reads pass. The payload is parsed as JSON, not with sed.
+- **CI (A9).** `merge_check` from `gates.json` counts for the `pr` phase only when GitHub reports no CI workflows; otherwise `gh run list` decides.
+
+**Found by live run 1 on a real repository:**
+
+- **Heredocs (critical).** `gh pr create` after a heredoc (`cat > body.md <<'EOF' ... EOF`, then a newline) was not classified, so a PR opened with the pr phase red. The hook's lexer now skips heredoc bodies (`<<`, `<<-`, quoted or bare delimiters) and keeps classifying what follows. And it fails closed: while a loop is active, a command that mentions `pr create`, `pr new`, `pr merge`, `pulls`, `createPullRequest`, `mergePullRequest`, `enablePullRequestAutoMerge` or `/merges` in a way no gh parser looked at is refused as ambiguous, with no bypass.
+- **L1 (G9).** `docs/acceptance/` (written at stop 1, before the loop) and tool caches (`.groundtruth/`, `.cache/`, `.pytest_cache/` and the like) are not source for the code-before-plan detector; paths Git ignores never were.
+- **L2 (G4).** The `retrieval` pack is no longer selected by `const chunks = []` in ordinary code: it needs retrieval terms (embedding, vector, rag, retrieval, `top_k`, cosine, similarity search, `chunk_size`, a text splitter and the like).
+- **L3 (G10).** The approved plan is whatever a signed `approve plan` holds, which must be a committed version of the plan file. G10 is green when the codex review is of a committed version at or before it and the plan differs from it only inside `## Changes`; any other edit says a changed plan needs `approve plan` again. `plan_sha` in `gates.json` is informational.
+- **L4 (live-verify).** `"healthz": null` (readiness by a `"ready"` regex or a TCP connect) and no database unless `"db"` is set, so an app with neither no longer needs a custom driver.
+- **G12.** The test cell of `.scratch/acceptance.md` is a live scenario name, a tracked test path (optionally `:line`), or `path::test name`, and the docs say exactly that.
+
+**Not fixable here, so documented (A1, A5, A10, A11).** The hooks run as the agent's own OS user, so an agent can run the approval hook itself, route a command through arbitrary indirection, or forge an evidence file. `gates.md`, "Limits: tamper-evident, not tamper-proof", says so, and names the hard guarantee for "the owner merges": GitHub branch protection with a required review, and an agent token without merge rights.
+
+**Housekeeping (C1, C2).** `codex-review` is in `skills/fork/README.md`; the stale `bench/inbox-assist` paths now point at the repo root; the duplicated fork.9 sentence in `hooks/hooks.json` is gone.
 
 ## Install
 

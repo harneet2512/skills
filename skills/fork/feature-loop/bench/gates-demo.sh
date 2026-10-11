@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end demonstration of the feature-loop gates on the reference product (live-verify/bench/inbox-assist).
+# End-to-end demonstration of the feature-loop gates on the reference product (bench/inbox-assist at the repo root).
 #
 # Builds a throwaway git repo holding the product, writes the loop files a real run leaves behind (the shape,
 # envelope and review files from the product's loop/ folder, a metrics line, the real eval results), runs the
