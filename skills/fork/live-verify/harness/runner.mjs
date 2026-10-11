@@ -4,6 +4,10 @@
 // Boots the stand-ins, boots N app instances against them with a shared SQLite
 // file, waits for each /healthz doctor, runs <app-dir>/scenarios/*.mjs in order,
 // tears down only what it started, keeps the evidence, and exits non-zero on failure.
+// live-verify.json: "healthz" is the readiness path (default "/healthz"); "healthz": null turns the HTTP check off and
+// readiness is a "ready" regex found in the app's output, else a TCP connect to its port. "db" is the SQLite file the
+// instances share ({{db}} in env): true or a file name; without "db" there is no database (an app whose env does not use
+// {{db}} needs none, and an older manifest that uses {{db}} without "db" keeps it).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,6 +38,9 @@ if (!['stub', 'claude'].includes(args.llm)) { console.error('--llm must be stub 
 const appDir = path.resolve(args.app);
 const manifest = JSON.parse(fs.readFileSync(path.join(appDir, 'live-verify.json'), 'utf8'));
 const instanceCount = Math.max(1, Number(args.instances));
+const dbFile = manifest.db === undefined
+  ? (JSON.stringify(manifest.env ?? {}).includes('{{db}}') ? 'app.sqlite' : '')
+  : (manifest.db ? (typeof manifest.db === 'string' ? manifest.db : 'app.sqlite') : '');
 const timeScale = args.llm === 'claude' ? 6 : 1;
 const scenarioTimeoutMs = Number(args.timeout ?? 60000 * timeScale);
 const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`;
@@ -75,7 +82,7 @@ async function startInstance(i, vars) {
     const child = spawn(cmd, cmdArgs, { cwd: appDir, env, stdio: ['ignore', log, log] });
     fs.closeSync(log);
     children.add(child);
-    Object.assign(inst, { url: `http://127.0.0.1:${port}`, child, alive: true });
+    Object.assign(inst, { url: `http://127.0.0.1:${port}`, port, child, alive: true });
     child.once('exit', () => { if (inst.child === child) inst.alive = false; children.delete(child); });
     await waitHealthy(inst);
   };
@@ -90,12 +97,27 @@ async function startInstance(i, vars) {
   return inst;
 }
 
-// The doctor: the app's /healthz must answer 200 before anything drives it.
+const tcpOpen = (port) => new Promise((resolve) => {
+  const sock = net.connect({ port, host: '127.0.0.1' });
+  sock.once('connect', () => { sock.destroy(); resolve(true); });
+  sock.once('error', () => resolve(false));
+});
+
+// The doctor: the app's /healthz must answer 200 before anything drives it. With "healthz": null there is no such path:
+// the app is ready when its output matches the manifest's "ready" regex, else when its port accepts a connection.
 async function waitHealthy(inst, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   let last = 'no answer';
+  const noHttp = manifest.healthz === null;
+  const ready = noHttp && manifest.ready ? new RegExp(manifest.ready) : null;
   while (Date.now() < deadline) {
-    if (!inst.alive) throw new Error(`${inst.id} exited with ${inst.child.exitCode} before /healthz; see ${inst.logFile}`);
+    if (!inst.alive) throw new Error(`${inst.id} exited with ${inst.child.exitCode} before it was ready; see ${inst.logFile}`);
+    if (noHttp) {
+      if (ready ? ready.test(fs.readFileSync(inst.logFile, 'utf8')) : await tcpOpen(inst.port)) return;
+      last = ready ? `output has not matched ${ready}` : 'port not open';
+      await sleep(50);
+      continue;
+    }
     try {
       const res = await fetch(`${inst.url}${manifest.healthz ?? '/healthz'}`, { signal: AbortSignal.timeout(1000) });
       last = `${res.status} ${await res.text()}`;
@@ -124,10 +146,10 @@ function makeContext({ scenario, standins, instances, db, secrets }) {
     apps: instances,
     get app() { return instances[0]; },
     // Rows come back as plain objects so deep-equal assertions compare values only.
-    db: {
+    db: db ? {
       get: (sql, ...p) => { const r = db.prepare(sql).get(...p); return r ? { ...r } : r; },
       all: (sql, ...p) => db.prepare(sql).all(...p).map((r) => ({ ...r })),
-    },
+    } : undefined, // no "db" in live-verify.json
     secrets,
     llmMode: args.llm,
     timeScale,
@@ -161,14 +183,14 @@ async function main() {
     encKey: crypto.randomBytes(32).toString('hex'),
   };
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'live-verify-'));
-  const dbPath = path.join(tmp, 'app.sqlite');
+  const dbPath = dbFile ? path.join(tmp, dbFile) : '';
   const slack = await startSlack({ signingSecret: secrets.slackSigning });
   const gmail = await startGmail({ pushToken: secrets.pushToken });
   const llm = await startLlm({ apiKey: secrets.llmKey, defaultReply: () => 'stub reply' });
   const standins = { slack, gmail, llm };
   const vars = {
     slack: { url: slack.url }, gmail: { url: gmail.url }, llm: { url: llm.url, provider: args.llm === 'claude' ? 'claude-cli' : 'anthropic' },
-    db: dbPath, secrets,
+    ...(dbPath ? { db: dbPath } : {}), secrets,
   };
   const instances = [];
   const run = { runId, app: path.relative(process.cwd(), appDir), instances: instanceCount, llm: args.llm, startedAt: new Date(t0).toISOString(), scenarios: [] };
@@ -182,7 +204,7 @@ async function main() {
     await Promise.all(Object.values(standins).map((s) => s.close()));
     const calls = [...slack.calls(), ...gmail.calls(), ...llm.calls()].sort((a, b) => a.seq - b.seq);
     fs.writeFileSync(path.join(outDir, 'calls.json'), JSON.stringify(calls, null, 2));
-    if (fs.existsSync(dbPath)) {
+    if (dbPath && fs.existsSync(dbPath)) {
       const snap = new DatabaseSync(dbPath);
       snap.exec(`VACUUM INTO '${path.join(outDir, 'db.sqlite').replace(/'/g, "''")}'`);
       snap.close();
@@ -193,7 +215,7 @@ async function main() {
 
   try {
     for (let i = 0; i < instanceCount; i++) instances.push(await startInstance(i, vars));
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    if (dbPath) db = new DatabaseSync(dbPath, { readOnly: true });
     const scenarioDir = path.join(appDir, 'scenarios');
     const setupFile = path.join(scenarioDir, '_setup.mjs');
     const setup = fs.existsSync(setupFile) ? await import(pathToFileURL(setupFile)) : {};
