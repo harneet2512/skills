@@ -43,9 +43,9 @@ stamp_head() {
   node -e 'const fs = require("fs"); const f = process.argv[1]; const j = JSON.parse(fs.readFileSync(f, "utf8")); j.head = process.argv[2]; fs.writeFileSync(f, JSON.stringify(j, null, 2));' "$1/$2" "${3:-$(git -C "$1" rev-parse HEAD)}"
 }
 # Put a file's mtime clearly after the last commit (newer); a report.json or results.json is also stamped with HEAD.
-newer() {
-  touch -d "@$(( $(last_ct "$1") + 5 ))" "$1/$2"
+newer() { # stamp first: rewriting the file after the touch would reset its time to now
   case "$2" in */report.json|*/results.json) stamp_head "$1" "$2" ;; esac
+  touch -d "@$(( $(last_ct "$1") + 5 ))" "$1/$2"
 }
 older() { touch -d "@$(( $(last_ct "$1") - 100 ))" "$1/$2"; }
 # ONLY_FORK9=1 starts with the assertions off (SKIPPING), to run the fork.9 section alone while developing.
@@ -1297,8 +1297,11 @@ approve() { # <stop> <plan_sha or head>: one approval object
   esac
 }
 # at_key <plan file>: the key of its acceptance tests (acceptance-key.mjs), the subject of "approve acceptance".
-at_key() { node --input-type=module -e "import { acceptanceKeyOf } from '$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/acceptance-key.mjs'; import { readFileSync } from 'node:fs'; process.stdout.write(acceptanceKeyOf(readFileSync(process.argv[1], 'utf8')));" "$1"; }
+at_key() { # paths go in as arguments, which Git Bash converts for node; a path inside the -e code would not be
+  node --input-type=module -e "const { pathToFileURL } = await import('node:url'); const { readFileSync } = await import('node:fs'); const { acceptanceKeyOf } = await import(pathToFileURL(process.argv[1]).href); process.stdout.write(acceptanceKeyOf(readFileSync(process.argv[2], 'utf8')));" "$here/acceptance-key.mjs" "$1"
+}
 AT_KEY=$(at_key "$fx/plan-acceptance.md"); AT_KEY_TWO=$(at_key "$fx/plan-acceptance-two.md")
+[ ${#AT_KEY} = 64 ] && [ ${#AT_KEY_TWO} = 64 ] || { echo "FAIL at_key could not compute the acceptance keys"; exit 1; }
 gates_json_f9() { mkdir -p "$1/.scratch"; printf '{ "slug": "%s", "size": "%s", "base": "main", "plan_sha": "%s" }\n' "$SLUG" "${2:-normal}" "${3:-$PLAN_SHA}" > "$1/.scratch/gates.json"; }
 
 # codex_report <dir> <kind> <subject_sha> <findings JSON> [exit_code] [model]: the report codex-review.sh writes.
@@ -1485,6 +1488,7 @@ expect "G12 applies to small work too" "$d" 0 "G12 green" 0 G12
 set_packs() { sed -i "s/^\*\*Packs:\*\*.*/**Packs:** $2/" "$1/.scratch/envelope/$SLUG.md"; }
 packs_hash8() { printf '%s' "$1" | sha256sum | cut -c1-8; }
 d=$(loop_repo g4-bypass normal); put "$d" envelope-llm.md ".scratch/envelope/$SLUG.md"
+(cd "$d" && "$check" G4 >/dev/null 2>&1) # setup, not an assertion: the red G4 the rest builds on must exist in every shard
 expect "G4 bypass: the llm pack with no eval results is red (and recorded in the signed log)" "$d" 1 "G4 red: eval results missing" 1 G4
 pass_if "G4 bypass: the red G4 is signed into the stage log" grep -qF '"kind":"g4"' "$(log_of "$d")"
 set_packs "$d" "core, api, data"

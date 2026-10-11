@@ -27,7 +27,7 @@ export function g4Bypass(root, slug, packs) {
   const short = now.slice(0, HASH_LEN);
   let metrics = '';
   try { metrics = readFileSync(join(root, '.scratch', 'loop-metrics.md'), 'utf8'); } catch { /* none */ }
-  const re = new RegExp(`\\b${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+G4 packs bypass ${short}:\\s*\\S`);
+  const re = new RegExp(`\\b${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+G4 packs bypass ${short}:[ \\t]*\\S`); // [ \t], not \s: a blank reason must not borrow the next line's text
   if (metrics.split(/\r?\n/).some((l) => re.test(l))) return null;
   return `the envelope Packs line was changed after G4 was red (a bypass): record why in .scratch/loop-metrics.md as "<date> ${slug} G4 packs bypass ${short}: <reason>"`;
 }
