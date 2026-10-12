@@ -375,6 +375,27 @@ printf '# New plan
 ' > "$g/docs/plans/new.md"; touch -d '2000-01-01' "$g/docs/plans/new.md"
 check "HAR-181: the hand-off's plan is the unshipped one, whatever the mtimes" "$(node --input-type=module -e 'const m=await import(process.argv[1]);process.stdout.write(m.newestPlan([process.argv[2]])?.rel??"")' "file:///$(cygpath -m "$here" 2>/dev/null || echo "$here")/vis-root.mjs" "$g" | grep -qx 'docs/plans/new.md' && echo 0 || echo 1)"
 
+# HAR-181 (fork.9.7): wp-loop PRs need the adversarial-review and pr skills, signed into the approvals-only store
+gate() { # gate <cwd> <command>; sets out, code (the PreToolUse gate hook)
+  out="$(node -e 'process.stdout.write(JSON.stringify({session_id:"s1",cwd:process.argv[1],hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:process.argv[2]}}))' "$1" "$2" | bash "$here/gate-hook.sh" 2>&1)"; code=$?
+}
+skill() { hook post-tool "$(payload "$1" PostToolUse Skill "{\"skill\":\"$2\"}" '{}')"; }
+wpr="$(new_repo wppr)"
+prompt "$wpr" "approve acceptance"
+skill "$wpr" "mattpocock-skills:adversarial-review"
+check "wp-loop: a Skill call is signed into the approvals-only store, with no init" "$([ "$(mjs "m.readLog(root).entries.filter(e=>e.kind==='skill').length" "$wpr")" = 1 ] && [ "$(mjs "m.readLog(root).entries.some(e=>e.kind==='init')" "$wpr")" = false ] && echo 0 || echo 1)"
+prompt "$wpr" "approve pr"
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "wp-loop: PR refused when the pr skill was not called" "$([ "$code" = 2 ] && has "$out" '`pr` skill' && echo 0 || echo 1)" "$out"
+skill "$wpr" "mattpocock-skills:pr"
+prompt "$wpr" "approve pr"
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "wp-loop: PR passes with adversarial-review and pr logged before approve pr" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+(cd "$wpr" && git commit -q --allow-empty -m next) >/dev/null 2>&1
+prompt "$wpr" "approve pr"
+gate "$wpr" "gh pr create --base main --title y --body-file b.md"
+check "wp-loop: the next issue's PR needs both skills again" "$([ "$code" = 2 ] && has "$out" '`adversarial-review` and `pr` skills' && echo 0 || echo 1)" "$out"
+
 echo
 echo "test-visibility: $total checks, $([ "$fail" = 0 ] && echo 'all passed' || echo 'FAILURES')"
 exit "$fail"

@@ -13,7 +13,7 @@
 // Does nothing, and writes nothing, when no loop is active. Never fails the session on its own error (exit 0).
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { appendEntry, recordSessionHead } from './stage-log.mjs';
+import { appendEntry, recordSessionHead, storeStatus } from './stage-log.mjs';
 import { blobsOf, evasionTraces } from './stage-detect.mjs';
 import { assess, ensureInit } from './stage-state.mjs';
 import { gitOut, loopRoot, repoRoot, sha256 } from './vis-root.mjs';
@@ -117,6 +117,10 @@ try {
   if (mode === 'user-prompt' || mode === 'exit-plan') planStage(start);
   const root = findRoot(start);
   if (!root) {
+    // wp-loop: no feature loop, but the owner's approvals made a signed store. Sign Skill and Agent calls into it (never
+    // an init entry: that would make it a loop), so wp-pr-guard.mjs can see which skills ran before a PR.
+    const store = mode === 'post-tool' || mode === 'prompt-expansion' ? repoRoot(start) : null;
+    if (store && storeStatus(store).kind === 'ok') logInvocations(store, sessionOf());
     const top = mode === 'post-tool' ? repoRoot(start) : null;
     finish(0, '', top ? visible(top, {}, start) : '');
   }

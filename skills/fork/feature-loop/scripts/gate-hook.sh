@@ -297,6 +297,16 @@ guard_vanished() {
   } >&2
 }
 
+# guard_wp_pr <dir>: no active loop, but the owner's approvals made a signed store (wp-loop): a PR needs the
+# adversarial-review and pr skills logged since the previous PR approval (wp-pr-guard.mjs).
+guard_wp_pr() {
+  local out code
+  out="$(node "$here/wp-pr-guard.mjs" "$1" 2>&1)"; code=$?
+  [ "$code" -eq 1 ] || return 0
+  blocked=1
+  echo "feature-loop gate hook: $out" >&2
+}
+
 # ---- dispatch
 
 if [ "${match:-0}" = 1 ]; then
@@ -312,7 +322,7 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
   [ -n "${kind:-}" ] || continue
   [ "$aflag" = - ] && aflag=""
   [ "$areason" = - ] && areason=""
-  root="$(loop_root "$adir")" || { case "$kind" in pushref|merge|create) guard_vanished "$adir" ;; esac; continue; }
+  root="$(loop_root "$adir")" || { case "$kind" in pushref|merge|create) guard_vanished "$adir" ;; esac; [ "$kind" = create ] && guard_wp_pr "$adir"; continue; }
   validate_run "$root"
   case "$kind" in
     pushref)
