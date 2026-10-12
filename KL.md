@@ -1,6 +1,6 @@
 # kl: the owner's workflow in one command
 
-Branch `kal-trial-workflow`, version **1.3.1-fork.9.11**. Linear: HAR-180 (dry run 1), HAR-181 (dry run 2).
+Branch `kal-trial-workflow`, version **1.3.1-fork.9.13**. Linear: HAR-180 (dry run 1), HAR-181 (dry run 2).
 
 `kl` takes a set of issues (or a task) to reviewed, stacked PRs that the reviewer merges. It goes through grill, acceptance tests, plan, codex plan review, then build, attack and test per issue. **Nothing reaches GitHub or Slack without the owner knowing**, and the owner sees every step.
 
@@ -39,7 +39,7 @@ Ask **"where are we"** at any time to see the 8-gate countdown before the curren
 
 | Action | Rule |
 |---|---|
-| Open a PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP) | Needs the owner's signed `approve pr` for that exact commit, plus `adversarial-review` and `pr` logged for that issue. A new commit needs a new `approve pr`. |
+| Open a PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree | Needs the owner's signed `approve pr` for that exact commit (`approve pr <branch>` for an issue built in a worktree), plus `adversarial-review` and `pr` called with that branch's name. A new commit needs a new `approve pr`. |
 | Merge by any route | Refused. The owner merges. |
 | GitHub issue writes, `gh label`, `gh pr ready` | Denied (`.claude/settings.local.json`, written by `plan-first`) |
 | `gh pr comment` / `edit` / `review` | Claude Code asks the owner first |
@@ -72,6 +72,8 @@ Ask **"where are we"** at any time to see the 8-gate countdown before the curren
 | 9.8 | `078d7f5` | Codex usage limit: stop and ask the owner |
 | 9.10 | `6b69b84` | The owner posts to Slack; the loop gives the text (the 9.9 webhook was removed) |
 | 9.11 | `774087b` | `/kl`; no PR by any route without `approve pr` for HEAD; every merge refused |
+| 9.12 | `4acbcf0` | Codex budget in the plan; pushing needs no go; the next issue starts while a go is pending; no posts before the build |
+| 9.13 | see log | Parallel issues: the PR guard finds the approvals from any worktree (before, a PR from a worktree passed with no `approve pr`); `approve pr <branch>` signs that branch's head; each review is tied to its branch by the Skill args |
 
 ## Still open
 

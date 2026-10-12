@@ -44,7 +44,8 @@ function logInvocations(root, session) {
   const ti = input.tool_input ?? {};
   if (input.tool_name === 'Skill') {
     const name = ti.skill ?? ti.command ?? ti.name;
-    if (name) appendEntry(root, { kind: 'skill', skill: String(name), ts: now(), session });
+    // args are kept (trimmed) so wp-pr-guard can tell which branch a review was for when issues are built in parallel.
+    if (name) appendEntry(root, { kind: 'skill', skill: String(name), args: String(ti.args ?? '').slice(0, 300), ts: now(), session });
   } else if (input.tool_name === 'Agent' || input.tool_name === 'Task') {
     appendEntry(root, {
       kind: 'agent', subagent_type: ti.subagent_type ?? '', model: ti.model ?? '', resolved: input.tool_response?.resolvedModel ?? '',

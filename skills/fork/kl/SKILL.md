@@ -23,7 +23,7 @@ disable-model-invocation: true
 
 ## What the hooks enforce (no bypass)
 
-- No PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP) without the owner's signed `approve pr` for that exact commit, and the `adversarial-review` and `pr` skills logged for that issue. A new commit needs a new `approve pr`.
+- No PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree, without the owner's signed `approve pr` for that exact commit (`approve pr <branch>` for an issue built in its own worktree), and the `adversarial-review` and `pr` skills called with that issue's branch name. A new commit needs a new `approve pr`.
 - No merge by any route: the owner merges.
 - No GitHub issue writes and no `gh pr merge`, `gh pr ready` or `gh label` (`.claude/settings.local.json` deny rules that `plan-first` writes). `gh pr comment`, `edit` and `review` ask the owner first.
 - No Slack post by the loop: it says "Post this now in Slack:" and the owner posts.

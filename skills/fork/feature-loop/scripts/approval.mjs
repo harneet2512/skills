@@ -4,7 +4,7 @@
 //   approve acceptance [docs/<dir>/<file>.md] -> { kind: approval, stop: acceptance, acceptance_sha } (acceptance-key.mjs: the tests themselves)
 //   approve plan [docs/plans/<file>.md]       -> { kind: approval, stop: plan, plan_sha }
 // With more than one candidate file the prompt must name it (fork.9.1); the recorded message names the file and the full sha.
-//   approve pr         -> { kind: approval, stop: pr, head }
+//   approve pr [branch|sha] -> { kind: approval, stop: pr, head } (the named branch's head, else the main folder's HEAD)
 import { readFileSync } from 'node:fs';
 import { appendEntry, createStore, storeStatus } from './stage-log.mjs';
 import { appendTimeline } from './timeline.mjs';
@@ -34,9 +34,19 @@ export const changesSha = (planFile, sha256) => {
 };
 
 // What one stop's approval is for: { subject (the fields signed), label (what the owner is told), file } or { error }.
-function subjectOf(stop, dirs, prompt, head) {
+function subjectOf(stop, dirs, prompt, head, cwd) {
   const named = stop === 'pr' ? '' : namedDoc(prompt, stop);
   if (stop === 'pr') {
+    // `approve pr <branch or sha>` signs that branch's head: an issue built in its own worktree (wp-loop's parallel
+    // issue) is not what the main folder has checked out. Plain `approve pr` signs the main folder's HEAD.
+    const ref = /^[ \t]*approve[ \t]+pr[ \t]+(\S+)/im.exec(String(prompt ?? ''))?.[1]?.replace(/[`'".,;:!?]+$/g, '').replace(/^[`'"]+/, '');
+    if (ref) {
+      const sha = gitOut(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
+      if (sha) return { subject: { head: sha }, label: `pr (${ref}, head ${sha})`, file: '' };
+      // A plain word ("approve pr please") is not a ref; something shaped like a branch or a sha that does not resolve is
+      // a typo, and signing the main folder's HEAD instead would approve the wrong commit.
+      if (/[-/_.\d]/.test(ref) || /^[0-9a-f]{7,40}$/i.test(ref)) return { error: `${ref} is not a branch or commit here` };
+    }
     return head ? { subject: { head }, label: `pr (head ${head})`, file: '' } : { error: 'no git HEAD' };
   }
   if (stop === 'acceptance') {
@@ -53,11 +63,12 @@ function subjectOf(stop, dirs, prompt, head) {
 export function recordApprovals(root, dirs, prompt, session, sha256) {
   const stops = stopsIn(prompt);
   if (!stops.length) return null;
-  const head = gitOut(dirs[0] ?? root, ['rev-parse', 'HEAD']);
+  const cwd = dirs[0] ?? root;
+  const head = gitOut(cwd, ['rev-parse', 'HEAD']);
   const done = [];
   const failed = [];
   for (const stop of stops) {
-    const s = subjectOf(stop, dirs, prompt, head);
+    const s = subjectOf(stop, dirs, prompt, head, cwd);
     if (s.error) { failed.push(`${stop}: ${s.error}`); continue; }
     const extra = stop === 'plan' ? { changes_sha: changesSha(s.file, sha256) } : {};
     const file = stop === 'acceptance' ? { acceptance_file: s.rel } : { plan_file: s.rel ?? '' };

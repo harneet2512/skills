@@ -3,8 +3,9 @@
 // gh api POST .../pulls, createPullRequest, the GitHub MCP create_pull_request) comes here, so nothing reaches the
 // reviewer without the owner knowing:
 //   create  needs the owner's signed `approve pr` for this exact HEAD, and the `adversarial-review` and `pr` skills
-//           called with the Skill tool since the last `approve pr` for a different head (HAR-181 dry run 2: after the
-//           first issue the loop wrote its own review and PR body instead).
+//           called with the Skill tool with this branch's name in their args (HAR-181 dry run 2: after the first issue
+//           the loop wrote its own review and PR body instead; fork.9.13: issues built in parallel each need their own).
+//           Works from any worktree: the store is the main worktree's.
 //   merge   always refused: the owner merges.
 //
 //   node wp-pr-guard.mjs <dir> [create|merge]   exit 0 nothing to refuse (no store, or a real feature loop, whose own
@@ -12,6 +13,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { readLog, storeStatus } from './stage-log.mjs';
+import { repoRoot } from './vis-root.mjs';
 
 const REQUIRED = ['adversarial-review', 'pr'];
 const skillName = (s) => String(s ?? '').replace(/^.*:/, '');
@@ -23,7 +25,9 @@ const git = (dir, args) => {
 try {
   const dir = resolve(process.argv[2] || process.cwd());
   const kind = process.argv[3] || 'create';
-  const root = git(dir, ['rev-parse', '--show-toplevel']) || dir;
+  // The store lives in the main worktree's .scratch/ (untracked, so a linked worktree has none): find it from any
+  // worktree, or a PR from the parallel issue's worktree would find no store and pass (HAR-182 pre-check).
+  const root = repoRoot(dir) || git(dir, ['rev-parse', '--show-toplevel']) || dir;
   if (storeStatus(root).kind !== 'ok') process.exit(0);
   const log = readLog(root);
   if (log.errors.length) {
@@ -39,17 +43,23 @@ try {
   const prApprovals = log.entries.map((e, i) => (e.kind === 'approval' && e.stop === 'pr' ? i : -1)).filter((i) => i >= 0);
   const forHead = prApprovals.filter((i) => head && log.entries[i].head === head);
   if (!forHead.length) {
-    console.log(`wp-loop: no PR without the owner's go. Show the owner the PR (title, base, body, files) and ask for \`approve pr\`; it signs this exact head (${head.slice(0, 12) || 'unknown'}), and a new commit needs a new one`);
+    console.log(`wp-loop: no PR without the owner's go. Show the owner the PR (title, base, body, files) and ask for \`approve pr\` (\`approve pr <branch>\` for a branch the main folder has not checked out); it signs this exact head (${head.slice(0, 12) || 'unknown'}), and a new commit needs a new one`);
     process.exit(1);
   }
-  // The review window opens after the last PR approval for a different head (the previous issue's PR, or this issue
-  // before a new commit), so approving the same head twice keeps the review that came before it.
-  const prev = prApprovals.filter((i) => log.entries[i].head !== head).pop();
-  const from = prev === undefined ? 0 : prev + 1;
-  const called = new Set(log.entries.slice(from).filter((e) => e.kind === 'skill').map((e) => skillName(e.skill)));
+  // Each review is tied to its branch by the Skill call's args, so with issues built in parallel one issue's review
+  // never stands in for another's.
+  const branch = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (!branch || branch === 'HEAD') {
+    console.log('wp-loop: the PR must be opened from its issue branch (HEAD is detached), so its review can be matched to it');
+    process.exit(1);
+  }
+  const names = (args) => String(args ?? '').split(/[\s,;:()`'"]+/).filter(Boolean);
+  const called = new Set(log.entries
+    .filter((e) => e.kind === 'skill' && names(e.args).includes(branch))
+    .map((e) => skillName(e.skill)));
   const missing = REQUIRED.filter((s) => !called.has(s));
   if (!missing.length) process.exit(0);
-  console.log(`wp-loop: this issue's PR needs the ${missing.map((s) => `\`${s}\``).join(' and ')} skill${missing.length > 1 ? 's' : ''} called with the Skill tool since the previous PR (steps 9 and 12); a review or PR body written without the skill does not count`);
+  console.log(`wp-loop: this issue's PR needs ${missing.map((s) => `\`${s}\``).join(' and ')} called with the Skill tool with the branch name as args (Skill ${missing[0]} args "${branch}"), steps 9 and 12; a review or PR body written without the skill, or one for another branch, does not count`);
   process.exit(1);
 } catch (e) {
   console.log(`could not check the owner's approval record: ${e.message}`);

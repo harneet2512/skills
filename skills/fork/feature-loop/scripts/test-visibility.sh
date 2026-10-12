@@ -379,11 +379,12 @@ check "HAR-181: the hand-off's plan is the unshipped one, whatever the mtimes" "
 gate() { # gate <cwd> <command>; sets out, code (the PreToolUse gate hook)
   out="$(node -e 'process.stdout.write(JSON.stringify({session_id:"s1",cwd:process.argv[1],hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:process.argv[2]}}))' "$1" "$2" | bash "$here/gate-hook.sh" 2>&1)"; code=$?
 }
-skill() { hook post-tool "$(payload "$1" PostToolUse Skill "{\"skill\":\"$2\"}" '{}')"; }
+skill() { hook post-tool "$(payload "$1" PostToolUse Skill "{\"skill\":\"$2\",\"args\":\"${3:-}\"}" '{}')"; }
 wpr="$(new_repo wppr)"
+(cd "$wpr" && git checkout -q -b wp51-a && git commit -q --allow-empty -m A) >/dev/null 2>&1
 prompt "$wpr" "approve acceptance"
-skill "$wpr" "mattpocock-skills:adversarial-review"
-check "wp-loop: a Skill call is signed into the approvals-only store, with no init" "$([ "$(mjs "m.readLog(root).entries.filter(e=>e.kind==='skill').length" "$wpr")" = 1 ] && [ "$(mjs "m.readLog(root).entries.some(e=>e.kind==='init')" "$wpr")" = false ] && echo 0 || echo 1)"
+skill "$wpr" "mattpocock-skills:adversarial-review" "wp51-a"
+check "wp-loop: a Skill call is signed into the approvals-only store with its args, no init" "$([ "$(mjs "m.readLog(root).entries.filter(e=>e.kind==='skill'&&e.args==='wp51-a').length" "$wpr")" = 1 ] && [ "$(mjs "m.readLog(root).entries.some(e=>e.kind==='init')" "$wpr")" = false ] && echo 0 || echo 1)"
 gate "$wpr" "gh pr create --base main --title x --body-file b.md"
 check "wp-loop: no PR without the owner's approve pr" "$([ "$code" = 2 ] && has "$out" 'approve pr' && echo 0 || echo 1)" "$out"
 gate "$wpr" "gh api repos/o/r/pulls -X POST -f title=x -f head=f -f base=main"
@@ -397,17 +398,31 @@ mcp "$wpr" "mcp__github__merge_pull_request"
 check "wp-loop: an MCP merge is refused" "$([ "$code" = 2 ] && has "$out" 'owner merges' && echo 0 || echo 1)" "$out"
 prompt "$wpr" "approve pr"
 gate "$wpr" "gh pr create --base main --title x --body-file b.md"
-check "wp-loop: PR refused when the pr skill was not called" "$([ "$code" = 2 ] && has "$out" '`pr` skill' && echo 0 || echo 1)" "$out"
-skill "$wpr" "mattpocock-skills:pr"
-prompt "$wpr" "approve pr"
+check "wp-loop: PR refused when the pr skill was not called for this branch" "$([ "$code" = 2 ] && has "$out" '`pr`' && echo 0 || echo 1)" "$out"
+skill "$wpr" "mattpocock-skills:pr" "for wp51-a, issue 51"
 gate "$wpr" "gh pr create --base main --title x --body-file b.md"
-check "wp-loop: PR passes with adversarial-review and pr logged before approve pr" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
-(cd "$wpr" && git commit -q --allow-empty -m next) >/dev/null 2>&1
-gate "$wpr" "gh pr create --base main --title y --body-file b.md"
+check "wp-loop: PR passes with approve pr for HEAD and both skills named for the branch" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+(cd "$wpr" && git commit -q --allow-empty -m fix) >/dev/null 2>&1
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
 check "wp-loop: a new commit needs a new approve pr" "$([ "$code" = 2 ] && has "$out" 'approve pr' && echo 0 || echo 1)" "$out"
+# The parallel issue: built in its own worktree while the main folder holds wp51-a.
+wtc="$work/wppr-c"; (cd "$wpr" && git worktree add -q -b wp53-c "$wtc" main && cd "$wtc" && git commit -q --allow-empty -m C) >/dev/null 2>&1
+gate "$wtc" "gh pr create --base main --title c --body-file b.md"
+check "worktree: a PR from the parallel issue's worktree needs approve pr too (store found in the main folder)" "$([ "$code" = 2 ] && has "$out" 'approve pr' && echo 0 || echo 1)" "$out"
 prompt "$wpr" "approve pr"
-gate "$wpr" "gh pr create --base main --title y --body-file b.md"
-check "wp-loop: the next issue's PR needs both skills again" "$([ "$code" = 2 ] && has "$out" '`adversarial-review` and `pr` skills' && echo 0 || echo 1)" "$out"
+gate "$wtc" "gh pr create --base main --title c --body-file b.md"
+check "worktree: plain approve pr signs the main folder's head, not the worktree's" "$([ "$code" = 2 ] && has "$out" 'approve pr' && echo 0 || echo 1)" "$out"
+prompt "$wpr" "approve pr wp53-c"
+check "worktree: approve pr <branch> signs that branch's head" "$(has "$(msg_of)" "approval recorded: pr (wp53-c, head $(git -C "$wtc" rev-parse HEAD))" && echo 0 || echo 1)" "$(msg_of)"
+gate "$wtc" "gh pr create --base main --title c --body-file b.md"
+check "worktree: wp51-a's reviews do not count for wp53-c" "$([ "$code" = 2 ] && has "$out" '`adversarial-review` and `pr`' && echo 0 || echo 1)" "$out"
+skill "$wpr" "mattpocock-skills:adversarial-review" "wp53-c"; skill "$wpr" "mattpocock-skills:pr" "wp53-c"
+gate "$wtc" "gh pr create --base main --title c --body-file b.md"
+check "worktree: with its own approval and reviews the parallel PR passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+mcp "$wtc" "mcp__github__merge_pull_request"
+check "worktree: a merge from the worktree is refused" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+prompt "$wpr" "approve pr wp99-nope"
+check "approve pr naming an unknown branch records nothing" "$(has "$(msg_of)" 'approval NOT recorded: pr: wp99-nope is not a branch or commit' && echo 0 || echo 1)" "$(msg_of)"
 
 echo
 echo "test-visibility: $total checks, $([ "$fail" = 0 ] && echo 'all passed' || echo 'FAILURES')"
