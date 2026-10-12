@@ -3,7 +3,7 @@
 This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). It ships every upstream skill unchanged and adds ten skills on top. This file records every difference from upstream: what the original was, what was added, and why.
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
-- **Fork version:** `1.3.1-fork.9.14`
+- **Fork version:** `1.3.1-fork.9.15`
 - **`/kl`, the owner's whole flow in one command:** see [KL.md](KL.md) (install, use, what is enforced, dry-run results).
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
@@ -19,7 +19,7 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 | `skills/fork/shape/`, `concern-topics/`, `evals/`, `live-verify/`, `adversarial-review/` | do not exist | new model-invoked skills |
 | `skills/fork/README.md` | does not exist | bucket README for the fork skills |
 | `hooks/hooks.json` | does not exist (upstream ships no hooks) | plugin hooks: `PreToolUse` on `Bash` (commit, push, PR-create and merge gates), `Stop` (no loop stage left `running`) and `SessionStart` (prints the loop ledger); see section 4, "Gates", and section 5 |
-| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9.14`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
+| `.claude-plugin/plugin.json` | `version` `1.3.1`; `repository` upstream; 27 skills | `version` `1.3.1-fork.9.15`; `repository` this fork; the eleven fork skills added at the top of `skills`; one sentence added to `description` |
 | `package.json` | `version` `1.3.1` | `version` `1.3.1-fork.9.11` (keeps `scripts/sync-plugin-version.mjs --check` passing) |
 | `.claude-plugin/marketplace.json` | `name` `mattpocock`, owner Matt Pocock | `name` `mattpocock-fork`, owner `harneet2512`, description says it is a fork |
 | `README.md` | upstream | one fork notice under the title |
@@ -460,6 +460,7 @@ Found by live run 2 on `workflow-toy-todo`:
 | The owner's go before a PR or a post (fork.9.6) | `wp-loop` "The reviewer's rules", steps 12 and 13; `plan-first` settings | The loop pushes the branch, then stops and shows the PR, its body and the draft status update; `gh pr create` runs only after the owner's `approve pr` for that head, and a status update goes out only after `post it`. `.claude/settings.local.json` puts `gh pr create`, `gh pr comment`, `gh pr edit` and `gh pr review` on `ask`, so Claude Code prompts too. The build goes on while it waits |
 | Countdown and the channel rule (fork.9.6) | `wp-loop` "The reviewer's rules" and product rule 7, step 12 | A per-issue countdown of the 8 gates before the PR, each ticked only from its proof file, shown on request, with every Slack draft and with the `approve pr` ask. Slack drafts only at milestones (first visible, PR ready, a checkpoint the reviewer named, blocked), which is how the reviewer's "every time something is visible, even half done" is read; grilling and planning get none; each waits for `post it` |
 | Codex capacity (fork.9.12) | `plan-first` rules, `plan-template.md` Time box, `wp-loop` step 9 and the owner's-go rule | Codex is checked before the grill, the plan states a codex budget with the risky issues in priority order, re-runs happen only for fixes behind CONFIRMED CRITICAL or HIGH codex findings and are scoped to the fix commits, and a usage limit stops to ask while the next issue keeps building. Also: pushing a branch needs no go, the next issue starts while a go is pending (in its own worktree, with its `adversarial-review` and `pr` calls held until the pending `approve pr`, so `wp-pr-guard.mjs` signs the right HEAD and counts the right calls), and no posts before the build starts. Found by dry run 2 (HAR-181) |
+| Every flow end to end, any system (fork.9.15) | `wp-loop` step 7, the countdown, step 13; `live-verify` modes table | At every size, each flow the change touches is driven from its real entry point to its final effects with happy path, refusal and failure-path scenarios, asserting outcomes, not screens. Any process type (web, API, worker, CLI). Any external system gets a stand-in to `live-verify`'s standard, not only Slack, Gmail and an LLM. Screenshots are optional, for the owner's post only |
 | Restack after a merge | `wp-loop` "The reviewer's rules" | When the reviewer merges a PR, the next branch is rebased onto the default branch with `--onto` (safe after squash merges), rechecked, pushed with `--force-with-lease` and retargeted |
 | Baseline once per stack | `wp-loop` step 11 | When the default branch is already red, its failures are recorded once in `.scratch/baseline.md` and each issue shows the set is unchanged |
 
