@@ -864,7 +864,20 @@ hook_case "(open loop, for contrast) push blocked" "$cl" "git push origin featur
 sign_close "$cl" # a loop that closed properly: its passing close phase signed the close
 set_status "$cl" closed
 silent_case "closed loop: push is not gated" "$cl" "git push origin feature"
-silent_case "closed loop: PR creation is not gated" "$cl" "gh pr create --title x --body y"
+# fork.9.14: no gate, but the owner is still asked before any PR (Claude Code's prompt), and nothing else is printed
+ask_case() { # ask_case <name> <cwd> <cmd>: exit 0, nothing on stderr, and Claude Code's ask decision on stdout
+  local name="$1" cwd="$2" cmd="$3" code
+  skip_case && return 0
+  node -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], tool_name: "Bash", tool_input: { command: process.argv[2] } }))' "$cwd" "$cmd" > "$work/ask.in"
+  (cd "$work" && bash "$hook" < "$work/ask.in" > "$work/ask.out" 2> "$work/ask.err"); code=$?
+  total=$((total + 1))
+  if [ "$code" = 0 ] && [ ! -s "$work/ask.err" ] && grep -qF '"permissionDecision":"ask"' "$work/ask.out"; then
+    echo "ok   hook (asks): $name"
+  else
+    echo "FAIL hook (asks): $name: exit $code"; cat "$work/ask.out" "$work/ask.err" | sed 's/^/       | /'; fail=1
+  fi
+}
+ask_case "closed loop: PR creation is not gated, but asks the owner" "$cl" "gh pr create --title x --body y"
 silent_case "closed loop: staged slop commit is not gated" "$cl" "git commit -m x"
 silent_case "closed loop: merge is not gated" "$cl" "gh pr merge 5" "${gh_env[@]}"
 silent_case "closed loop: push to the base branch is not refused" "$cl" "git push origin HEAD:main"
