@@ -4,6 +4,7 @@ This repo is a fork of [mattpocock/skills](https://github.com/mattpocock/skills)
 
 - **Upstream base:** [`f3fc563`](https://github.com/mattpocock/skills/commit/f3fc5632f401156837ee3872f14fe33ccf1024ea), 2026-10-07, upstream version `1.3.1`
 - **Fork version:** `1.3.1-fork.9.11`
+- **`/kl`, the owner's whole flow in one command:** see [KL.md](KL.md) (install, use, what is enforced, dry-run results).
 - **Plugin name:** `mattpocock-skills` (unchanged, so every `mattpocock-skills:<skill>` reference keeps working)
 - **Marketplace name:** `mattpocock-fork`
 
