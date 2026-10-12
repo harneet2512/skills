@@ -1,6 +1,6 @@
 # kl: the owner's workflow in one command
 
-Branch `kal-trial-workflow`, version **1.3.1-fork.9.13**. Linear: HAR-180 (dry run 1), HAR-181 (dry run 2).
+Branch `kal-trial-workflow`, version **1.3.1-fork.9.14**. Linear: HAR-180 (dry run 1), HAR-181 (dry run 2).
 
 `kl` takes a set of issues (or a task) to reviewed, stacked PRs that the reviewer merges. It goes through grill, acceptance tests, plan, codex plan review, then build, attack and test per issue. **Nothing reaches GitHub or Slack without the owner knowing**, and the owner sees every step.
 
@@ -30,7 +30,7 @@ Needs: `gh` logged in, `node`, and the `codex` CLI logged in (for the `gpt-6-ast
 | 2. Grill | Questions with a recommended answer first, capped at 3 rounds or 20 minutes | Answers, or says "pick the recommended answer" |
 | 3. Stop 1 | Writes `docs/acceptance/<slug>.md` (3 to 5 acceptance tests) and shows them | `approve acceptance` |
 | 4. Plan | One plan for all the issues in plan mode; codex (`gpt-6-astra`) reviews it read-only; findings are folded in | `approve plan docs/plans/<file>.md` (stop 2) |
-| 5. Per issue | `wp-loop`: stacked branch, TDD, live check, `adversarial-review` (plus codex code attack on the issues the plan names risky), every check saved, branch pushed | `approve pr` opens the PR; pastes each **"Post this now in Slack:"** text |
+| 5. Per issue | `wp-loop`: stacked branch, TDD, live check, `adversarial-review` (plus codex code attack on the issues the plan names risky), every check saved, branch pushed | Answers yes when Claude Code asks to open the PR; pastes each **"Post this now in Slack:"** text |
 | 6. Done | Every PR open with `Closes #N` and a results comment | Merges, in stack order |
 
 Ask **"where are we"** at any time to see the 8-gate countdown before the current PR.
@@ -39,13 +39,13 @@ Ask **"where are we"** at any time to see the 8-gate countdown before the curren
 
 | Action | Rule |
 |---|---|
-| Open a PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree | Needs the owner's signed `approve pr` for that exact commit (`approve pr <branch>` for an issue built in a worktree), plus `adversarial-review` and `pr` called with that branch's name. A new commit needs a new `approve pr`. |
+| Open a PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree | Claude Code asks the owner first, every time, in every permission mode (a hook forces the question); the PR opens only on a yes. Refused outright, without asking, until `adversarial-review` and `pr` ran for that branch. |
 | Merge by any route | Refused. The owner merges. |
 | GitHub issue writes, `gh label`, `gh pr ready` | Denied (`.claude/settings.local.json`, written by `plan-first`) |
 | `gh pr comment` / `edit` / `review` | Claude Code asks the owner first |
 | Slack | The loop never posts. It says "Post this now in Slack:" and the owner pastes. |
 | Codex out of usage | Exits 4 with an `ESCALATION:` line and the reset time. The owner chooses: wait, add credits, or skip (logged). |
-| Approvals | Only the owner's own prompt counts (`approve acceptance`, `approve plan <file>`, `approve pr`), signed into `.scratch/.loop/`. A hand-written approval counts for nothing. |
+| Approvals | Only the owner's own prompt counts (`approve acceptance`, `approve plan <file>`), signed into `.scratch/.loop/`. A hand-written approval counts for nothing. PRs are not approved by a phrase: Claude Code asks. |
 
 **What the owner sees:** one line per test run, push, PR, stage and approval; `.scratch/timeline.md` (the full log); and `ESCALATION:` lines for anything unusual (a confirmed CRITICAL or HIGH finding, a force push, an edited plan, codex out of usage).
 
@@ -74,12 +74,13 @@ Ask **"where are we"** at any time to see the 8-gate countdown before the curren
 | 9.11 | `774087b` | `/kl`; no PR by any route without `approve pr` for HEAD; every merge refused |
 | 9.12 | `4acbcf0` | Codex budget in the plan; pushing needs no go; the next issue starts while a go is pending; no posts before the build |
 | 9.13 | see log | Parallel issues: the PR guard finds the approvals from any worktree (before, a PR from a worktree passed with no `approve pr`); `approve pr <branch>` signs that branch's head; each review is tied to its branch by the Skill args |
+| 9.14 | see log | **No `approve pr` phrase: before every PR Claude Code asks the owner** (a hook returns `ask` on every PR route, in every permission mode, from any worktree); refused outright without the branch's reviews; every merge refused |
 
 ## Still open
 
 1. The countdown is shown in chat but no `countdown.md` is kept.
 2. Posts get drafted during grill and plan (they are not sent).
-3. The loop does not start the next issue while waiting for `approve pr`.
+3. The loop does not start the next issue while waiting for the owner's answer on a PR.
 4. The first push waits for the owner, though wp-loop says to push first.
 5. The plan-mode hook proposes a random plan file name, which the loop renames.
 6. The full test suite runs on every issue. Proposal: run the touched tests per issue, and the full suite once at the top of the stack.

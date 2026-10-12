@@ -53,6 +53,12 @@ if [ "$readable" -eq 1 ]; then
   esac
 fi
 
+# ask <question>: hand the decision to the owner through Claude Code's permission prompt, then stop.
+ask() {
+  node -e 'process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:process.argv[1]}}))' "$1"
+  exit 0
+}
+
 rc=0
 root="$(loop_root "$dir")" || rc=$?
 if [ "$rc" -ne 0 ]; then
@@ -61,12 +67,13 @@ if [ "$rc" -ne 0 ]; then
     echo "feature-loop merge gate: this merge was blocked, the loop's run file vanished or was closed without a signed close. The owner merges." >&2
     exit 2
   fi
-  # wp-loop (the kl flow): the owner's approvals made a signed store. A merge is refused and a PR needs approve pr for HEAD.
-  if { [ "$kind" = merge ] || [ "$kind" = create ]; } && command -v node >/dev/null 2>&1; then
-    if ! why="$(node "$here/wp-pr-guard.mjs" "${dir:-$PWD}" "$kind" 2>&1)"; then
-      echo "feature-loop MCP gate: $why" >&2
-      exit 2
-    fi
+  # Outside a feature loop (fork.9.14): a merge is refused where the owner's workflow is running, and every PR asks the
+  # owner through Claude Code's own permission prompt (wp-pr-guard.mjs: exit 1 refuse, 3 ask).
+  if { [ "$kind" = merge ] || [ "$kind" = create ]; }; then
+    command -v node >/dev/null 2>&1 || { echo "feature-loop MCP gate: node not found, so $name was blocked." >&2; exit 2; }
+    why="$(node "$here/wp-pr-guard.mjs" "${dir:-$PWD}" "$kind" 2>&1)"; code=$?
+    if [ "$code" -eq 3 ]; then ask "$why"; fi
+    if [ "$code" -ne 0 ]; then echo "feature-loop MCP gate: $why" >&2; exit 2; fi
   fi
   exit 0
 fi
@@ -119,7 +126,7 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 wt="$(loop_work_tree "${dir:-$root}" "$root")"
 out="$(cd "$wt" && "$here/check-gates.sh" --phase pr --require-stages 2>&1)"; code=$?
-[ "$code" -eq 0 ] && exit 0
+[ "$code" -eq 0 ] && ask "Open a pull request from $(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null) ($(git -C "$wt" rev-parse --short=10 HEAD 2>/dev/null))? The pr phase is green. No PR is ever opened without your yes, and nothing is merged."
 {
   echo "feature-loop PR gate: opening a PR was blocked, the pr phase is not green (repo: $root)."
   printf '%s\n' "$out" | grep -E '^(G[0-9]+|PR-[A-Z]+) red:' || printf '%s\n' "$out" | head -n 3

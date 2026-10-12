@@ -297,12 +297,14 @@ guard_vanished() {
   } >&2
 }
 
-# guard_wp_pr <dir> [create|merge]: no active loop, but the owner's approvals made a signed store (wp-loop): a merge is
-# refused, and a PR needs the owner's approve pr for HEAD plus the
-# adversarial-review and pr skills logged since the previous PR approval (wp-pr-guard.mjs).
+# guard_wp_pr <dir> [create|merge]: every PR creation outside a feature loop, and every merge where the owner's workflow
+# is running (wp-pr-guard.mjs). Exit 1 refuses; exit 3 means ask: the owner answers Claude Code's own permission prompt
+# before the PR is opened ("never raise a PR without asking", fork.9.14).
+ask_reason=""
 guard_wp_pr() {
   local out code
   out="$(node "$here/wp-pr-guard.mjs" "$1" "${2:-create}" 2>&1)"; code=$?
+  if [ "$code" -eq 3 ]; then ask_reason="$out"; return 0; fi
   [ "$code" -eq 1 ] || return 0
   blocked=1
   echo "feature-loop gate hook: $out" >&2
@@ -334,7 +336,8 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
       gate_commit "$root" "$adir" "$aflag" "$areason" "$f1" "$f2" ;;
     create)
       [ "$f1" = - ] && f1=""
-      gate_create "$root" "$adir" "$f1" ;;
+      gate_create "$root" "$adir" "$f1"
+      [ "$blocked" -eq 1 ] || ask_reason="Open a pull request from $(git -C "$adir" rev-parse --abbrev-ref HEAD 2>/dev/null) ($(git -C "$adir" rev-parse --short=10 HEAD 2>/dev/null))? The pr phase is green. No PR is ever opened without your yes, and nothing is merged." ;;
     merge)
       gate_merge "$root" ;;
     opaque)
@@ -345,4 +348,9 @@ while IFS=$'\t' read -r kind adir aflag areason f1 f2 f3 f4; do
 done <<< "$actions"
 
 [ "$blocked" -eq 1 ] && exit 2
+if [ -n "$ask_reason" ]; then
+  # Claude Code asks the owner; the PR runs only on their yes.
+  node -e 'process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:process.argv[1]}}))' "$ask_reason"
+  exit 0
+fi
 exit 0

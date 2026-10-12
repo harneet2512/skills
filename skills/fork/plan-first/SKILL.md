@@ -36,7 +36,7 @@ These hold through planning and through every `wp-loop` run that follows:
   }
   ```
 
-  The `ask` list makes Claude Code prompt the owner before any PR is opened, commented on or edited, on top of the owner's `approve pr` in `wp-loop`. If a Slack connector is attached, add its send-message tool to `deny`: the loop drafts Slack posts and the owner sends them.
+  The `ask` list makes Claude Code prompt the owner before any PR is opened, commented on or edited, and the feature-loop hooks force that question for every PR route whatever the permission mode. If a Slack connector is attached, add its send-message tool to `deny`: the loop drafts Slack posts and the owner sends them.
 
   Then ask the owner to restart the session once (`/exit`, then resume) so both settings load before plan mode. Never create `.scratch/gates.json` to get protection: that starts a feature loop and turns on gates this flow does not use.
 

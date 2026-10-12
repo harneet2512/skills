@@ -12,7 +12,7 @@ disable-model-invocation: true
 2. **Grill.** Call the Skill tool with `plan-first`, then with `grilling`. Grill as `grilling` says, within `plan-first`'s cap, asking the owner (recommended answer first). If the owner said "pick the recommended answer", do that and list every decision.
 3. **Stop 1: acceptance tests.** As `plan-first` step 2 says: write `docs/acceptance/<slug>.md` first, show the tests, wait for `approve acceptance`.
 4. **Plan, codex plan review, stop 2.** As `plan-first` steps 3 to 5 say: one plan for all the issues, codex (`gpt-6-astra`) reviews it, show the findings and the revised plan, wait for `approve plan docs/plans/<file>.md`.
-5. **Build each issue.** Call the Skill tool with `wp-loop` for each issue in plan order, stacked branches off the default branch. Per issue, `wp-loop` calls `tdd`, `adversarial-review` and `pr`, runs every check, pushes the branch, then stops: **the owner's `approve pr`** opens the PR, and for every post **"Post this now in Slack:"** with the exact text, which the owner pastes. While waiting, start the next issue.
+5. **Build each issue.** Call the Skill tool with `wp-loop` for each issue in plan order, stacked branches off the default branch. Per issue, `wp-loop` calls `tdd`, `adversarial-review` and `pr`, runs every check, pushes the branch, then asks: **Claude Code asks the owner before every PR** and it opens only on their yes, and for every post **"Post this now in Slack:"** with the exact text, which the owner pastes. While waiting, start the next issue.
 6. **Done.** Every PR is open, stacked, with `Closes #N` and its results comment. The owner merges, in stack order.
 
 ## What the owner always sees
@@ -23,7 +23,7 @@ disable-model-invocation: true
 
 ## What the hooks enforce (no bypass)
 
-- No PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree, without the owner's signed `approve pr` for that exact commit (`approve pr <branch>` for an issue built in its own worktree), and the `adversarial-review` and `pr` skills called with that issue's branch name. A new commit needs a new `approve pr`.
+- No PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree, without Claude Code asking the owner first (a hook forces the question in every permission mode; the PR opens only on their yes), and never before the `adversarial-review` and `pr` skills ran for that issue's branch.
 - No merge by any route: the owner merges.
 - No GitHub issue writes and no `gh pr merge`, `gh pr ready` or `gh label` (`.claude/settings.local.json` deny rules that `plan-first` writes). `gh pr comment`, `edit` and `review` ask the owner first.
 - No Slack post by the loop: it says "Post this now in Slack:" and the owner posts.
