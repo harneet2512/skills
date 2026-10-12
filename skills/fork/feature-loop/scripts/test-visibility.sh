@@ -344,14 +344,14 @@ check "agent isolation: HEAD is the default tip, so an isolated worktree passes"
 (cd "$w" && git checkout -q -b feat && printf 'x
 ' > f.txt && git add f.txt && git commit -q -m feat) >/dev/null 2>&1
 agent_hook "$w" '{"prompt":"x","isolation":"worktree"}'
-check "agent isolation: HEAD ahead of the default branch, so it is refused and told to cut from HEAD" "$([ "$code" = 2 ] && has "$out" 'git worktree add --detach <dir> HEAD' && echo 0 || echo 1)" "$out"
+check "agent isolation: HEAD ahead of the default branch, so it is refused and told to cut from HEAD" "$([ "$code" = 2 ] && has "$out" 'git worktree add --detach <dir outside the repo> HEAD' && echo 0 || echo 1)" "$out"
 agent_hook "$w" '{"prompt":"x"}'
 check "agent isolation: a subagent without isolation passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
 printf '{ "slug": "demo", "status": "closed" }
 ' > "$w/.scratch/gates.json"
 agent_hook "$w" '{"prompt":"x","isolation":"worktree"}'
 check "agent isolation: no active loop, so it passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
-check "hooks.json wires the Agent hook" "$(node -e 'const h=require(process.argv[1]).hooks.PreToolUse;process.exit(h.some(m=>m.matcher==="Agent"&&m.hooks.some(x=>x.command.includes("agent-base-hook.mjs")))?0:1)' "$plugin/hooks/hooks.json"; echo $?)"
+check "hooks.json wires the Agent hook" "$(node -e 'const h=require(process.argv[1]).hooks.PreToolUse;process.exit(h.some(m=>m.matcher.split("|").includes("Agent")&&m.matcher.split("|").includes("EnterWorktree")&&m.hooks.some(x=>x.command.includes("agent-base-hook.mjs")))?0:1)' "$plugin/hooks/hooks.json"; echo $?)"
 
 # HAR-181: with an origin, tracked docs/plans/*.md are never acceptance sources or the hand-off's plan
 g="$(new_repo h181)"; git init -q --bare "$work/h181-origin.git"
@@ -400,19 +400,105 @@ mcp "$wpr" "mcp__github__create_pull_request"
 check "wp-loop: the GitHub MCP create_pull_request is refused the same way" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
 skill "$wpr" "mattpocock-skills:pr" "for wp51-a, issue 51"
 gate "$wpr" "gh pr create --base main --title x --body-file b.md"
-check "wp-loop: with both reviews for the branch, the PR asks the owner (never opens on its own)" "$(asks && has "$out" 'wp51-a' && echo 0 || echo 1)" "$out"
+check "fork.9.16: without tdd and code-review for the branch the PR is refused" "$([ "$code" = 2 ] && has "$out" '`tdd`, `code-review`' && echo 0 || echo 1)" "$out"
+skill "$wpr" "mattpocock-skills:tdd" "wp51-a"; skill "$wpr" "mattpocock-skills:code-review" "wp51-a base main"
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "fork.9.16: without the countdown file the PR is refused" "$([ "$code" = 2 ] && has "$out" 'countdown.md is missing' && echo 0 || echo 1)" "$out"
+mkdir -p "$wpr/.scratch/checks/wp51-a" "$wpr/.scratch/posts"; printf '7 of 8 done\n' > "$wpr/.scratch/checks/wp51-a/countdown.md"
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "fork.9.16: without a saved Slack draft the PR is refused" "$([ "$code" = 2 ] && has "$out" 'no Slack draft' && echo 0 || echo 1)" "$out"
+printf 'PR ready for #51.\n' > "$wpr/.scratch/posts/wp51-a-1.md"
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "fork.9.16: a draft without the countdown is refused" "$([ "$code" = 2 ] && has "$out" 'no countdown line' && echo 0 || echo 1)" "$out"
+printf 'PR ready for #51.\n\n5 of 8 done\n' > "$wpr/.scratch/posts/wp51-a-2.md"
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "fork.9.16: the newest draft must show 7 of 8 done" "$([ "$code" = 2 ] && has "$out" 'says 5 of 8 done' && echo 0 || echo 1)" "$out"
+printf 'PR ready for #51.\n\n7 of 8 done\n' > "$wpr/.scratch/posts/wp51-a-10.md"
+printf 'tracked\n' > "$wpr/m.txt"; (cd "$wpr" && git add m.txt && git commit -q -m m && printf 'mutant\n' > m.txt) >/dev/null 2>&1
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "fork.9.16: an uncommitted edit to a tracked file (a left-over mutant) refuses the PR" "$([ "$code" = 2 ] && has "$out" 'm.txt' && echo 0 || echo 1)" "$out"
+(cd "$wpr" && git checkout -q -- m.txt) >/dev/null 2>&1
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "wp-loop: with every skill, the countdown and the draft, the PR asks the owner, naming the newest draft" "$(asks && has "$out" 'wp51-a' && has "$out" 'wp51-a-10.md' && has "$out" '7 of 8 done' && echo 0 || echo 1)" "$out"
 gate "$wpr" "gh pr merge 5 --squash"
 check "wp-loop: a merge is refused" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
 mcp "$wpr" "mcp__github__merge_pull_request"
 check "wp-loop: an MCP merge is refused" "$([ "$code" = 2 ] && has "$out" 'owner merges' && echo 0 || echo 1)" "$out"
 wtc="$work/wppr-c"; (cd "$wpr" && git worktree add -q -b wp53-c "$wtc" main && cd "$wtc" && git commit -q --allow-empty -m C) >/dev/null 2>&1
 gate "$wtc" "gh pr create --base main --title c --body-file b.md"
-check "worktree: the parallel issue's PR is checked too (store found in the main folder); wp51-a's reviews do not count" "$([ "$code" = 2 ] && has "$out" '`adversarial-review` and `pr`' && echo 0 || echo 1)" "$out"
-skill "$wpr" "mattpocock-skills:adversarial-review" "wp53-c"; skill "$wpr" "mattpocock-skills:pr" "wp53-c"
+check "worktree: the parallel issue's PR is checked too (store found in the main folder); wp51-a's reviews do not count" "$([ "$code" = 2 ] && has "$out" '`tdd`, `code-review`, `adversarial-review`, `pr`' && echo 0 || echo 1)" "$out"
+for s in tdd code-review adversarial-review pr; do skill "$wpr" "mattpocock-skills:$s" "wp53-c"; done
+mkdir -p "$wpr/.scratch/checks/wp53-c"; printf 'x\n' > "$wpr/.scratch/checks/wp53-c/countdown.md"; printf 'C ready. 7 of 8 done\n' > "$wpr/.scratch/posts/wp53-c-1.md"
 gate "$wtc" "gh pr create --base main --title c --body-file b.md"
 check "worktree: with its own reviews the parallel PR asks the owner, naming its branch" "$(asks && has "$out" 'wp53-c' && echo 0 || echo 1)" "$out"
 mcp "$wtc" "mcp__github__merge_pull_request"
 check "worktree: a merge from the worktree is refused" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+
+# fork.9.16 (dry run 3, HAR-182): the owner's workflow rules that are not about shipping
+own() { gate "$@"; }
+own "$wpr" 'GIT_AUTHOR_NAME="Claude" GIT_AUTHOR_EMAIL="noreply@anthropic.com" git commit -q -m x'
+check "identity: a made-up author in the environment is refused" "$([ "$code" = 2 ] && has "$out" 'never make up an author' && echo 0 || echo 1)" "$out"
+own "$wpr" 'git -c user.name=Claude -c user.email=a@b commit -m x'
+check "identity: git -c user.name is refused" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+own "$wpr" 'git commit --author="Claude <a@b>" -m x'
+check "identity: --author is refused" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+own "$wpr" 'git config user.name "Claude"'
+check "identity: git config user.name <value> is refused" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+own "$wpr" 'git config --get user.name'
+check "identity: reading user.name passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+own "$plain" 'GIT_AUTHOR_NAME=x git log -1'
+check "identity: no workflow store, so it passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+own "$wpr" 'git worktree add -q -b wp54-d .claude/worktrees/d main'
+check "worktree: inside the repo folder is refused" "$([ "$code" = 2 ] && has "$out" 'inside the repo folder' && echo 0 || echo 1)" "$out"
+mpath() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
+own "$work" "git -C \"$(mpath "$wpr")\" worktree add -b wp54-d \"$(mpath "$wpr")/sub/d\" main"
+check "worktree: inside the repo via git -C and an absolute path is refused" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+own "$wpr" "git worktree add -q -b wp54-d \"$work/wppr-d\" main"
+check "worktree: outside the repo folder passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+own "$wpr" 'python .scratch/checks/wp51-a/mutate.py'
+check "mutation: a mutation run in the main working copy is refused, pointing at sandbox.sh" "$([ "$code" = 2 ] && has "$out" 'sandbox.sh' && echo 0 || echo 1)" "$out"
+own "$wtc" 'python -m mutmut run'
+check "mutation: in a branch worktree it is refused too" "$([ "$code" = 2 ] && has "$out" 'wp53-c' && echo 0 || echo 1)" "$out"
+own "$wpr" "cd \"$(mpath "$wtc")\" && pytest -q && python mutate.py"
+check "mutation: cd into a branch worktree first is followed" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+mdet="$work/wppr-det"; (cd "$wpr" && git worktree add -q --detach "$mdet" HEAD) >/dev/null 2>&1
+own "$mdet" 'python mutate.py'
+check "mutation: in a detached throwaway worktree outside the repo it passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+own "$wpr" "bash \"$here/sandbox.sh\" python mutate.py"
+check "mutation: through sandbox.sh it passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+own "$wpr" 'grep -n mutation notes.md'
+check "mutation: reading about mutation (no runner) passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+before="$(cd "$wpr" && git status --porcelain)"
+sb_out="$(cd "$wpr" && bash "$here/sandbox.sh" sh -c 'printf mutant > m.txt; pwd; exit 3' 2>&1)"; sb_code=$?
+sb_dir="$(printf '%s\n' "$sb_out" | tail -n 1)"
+check "sandbox.sh: runs in a copy, keeps the exit code, leaves the repo untouched and removes the copy" "$([ "$sb_code" = 3 ] && [ "$(cat "$wpr/m.txt")" = tracked ] && [ "$(cd "$wpr" && git status --porcelain)" = "$before" ] && [ ! -e "$sb_dir" ] && ! (cd "$wpr" && git worktree list | grep -q wp-sandbox) && echo 0 || echo 1)" "$sb_out"
+# review of 9.16: no false refusals on routine commands, and the bypasses it found are closed
+for c in 'git config user.name >/dev/null || echo none' 'git config user.email 2>/dev/null' 'echo mutmut' \
+  'git log --grep mutant -- src/go' 'npm install --save-dev @stryker-mutator/core' 'pytest tests/test_mutation_guard.py' \
+  'node scripts/report.mjs > .scratch/checks/x/mutation.md' 'mutmut results' 'git worktree add --detach "$TMPDIR/rev" HEAD' \
+  'git worktree add --detach ~/wt-review HEAD'; do
+  own "$wpr" "$c"
+  check "no false refusal: $c" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+done
+for c in 'env GIT_AUTHOR_NAME=x git commit -m y' 'git config --file .git/config user.name Claude' 'npx stryker run' \
+  'uv run mutmut run' 'python -m mutmut run' 'node scripts/mutate.mjs' 'mvn org.pitest:pitest-maven:mutationCoverage'; do
+  own "$wpr" "$c"
+  check "refused: $c" "$([ "$code" = 2 ] && echo 0 || echo 1)" "$out"
+done
+mkdir -p "$wpr/.scratch/checks/wp51-a"
+printf 'other branch. 7 of 8 done\n' > "$wpr/.scratch/posts/wp51-a-fix-99.md"; printf 'final. 7 of 8 done\n' > "$wpr/.scratch/posts/wp51-a-final.md"
+printf 'newest but not ready. 6 of 8 done\n' > "$wpr/.scratch/posts/wp51-a-11.md"
+gate "$wpr" "gh pr create --base main --title x --body-file b.md"
+check "drafts: only <branch>-<n>.md counts, by number (another branch's draft or a named file never stands in)" "$([ "$code" = 2 ] && has "$out" 'wp51-a-11.md says 6 of 8 done' && echo 0 || echo 1)" "$out"
+rm -f "$wpr/.scratch/posts/wp51-a-11.md" "$wpr/.scratch/posts/wp51-a-fix-99.md" "$wpr/.scratch/posts/wp51-a-final.md"
+agent_hook "$wpr" '{"prompt":"x","run_in_background":true}'
+check "agent: a background subagent is refused in the workflow" "$([ "$code" = 2 ] && has "$out" 'foreground' && echo 0 || echo 1)" "$out"
+agent_hook "$wpr" '{"prompt":"x"}'
+check "agent: a foreground subagent passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+agent_hook "$plain" '{"prompt":"x","run_in_background":true}'
+check "agent: no workflow store, a background subagent passes" "$([ "$code" = 0 ] && echo 0 || echo 1)" "$out"
+out="$(node -e 'process.stdout.write(JSON.stringify({session_id:"s1",cwd:process.argv[1],hook_event_name:"PreToolUse",tool_name:"EnterWorktree",tool_input:{name:"x"}}))' "$wpr" | node "$here/agent-base-hook.mjs" 2>&1)"; code=$?
+check "agent: EnterWorktree (a worktree inside the repo) is refused in the workflow" "$([ "$code" = 2 ] && has "$out" 'outside' && echo 0 || echo 1)" "$out"
 
 echo
 echo "test-visibility: $total checks, $([ "$fail" = 0 ] && echo 'all passed' || echo 'FAILURES')"

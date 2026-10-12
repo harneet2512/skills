@@ -39,8 +39,12 @@ Ask **"where are we"** at any time to see the 8-gate countdown before the curren
 
 | Action | Rule |
 |---|---|
-| Open a PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree | Claude Code asks the owner first, every time, in every permission mode (a hook forces the question); the PR opens only on a yes. Refused outright, without asking, until `adversarial-review` and `pr` ran for that branch. |
+| Open a PR by any route (`gh pr create`, `gh api` to `/pulls`, `createPullRequest`, the GitHub MCP), from the main folder or any worktree | Claude Code asks the owner first, every time, in every permission mode (a hook forces the question); the PR opens only on a yes. Refused outright, without asking, until `tdd`, `code-review`, `adversarial-review` and `pr` ran for that branch, no tracked file has an uncommitted edit, the countdown file exists and the PR-ready Slack draft carries `7 of 8 done` (the question names the draft). |
 | Merge by any route | Refused. The owner merges. |
+| Commit as anyone but the owner (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `git -c user.name`, `--author`, `git config user.name <value>`) | Refused. No git identity means the loop asks the owner to set one. |
+| A worktree inside the repo folder (`git worktree add`, `EnterWorktree`) | Refused. Worktrees go outside the repo folder. |
+| A mutation run in a working copy that holds work (the main folder, or a worktree with a branch checked out) | Refused. It runs through `sandbox.sh`: a detached copy of HEAD outside the repo, removed after. |
+| A subagent started in the background | Refused. It would die when the turn ends; subagents run in the foreground, several at once in one message. |
 | GitHub issue writes, `gh label`, `gh pr ready` | Denied (`.claude/settings.local.json`, written by `plan-first`) |
 | `gh pr comment` / `edit` / `review` | Claude Code asks the owner first |
 | Slack | The loop never posts. It says "Post this now in Slack:" and the owner pastes. |
@@ -53,15 +57,15 @@ Ask **"where are we"** at any time to see the 8-gate countdown before the curren
 
 ## Dry runs (gt-harness issues 51 to 56: six small CLI fixes)
 
-| | Dry run 1 (HAR-180, fork.9.1) | Dry run 2 (HAR-181, fork.9.6) |
-|---|---|---|
-| Result | 6 PRs, after a push blocker was fixed mid-run | 6 stacked PRs (`63` to `68`), end to end, no guard refusals |
-| Time | 2h00m | 2h45m (about 2h20m of it the skill's own time) |
-| Owner gates | n/a | No PR before `approve pr`, no post before `post it` |
-| False tamper alarms | about 15 | 0 |
-| Issues touched | none | none |
-| Codex | plan + #55 code attack | plan (1 CONFIRMED) + #55 (1 PLAUSIBLE, fixed). The re-run hit the usage limit; the owner accepted the skip. |
-| Gaps | push blocker; skills ignored | the review skills were skipped after the first issue (fixed in 9.7); no countdown file |
+| | Dry run 1 (HAR-180, fork.9.1) | Dry run 2 (HAR-181, fork.9.6) | Dry run 3 (HAR-182, fork.9.15) |
+|---|---|---|---|
+| Result | 6 PRs, after a push blocker was fixed mid-run | 6 stacked PRs (`63` to `68`), end to end, no guard refusals | 4 PRs (`73` to `76`, issues 69 to 72), one built in parallel; every safety rule held |
+| Time | 2h00m | 2h45m (about 2h20m of it the skill's own time) | 3h26m (about 35m lost to low-memory kills, 20m an owner `no` held on purpose) |
+| Owner gates | n/a | No PR before `approve pr`, no post before `post it` | Claude Code asked before every PR; a `no` opened nothing; PR before review, issue comment and merge all refused |
+| False tamper alarms | about 15 | 0 | 0 |
+| Issues touched | none | none | none |
+| Codex | plan + #55 code attack | plan (1 CONFIRMED) + #55 (1 PLAUSIBLE, fixed). The re-run hit the usage limit; the owner accepted the skip. | 2 runs (plan, #69 code), within the budget of 3 |
+| Gaps | push blocker; skills ignored | the review skills were skipped after the first issue (fixed in 9.7); no countdown file | mutation run edited the source; background reviewers died; a worktree inside the repo; countdown not in the post text, one post not saved; `tdd` and `code-review` never called; a made-up commit author (all fixed in 9.16) |
 
 ## Versions
 
@@ -73,14 +77,16 @@ Ask **"where are we"** at any time to see the 8-gate countdown before the curren
 | 9.10 | `6b69b84` | The owner posts to Slack; the loop gives the text (the 9.9 webhook was removed) |
 | 9.11 | `774087b` | `/kl`; no PR by any route without `approve pr` for HEAD; every merge refused |
 | 9.12 | `4acbcf0` | Codex budget in the plan; pushing needs no go; the next issue starts while a go is pending; no posts before the build |
-| 9.13 | see log | Parallel issues: the PR guard finds the approvals from any worktree (before, a PR from a worktree passed with no `approve pr`); `approve pr <branch>` signs that branch's head; each review is tied to its branch by the Skill args |
-| 9.14 | see log | **No `approve pr` phrase: before every PR Claude Code asks the owner** (a hook returns `ask` on every PR route, in every permission mode, from any worktree); refused outright without the branch's reviews; every merge refused |
+| 9.13 | `ab58808` | Parallel issues: the PR guard finds the approvals from any worktree (before, a PR from a worktree passed with no `approve pr`); `approve pr <branch>` signs that branch's head; each review is tied to its branch by the Skill args |
+| 9.14 | `fa91d2b` | **No `approve pr` phrase: before every PR Claude Code asks the owner** (a hook returns `ask` on every PR route, in every permission mode, from any worktree); refused outright without the branch's reviews; every merge refused |
+| 9.15 | `8b576fd` | Every flow end to end at every size, for any process and any external system; screenshots optional |
+| 9.16 | see log | Dry run 3 fixes: no made-up commit author; no worktree inside the repo; mutation runs only in `sandbox.sh`; no background subagents; the PR question needs `tdd` and `code-review` too, a clean tree, the countdown file and the PR-ready draft with `7 of 8 done` |
 
 ## Still open
 
-1. The countdown is shown in chat but no `countdown.md` is kept.
-2. Posts get drafted during grill and plan (they are not sent).
-3. The loop does not start the next issue while waiting for the owner's answer on a PR.
-4. The first push waits for the owner, though wp-loop says to push first.
-5. The plan-mode hook proposes a random plan file name, which the loop renames.
-6. The full test suite runs on every issue. Proposal: run the touched tests per issue, and the full suite once at the top of the stack.
+1. The plan-mode hook proposes a random plan file name, which the loop renames.
+2. The full test suite runs on every issue. Proposal: run the touched tests per issue, and the full suite once at the top of the stack.
+3. Auto mode: gates for the reviewer's rules 2 (secrets) and 3 (reference repos) wait on the owner's choices (ask or deny, and the list of reference repos).
+4. The host: dry run 3 lost about 35 minutes to low-memory kills. Close other apps before a run.
+
+Fixed since dry run 2 and seen working in dry run 3: the countdown file is kept, no posts before the build, the next issue starts while a PR question waits, and the push needs no go.

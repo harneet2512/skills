@@ -41,6 +41,21 @@ slop="$here/../../concern-topics/scripts/slop-check.sh"
 . "$here/loop-root.sh"
 input="$(cat)"
 
+# The owner's workflow rules that are not about shipping (fork.9.16): no made-up commit author, no worktree inside the
+# repo folder, no mutation run in a working copy that holds work. owner-guard.mjs passes everything where no loop or
+# signed store is active. A failure to run it where one is active blocks the command.
+if printf '%s' "$input" | grep -qiE 'worktree|mutat|mutant|mutmut|stryker|cosmic-ray|pitest|GIT_AUTHOR|GIT_COMMITTER|user\.(name|email)|--author'; then
+  owner_out="$(printf '%s' "$input" | node "$here/owner-guard.mjs" 2>&1)"
+  owner_rc=$?
+  if [ "$owner_rc" -eq 2 ]; then printf '%s\n' "$owner_out" >&2; exit 2; fi
+  owner_cwd="$(printf '%s' "$input" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | sed 's/\\\\/\\/g')"
+  owner_common="$(git -C "${owner_cwd:-.}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [ "$owner_rc" -ne 0 ] && { loop_root "$owner_cwd" >/dev/null 2>&1 || { [ -n "$owner_common" ] && [ -f "$owner_common/../.claude/.loop/key" ]; }; }; then
+    echo "feature-loop gate hook: owner-guard.mjs failed ($owner_out), so this command was blocked." >&2
+    exit 2
+  fi
+fi
+
 # Fast path: most Bash calls cannot ship, commit or merge, so do not start node for them.
 printf '%s' "$input" | grep -qE 'push|pulls|PullRequest|graphql|commit|merge|(^|[^[:alnum:]_])pr([^[:alnum:]_]|$)' || exit 0
 

@@ -29,7 +29,7 @@ Run, from the target repo root, and fix before spending reviewers:
 
 ## 2. Standards and Spec
 
-Call the Skill tool with `code-review`, the base as the fixed point, and the contract, envelope Live items and issue checklist as the spec. Keep its two axes as they are.
+Call the Skill tool with `code-review`, with the branch name first in the args (inside `wp-loop` the PR guard looks for that call), the base as the fixed point, and the contract, envelope Live items and issue checklist as the spec. Keep its two axes as they are.
 
 **Done when:** every `code-review` finding is a row with Axis `standards` or `spec`.
 

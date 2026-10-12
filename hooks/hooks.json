@@ -23,7 +23,7 @@
         ]
       },
       {
-        "matcher": "Agent",
+        "matcher": "Agent|EnterWorktree",
         "hooks": [
           {
             "type": "command",
