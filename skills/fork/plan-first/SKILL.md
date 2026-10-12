@@ -42,6 +42,9 @@ These hold through planning and through every `wp-loop` run that follows:
 
 - **The reviewer's product rules hold too.** The eight rules in `wp-loop` ("The reviewer's product rules") go into the plan: each one the issues touch is a line under `## Decisions` and, where it can break, under `## Failure modes`.
 
+- **Codex is a budget, not a given.** The owner's codex usage is limited and a limit mid-build stops the flow. Before planning, run `codex --version` and one tiny read-only codex call to confirm it works now; if it is already limited, tell the owner before the grill, not at the first code attack. The plan's `## Time box` states the codex budget and the risky issues in priority order.
+- **No posts before the build.** Grilling, acceptance tests and planning show nothing a reviewer can see, so they produce no Slack or status posts. The owner's own "here" is the only message before the first issue's build starts.
+
 ## 1. Grill, capped
 
 - Run `date` and say the start time. A **round** is one batch of questions and the owner's answers.

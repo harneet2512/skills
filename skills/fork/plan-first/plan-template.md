@@ -61,7 +61,10 @@ mechanism. -->
 
 ## Time box
 
-<!-- The demo_by time (with a zone) when there is one, else `none`, and the order of cuts if time runs short. -->
+<!-- The demo_by time (with a zone) when there is one, else `none`, and the order of cuts if time runs short.
+Codex budget: the number of codex runs the plan spends, counted before the build: 1 plan review, 1 code attack per
+issue named risky (at most the 2 or 3 riskiest; every issue still gets adversarial-review), and at most 1 scoped re-run
+each. Name the risky issues in priority order, so a usage limit cuts the least risky first. -->
 
 ## Concerns
 
