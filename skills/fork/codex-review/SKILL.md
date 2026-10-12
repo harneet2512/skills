@@ -33,7 +33,7 @@ From the target repo root:
   - `codex-repros/<finding id>/`: the repro test files codex wrote for each CONFIRMED code finding (`_unassigned/` for files no finding names). Port each into the repo's real test suite as part of the fix.
 - It appends one row to `.scratch/timeline.md` (the feature loop's table format, through its `timeline.mjs`) and prints one summary line, such as `codex code attack on 1a2b3c4 by gpt-6-astra: 2 CONFIRMED (1 HIGH), 3 PLAUSIBLE`. Repeat that line to the owner. When the report holds a CONFIRMED CRITICAL or HIGH finding it prints one more line, starting `ESCALATION:`: tell the owner at once.
 
-Exit codes: `0` it ran and wrote a report; `2` codex is missing or failed, its output was invalid, or usage was wrong; `3` timeout. **A failed run is reported, never faked**: tell the owner it failed and why, write no report by hand, and either re-run or log the skip as a bypass in `.scratch/loop-metrics.md`. Never edit the JSON.
+Exit codes: `0` it ran and wrote a report; `2` codex is missing or failed, its output was invalid, or usage was wrong; `3` timeout; `4` the owner's codex usage limit is hit, with an `ESCALATION:` line naming the reset time. **On `4`, stop and ask the owner** whether to wait for the reset, add credits, or continue without codex (then log the skip as a bypass); never pick for them or swap in another reviewer. **A failed run is reported, never faked**: tell the owner it failed and why, write no report by hand, and either re-run or log the skip as a bypass in `.scratch/loop-metrics.md`. Never edit the JSON.
 
 ## Resolutions
 

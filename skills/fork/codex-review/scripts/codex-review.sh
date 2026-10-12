@@ -19,6 +19,7 @@ TIMEOUT="${CODEX_REVIEW_TIMEOUT:-1800}"
 CODEX="${CODEX_REVIEW_CODEX_BIN:-codex}"
 EXIT_FAIL=2
 EXIT_TIMEOUT=3
+EXIT_LIMIT=4
 
 die() { printf 'codex-review: %s\n' "$*" >&2; exit "$EXIT_FAIL"; }
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -181,6 +182,12 @@ main() {
   fi
   finished="$(now)"
   [ "$status" -ne 124 ] || fail_run "$EXIT_TIMEOUT" "codex timed out after ${TIMEOUT}s"
+  if [ "$status" -ne 0 ] && grep -qi 'usage limit' "$log"; then
+    # The owner's ChatGPT plan is out of codex usage: their call, not the loop's (wait, buy credits, or skip codex).
+    local when; when="$(grep -io 'try again at [^.]*' "$log" | head -n 1)"
+    printf 'ESCALATION: codex usage limit hit (%s). Stop and ask the owner: wait for the reset, add credits at https://chatgpt.com/settings/usage, or continue without codex (logged as a bypass). Do not substitute another reviewer on your own.\n' "${when:-no reset time given}"
+    fail_run "$EXIT_LIMIT" "codex usage limit hit${when:+ ($when)}"
+  fi
   [ "$status" -eq 0 ] || fail_run "$EXIT_FAIL" "codex exited $status: $(tail -n 3 "$log" | tr '\n' ' ')"
   [ -s "$raw" ] || fail_run "$EXIT_FAIL" "codex wrote no output"
 

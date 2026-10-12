@@ -41,6 +41,7 @@ done
 } > "$log"
 case "${STUB_MODE:-ok}" in
   fail) echo "boom" >&2; exit 7 ;;
+  limit) echo "ERROR: You've hit your usage limit. Visit https://chatgpt.com/settings/usage to purchase more credits or try again at 9:44 PM." >&2; exit 1 ;;
   sleep) sleep 30; exit 0 ;;
   invalid) echo '{not json' > "$out"; exit 0 ;;
   badschema) echo '{"summary":"x","findings":[{"id":"F1","severity":"SEVERE"}]}' > "$out"; exit 0 ;;
@@ -195,6 +196,9 @@ STUB_MODE=badschema STUB_CANNED="$canned_plan" run "$repo" plan plan.md --slug f
 check "schema violation gives exit 2, no report" '[ "$(rc)" = 2 ] && [ ! -e "$repo/.scratch/review/codex-plan-f.json" ] && grep -q severity "$work/stderr"'
 STUB_MODE=sleep STUB_CANNED="$canned_plan" CODEX_REVIEW_TIMEOUT=1 run "$repo" plan plan.md --slug f
 check "timeout gives exit 3, no report" '[ "$(rc)" = 3 ] && [ ! -e "$repo/.scratch/review/codex-plan-f.json" ]'
+STUB_MODE=limit STUB_CANNED="$canned_plan" run "$repo" plan plan.md --slug f
+check "usage limit gives exit 4, no report" '[ "$(rc)" = 4 ] && [ ! -e "$repo/.scratch/review/codex-plan-f.json" ]'
+check "usage limit: ESCALATION line with the reset time, asking the owner" 'grep -q "ESCALATION: codex usage limit hit (try again at 9:44 PM)" "$work/stdout" && grep -q "ask the owner" "$work/stdout"'
 repo2="$(new_repo)"; wt_before="$(git -C "$repo2" worktree list | wc -l | tr -d ' ')"
 STUB_MODE=fail STUB_CANNED="$canned_code" run "$repo2" code HEAD~1 --slug f
 check "fail in code mode still removes the worktree" '[ "$(rc)" = 2 ] && [ "$(git -C "$repo2" worktree list | wc -l | tr -d " ")" = "$wt_before" ]'
