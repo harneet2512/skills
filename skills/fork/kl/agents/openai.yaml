@@ -1,0 +1,5 @@
+interface:
+  display_name: "KL"
+  short_description: "The whole owner flow: grill, plan, codex review, stacked PRs with the owner's go"
+policy:
+  allow_implicit_invocation: false

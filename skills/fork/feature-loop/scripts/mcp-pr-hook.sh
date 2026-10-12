@@ -61,6 +61,13 @@ if [ "$rc" -ne 0 ]; then
     echo "feature-loop merge gate: this merge was blocked, the loop's run file vanished or was closed without a signed close. The owner merges." >&2
     exit 2
   fi
+  # wp-loop (the kl flow): the owner's approvals made a signed store. A merge is refused and a PR needs approve pr for HEAD.
+  if { [ "$kind" = merge ] || [ "$kind" = create ]; } && command -v node >/dev/null 2>&1; then
+    if ! why="$(node "$here/wp-pr-guard.mjs" "${dir:-$PWD}" "$kind" 2>&1)"; then
+      echo "feature-loop MCP gate: $why" >&2
+      exit 2
+    fi
+  fi
   exit 0
 fi
 
